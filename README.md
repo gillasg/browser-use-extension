@@ -31,6 +31,40 @@ node apps/bridge/dist/cli.js setup
 
 The bridge starts on demand and stays in the background. The extension's toolbar popup shows whether it is connected.
 
+## Connecting an agent (MCP)
+
+The MCP server speaks stdio. Point any MCP client at it:
+
+```json
+{
+  "mcpServers": {
+    "browser-use-extension": {
+      "command": "node",
+      "args": ["/path/to/browser-use-extension/apps/bridge/dist/cli.js", "mcp"]
+    }
+  }
+}
+```
+
+For Codex, add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.browser-use-extension]
+command = "node"
+args = ["/path/to/browser-use-extension/apps/bridge/dist/cli.js", "mcp"]
+```
+
+It exposes two tools:
+
+| Tool | Arguments | What it does |
+|---|---|---|
+| `browser_code` | `code` (required), `session`, `timeoutMs` | Runs JavaScript in a persistent REPL inside the browser. The last expression is returned; `console.log` output is included. |
+| `browser_tabs` | none | Lists open tabs. |
+
+The tool description carries the full API, so agents can use it without extra setup. [docs/agent-guide.md](docs/agent-guide.md) is the longer reference with examples, for agents and people writing prompts.
+
+Agents without MCP can use the CLI below; `repl` takes the same code.
+
 ## CLI
 
 ```sh
