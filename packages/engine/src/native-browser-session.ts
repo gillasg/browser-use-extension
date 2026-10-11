@@ -1,0 +1,245 @@
+import {
+  enableDiagnostics,
+  forgetDiagnostics,
+  releaseBrowserEvents,
+} from "./native-browser-events.js";
+import { trackBrowserActivity, forgetBrowserActivity } from "./native-browser-navigation.js";
+import { presentBrowserTask } from "./native-browser-layout.js";
+import { engineConfig } from "./engine-config.js";
+import { currentInventoryTabs } from "./native-inventory-client.js";
+import type { BrowserExecutorRequest } from "@aeon/protocol";
+
+interface Attachment {
+  chatId: string;
+  attached: Promise<void>;
+  timer?: number;
+}
+const attachments = new Map<number, Attachment>();
+const owners = new Map<number, string>();
+const cancelled = new Map<number, string | undefined>();
+const closing = new Map<number, Promise<void>>();
+
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source.tabId === undefined) return;
+  forget(source.tabId);
+  if (reason === "canceled_by_user") cancelled.set(source.tabId, owners.get(source.tabId));
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  forget(tabId);
+  owners.delete(tabId);
+  cancelled.delete(tabId);
+});
+
+export function browserSessionOwner(tabId: number): string | undefined {
+  return owners.get(tabId);
+}
+
+export function bindBrowserSession(tabId: number, chatId: string): void {
+  if (owners.get(tabId) !== chatId && attachments.has(tabId)) throw new Error("CLAIM_CONFLICT");
+  owners.set(tabId, chatId);
+  persistBrowserOwners(owners);
+}
+
+export async function withBrowserDebugger<T>(
+  tabId: number,
+  action: (debuggee: chrome.debugger.Debuggee) => Promise<T>,
+): Promise<T> {
+  await closing.get(tabId);
+  if (cancelled.has(tabId)) throw new Error("OPERATION_FAILED");
+  const chatId = owners.get(tabId);
+  if (!chatId) throw new Error("CLAIM_CONFLICT");
+  let entry = attachments.get(tabId);
+  if (!entry) {
+    entry = { chatId, attached: attach(tabId) };
+    attachments.set(tabId, entry);
+  }
+  try {
+    await entry.attached;
+    await presentBrowserTask(chatId, tabId);
+    await ensureBrowserViewport(tabId);
+    if (attachments.get(tabId) !== entry) throw new Error("OPERATION_FAILED");
+    if (entry.timer !== undefined) clearTimeout(entry.timer);
+    entry.timer = globalThis.setTimeout(() => void detach(tabId), 90_000);
+    void chrome.action.setBadgeText({ tabId, text: "AI" });
+    void chrome.action.setBadgeBackgroundColor({ tabId, color: "#4299ff" });
+    void chrome.action.setTitle({ tabId, title: engineConfig.controllingTitle(chatId) });
+    return await action({ tabId });
+  } catch (error) {
+    if (
+      attachments.get(tabId) !== entry ||
+      !(error instanceof Error) ||
+      ![
+        "STALE_REF",
+        "AMBIGUOUS_TARGET",
+        "TARGET_NOT_FOUND",
+        "TARGET_HIDDEN",
+        "TARGET_DISABLED",
+        "TARGET_BLOCKED",
+        "NOT_EDITABLE",
+        "INPUT_FAILED",
+        "INVALID_TARGET",
+        "TIMEOUT",
+      ].includes(error.message)
+    )
+      await detach(tabId);
+    throw error;
+  }
+}
+
+export async function releaseBrowserSessions(chatId?: string, reset = false): Promise<void> {
+  releaseBrowserEvents(chatId);
+  if (reset || !chatId)
+    for (const [tabId, owner] of cancelled)
+      if (!chatId || owner === chatId) cancelled.delete(tabId);
+  const tabs = [...owners].filter(([, owner]) => !chatId || owner === chatId);
+  for (const [tabId] of tabs) {
+    owners.delete(tabId);
+    if (reset || !chatId) cancelled.delete(tabId);
+    await detach(tabId);
+  }
+  persistBrowserOwners(owners);
+}
+
+function forget(tabId: number): void {
+  const entry = attachments.get(tabId);
+  if (entry?.timer !== undefined) clearTimeout(entry.timer);
+  attachments.delete(tabId);
+  forgetDiagnostics(tabId);
+  forgetBrowserActivity(tabId);
+  void chrome.action.setBadgeText({ tabId, text: "" }).catch(() => undefined);
+  void chrome.action.setTitle({ tabId, title: engineConfig.idleTitle }).catch(() => undefined);
+}
+
+async function attach(tabId: number): Promise<void> {
+  try {
+    await chrome.debugger.attach({ tabId }, "1.3");
+  } catch (error) {
+    if (!/already attached/i.test(String(error))) throw error;
+    // sendCommand succeeds only for our extension's attachment; do not take over DevTools.
+    await chrome.debugger.sendCommand({ tabId }, "Runtime.enable");
+  }
+  trackBrowserActivity(tabId);
+  await chrome.debugger.sendCommand({ tabId }, "Page.enable");
+  await Promise.all([
+    chrome.debugger.sendCommand({ tabId }, "DOM.enable"),
+    chrome.debugger.sendCommand({ tabId }, "Accessibility.enable"),
+  ]);
+  await chrome.debugger
+    .sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true })
+    .catch(() => undefined);
+  await enableDiagnostics(tabId);
+}
+
+function detach(tabId: number): Promise<void> {
+  const prior = closing.get(tabId);
+  if (prior) return prior;
+  const entry = attachments.get(tabId);
+  forget(tabId);
+  if (!entry) return Promise.resolve();
+  const work = entry.attached
+    .then(
+      async () => {
+        await restoreBrowserViewport(tabId);
+        await chrome.debugger
+          .sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: false })
+          .catch(() => undefined);
+        await chrome.debugger.detach({ tabId }).catch(() => undefined);
+      },
+      () => undefined,
+    )
+    .finally(() => {
+      if (closing.get(tabId) === work) closing.delete(tabId);
+    });
+  closing.set(tabId, work);
+  return work;
+}
+export async function reconnectBrowserSession(tabId: number): Promise<void> {
+  await detach(tabId);
+}
+export async function restoreBrowserSessionOwners(): Promise<void> {
+  await restoreBrowserOwners(owners);
+}
+
+const key = "aeon-browser-owners";
+let writes: Promise<unknown> = Promise.resolve();
+export function persistBrowserOwners(owners: Map<number, string>): void {
+  if (!chrome.storage?.session) return;
+  const tabs = currentInventoryTabs();
+  const records = [...owners].flatMap(([tabId, chatId]) => {
+    const tab = tabs.find((item) => item.target.tabId === tabId);
+    return tab ? [{ chatId, target: tab.target }] : [];
+  });
+  writes = writes
+    .catch(() => undefined)
+    .then(() => chrome.storage.session.set({ [key]: records }))
+    .catch(() => undefined);
+}
+export async function restoreBrowserOwners(owners: Map<number, string>): Promise<void> {
+  if (!chrome.storage?.session) return;
+  const stored = (await chrome.storage.session.get(key))[key] as
+    { chatId: string; target: unknown }[] | undefined;
+  const tabs = currentInventoryTabs();
+  for (const record of stored ?? []) {
+    const tab = tabs.find((item) => JSON.stringify(item.target) === JSON.stringify(record.target));
+    if (tab && !owners.has(tab.target.tabId)) owners.set(tab.target.tabId, record.chatId);
+  }
+}
+
+const overridden = new Set<number>();
+chrome.tabs.onActivated?.addListener(({ tabId }) => void restoreBrowserViewport(tabId));
+export async function ensureBrowserViewport(tabId: number): Promise<void> {
+  if (overridden.has(tabId)) return;
+  const tab = await chrome.tabs.get?.(tabId).catch(() => undefined);
+  if (!tab) return;
+  if (tab.active || ((tab as chrome.tabs.Tab & { splitViewId?: number }).splitViewId ?? -1) >= 0) {
+    await restoreBrowserViewport(tabId);
+    return;
+  }
+  await chrome.debugger.sendCommand({ tabId }, "Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  overridden.add(tabId);
+}
+export async function restoreBrowserViewport(tabId: number): Promise<void> {
+  overridden.delete(tabId);
+  await chrome.debugger
+    .sendCommand({ tabId }, "Emulation.clearDeviceMetricsOverride")
+    .catch(() => undefined);
+}
+
+const chatEpochs = new Map<string, number>();
+const requestEpochs = new Map<string, number>();
+
+export function releaseBrowserExecutor(): void {
+  for (const [chatId, epoch] of chatEpochs) chatEpochs.set(chatId, epoch + 1);
+  void releaseBrowserSessions();
+}
+export function handleBrowserRelease(candidate: unknown): boolean {
+  if (
+    typeof candidate !== "object" ||
+    candidate === null ||
+    !("kind" in candidate) ||
+    candidate.kind !== "browser.release" ||
+    !("chatId" in candidate) ||
+    typeof candidate.chatId !== "string"
+  )
+    return false;
+  chatEpochs.set(candidate.chatId, (chatEpochs.get(candidate.chatId) ?? 0) + 1);
+  void releaseBrowserSessions(candidate.chatId, "reset" in candidate && candidate.reset === true);
+  return true;
+}
+export function registerBrowserRequest(request: BrowserExecutorRequest): void {
+  const epoch = chatEpochs.get(request.chatId) ?? 0;
+  chatEpochs.set(request.chatId, epoch);
+  requestEpochs.set(request.requestId, epoch);
+}
+export function assertRequestActive(request: BrowserExecutorRequest): void {
+  if (requestEpochs.get(request.requestId) !== chatEpochs.get(request.chatId))
+    throw new Error("OPERATION_FAILED");
+}
+export function completeBrowserRequest(request: BrowserExecutorRequest): void {
+  requestEpochs.delete(request.requestId);
+}

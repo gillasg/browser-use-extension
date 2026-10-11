@@ -1,0 +1,74 @@
+type SplitTab = chrome.tabs.Tab & { splitViewId?: number };
+type SplitTabs = typeof chrome.tabs & {
+  createSplit?: (ids: [number, number]) => Promise<number>;
+  unsplit?: (id: number) => Promise<void>;
+};
+const pending = new Map<string, Promise<void>>();
+const pairs = new Map<string, { targetId: number; splitId: number }>();
+/** Present browser work beside its regular chat. Side-panel-only chats keep their panel. */
+export async function presentBrowserTask(chatId: string, tabId: number): Promise<void> {
+  const tabs = chrome.tabs as SplitTabs;
+  if (!tabs.createSplit || !tabs.unsplit) return;
+  const prior = pending.get(chatId) ?? Promise.resolve();
+  const work = prior
+    .then(() => pairChat(tabs, chatId, tabId))
+    .catch((error) => {
+      // A layout failure must not turn a completed browser action into a failed action.
+      console.warn("Could not open browser Split View:", String(error));
+    });
+  pending.set(chatId, work);
+  await work;
+  if (pending.get(chatId) === work) pending.delete(chatId);
+}
+async function pairChat(tabs: SplitTabs, chatId: string, tabId: number): Promise<void> {
+  const target = (await tabs.get(tabId)) as SplitTab;
+  const prior = pairs.get(chatId);
+  if (prior && prior.targetId === target.id && prior.splitId === target.splitViewId) return;
+  const candidates = ((await tabs.query({})) as SplitTab[]).filter((tab) => isChat(tab, chatId));
+  const chat = selectChat(candidates, target.windowId);
+  if (!chat?.id || !target.id || chat.id === target.id) return;
+  if (hasSplit(chat) && chat.splitViewId === target.splitViewId) return;
+  await alignTabs(tabs, chat, target);
+  const splitId = await tabs.createSplit?.([chat.id, target.id]);
+  if (splitId !== undefined) pairs.set(chatId, { targetId: target.id, splitId });
+  await tabs.update(chat.id, { active: true });
+}
+async function alignTabs(tabs: SplitTabs, chat: SplitTab, target: SplitTab): Promise<void> {
+  if (chat.id === undefined || target.id === undefined) return;
+  await clearSplits(tabs, [chat.splitViewId, target.splitViewId]);
+  if (target.windowId !== chat.windowId)
+    await tabs.move(target.id, { windowId: chat.windowId, index: -1 });
+  if (target.pinned !== chat.pinned) await tabs.update(target.id, { pinned: chat.pinned });
+  const current = await tabs.get(target.id);
+  if (current.groupId !== chat.groupId) {
+    if (chat.groupId >= 0) await tabs.group({ tabIds: [target.id], groupId: chat.groupId });
+    else if (current.groupId >= 0) await tabs.ungroup(target.id);
+  }
+  await makeAdjacent(tabs, chat.id, target.id);
+}
+async function makeAdjacent(tabs: SplitTabs, chatId: number, targetId: number): Promise<void> {
+  const chat = await tabs.get(chatId),
+    target = await tabs.get(targetId);
+  if (target.index === chat.index + 1) return;
+  await tabs.move(targetId, {
+    windowId: chat.windowId,
+    index: chat.index + (target.index > chat.index ? 1 : 0),
+  });
+}
+async function clearSplits(tabs: SplitTabs, ids: (number | undefined)[]): Promise<void> {
+  for (const id of new Set(ids)) if (id !== undefined && id >= 0) await tabs.unsplit?.(id);
+}
+function selectChat(candidates: SplitTab[], windowId: number): SplitTab | undefined {
+  return (
+    candidates.find((tab) => tab.active && tab.windowId === windowId) ??
+    candidates.find((tab) => tab.windowId === windowId) ??
+    candidates.find((tab) => tab.active)
+  );
+}
+function hasSplit(tab: SplitTab): boolean {
+  return tab.splitViewId !== undefined && tab.splitViewId >= 0;
+}
+function isChat(tab: SplitTab, chatId: string): boolean {
+  if (!tab.url?.startsWith(chrome.runtime.getURL("chat.html"))) return false;
+  return new URL(tab.url).searchParams.get("chatId") === chatId;
+}

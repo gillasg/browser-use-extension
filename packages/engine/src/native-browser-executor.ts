@@ -1,0 +1,615 @@
+import {
+  type BrowserExecutorRequest,
+  type BrowserExecutorResult,
+  type BrowserStep,
+  BrowserExecutorRequestSchema,
+  BrowserExecutorResultSchema,
+  BrowserOperationResultSchema,
+  type BrowserTargetKey,
+} from "@aeon/protocol";
+import {
+  withBrowserDebugger,
+  reconnectBrowserSession,
+  assertRequestActive,
+  bindBrowserSession,
+  handleBrowserRelease,
+  registerBrowserRequest,
+  completeBrowserRequest,
+} from "./native-browser-session.js";
+import {
+  discoverFrames,
+  frameDebuggee,
+  evaluateFrame,
+  uploadFiles,
+} from "./native-browser-frames.js";
+import { executeBrowserEvent, readDiagnostics } from "./native-browser-events.js";
+import { executeDownload } from "./native-browser-downloads.js";
+import {
+  executeInteraction,
+  interactFrame,
+  focusNode,
+  pressKey,
+  prepareElement,
+  performAction,
+} from "./native-browser-input.js";
+import { refreshInventoryTab, currentInventoryTabs } from "./native-inventory-client.js";
+import {
+  createSemanticNodes,
+  captureScreenshot,
+  observeSemantic,
+} from "./native-browser-observation.js";
+import {
+  type AxNode,
+  sameTarget,
+  BrowserActionError,
+  safePage,
+  browserErrorDetail,
+  errorCode,
+  sameIdentity,
+  targetIdentity,
+} from "./native-browser-common.js";
+import { selectorState, isFocusedInput } from "./native-browser-dom.js";
+import {
+  navigateReady,
+  executePageCode,
+  primeBrowserSettle,
+  settleBrowserPage,
+} from "./native-browser-navigation.js";
+import { executeSiteScript, handleScriptSync } from "./site-script-runtime.js";
+import { browserPopups } from "./native-browser-popup.js";
+import type { BrowserIdentity } from "./native-worker-identity.js";
+
+type Capability = Extract<
+  BrowserStep,
+  { op: "event" | "frames" | "upload" | "downloads" | "pointer" | "keys" | "reconnect" }
+>;
+export function isCapabilityStep(step: BrowserStep): step is Capability {
+  return ["event", "frames", "upload", "downloads", "pointer", "keys", "reconnect"].includes(
+    step.op,
+  );
+}
+type Request = BrowserExecutorRequest & { step: Capability };
+export async function performCapability(
+  request: Request,
+  revalidate: (request: BrowserExecutorRequest, tabId: number) => Promise<void>,
+): Promise<BrowserExecutorResult> {
+  const step = request.step,
+    tabId = step.target.tabId;
+  await revalidate(request, tabId);
+  if (step.op === "reconnect") await reconnectBrowserSession(tabId);
+  const data = await withBrowserDebugger(tabId, async (root) => {
+    await revalidate(request, tabId);
+    const debuggee =
+      "frameId" in step ? await frameDebuggee(root, step.frameId, step.frameKey) : root;
+    if (step.op === "event") return executeBrowserEvent({ ...request, step }, debuggee);
+    if (step.op === "frames") return executeFrame(root, debuggee, step);
+    if (step.op === "upload") return uploadFiles(debuggee, { ...request, step });
+    if (step.op === "downloads") return executeDownload({ ...request, step });
+    if (step.op === "pointer" || step.op === "keys") return executeInteraction(debuggee, step);
+    return { reconnected: true, handlesMustBeRefreshed: true };
+  });
+  if (JSON.stringify(data).length > 1_000_000)
+    throw new Error("Browser result exceeds 1 MB; select fewer fields or split the request");
+  assertRequestActive(request);
+  const tab = await refreshInventoryTab(tabId);
+  if (!tab || !sameTarget(tab.target, step.target)) throw new Error("TARGET_LOST");
+  return {
+    kind: "page",
+    source: "website",
+    trust: "untrusted",
+    target: tab.target,
+    documentEpoch: tab.documentEpoch,
+    url: tab.url,
+    data,
+  };
+}
+async function executeFrame(
+  root: chrome.debugger.Debuggee,
+  debuggee: chrome.debugger.Debuggee,
+  step: Extract<BrowserStep, { op: "frames" }>,
+): Promise<unknown> {
+  if (step.action === "list") return discoverFrames(root);
+  if (!step.frameId)
+    throw new Error(
+      "INVALID_TARGET: pass both frameId and frameKey from page.frames(); a frameKey alone is not a frame target",
+    );
+  if (step.action === "evaluate")
+    return evaluateFrame(debuggee, step.frameId, step.expression ?? "");
+  if (step.action === "click" || step.action === "fill") {
+    const element = step.selector ?? step.backendNodeId;
+    if (element === undefined) throw new Error("INVALID_TARGET");
+    return interactFrame(debuggee, step.frameId, element, frameValue(step));
+  }
+  if (step.action === "snapshot") return frameSnapshot(debuggee, step.frameId);
+  if (!step.method || /^(Browser|Target)\./.test(step.method)) throw new Error("UNSUPPORTED");
+  return chrome.debugger.sendCommand(debuggee, step.method, step.params);
+}
+async function frameSnapshot(
+  debuggee: chrome.debugger.Debuggee,
+  frameId: string,
+): Promise<unknown> {
+  const tree = (await chrome.debugger.sendCommand(debuggee, "Accessibility.getFullAXTree", {
+    frameId,
+  })) as { nodes: AxNode[] };
+  return createSemanticNodes(tree.nodes);
+}
+
+function frameValue(step: Extract<BrowserStep, { op: "frames" }>): string | undefined {
+  return step.action === "fill" ? (step.value ?? "") : undefined;
+}
+
+type ExtraRequest = BrowserExecutorRequest & {
+  step: Extract<
+    BrowserExecutorRequest["step"],
+    {
+      op:
+        | "press"
+        | "read"
+        | "wait"
+        | "navigate"
+        | "diagnostics"
+        | "siteScript"
+        | "popups"
+        | "evaluate"
+        | "cdp"
+        | "waitFor";
+    }
+  >;
+};
+export async function performExtra(
+  request: ExtraRequest,
+  revalidate: (request: BrowserExecutorRequest, tabId: number) => Promise<void>,
+): Promise<BrowserExecutorResult> {
+  const tabId = request.step.target.tabId;
+  let data: unknown;
+  if (request.step.op === "siteScript") {
+    await revalidate(request, tabId);
+    data = await executeSiteScript(
+      request.step.action,
+      tabId,
+      request.step.definition,
+      request.step.scriptId,
+      () => revalidate(request, tabId),
+    );
+  } else
+    data = await withBrowserDebugger(tabId, async (debuggee) => {
+      await revalidate(request, tabId);
+      if (
+        request.step.op === "evaluate" ||
+        request.step.op === "cdp" ||
+        request.step.op === "waitFor"
+      )
+        return executePageCode(debuggee, { ...request, step: request.step }, () =>
+          revalidate(request, tabId),
+        );
+      if (request.step.op === "press")
+        return pressElement(debuggee, request, () => revalidate(request, tabId));
+      if (request.step.op === "navigate") return navigateReady(tabId, request.step.url);
+      if (request.step.op === "diagnostics") return readDiagnostics(tabId, request.step.clear);
+      if (request.step.op === "popups") return { tabs: await browserPopups(tabId) };
+      return readOrWait(debuggee, request, () => revalidate(request, tabId));
+    });
+  const tab = await refreshInventoryTab(tabId);
+  assertRequestActive(request);
+  if (!tab || !sameTarget(tab.target, request.step.target) || !safePage(tab.url))
+    throw new Error("TARGET_LOST");
+  const encoded = JSON.stringify(data);
+  if (encoded && encoded.length > 1_000_000)
+    throw new BrowserActionError(
+      "UNSUPPORTED",
+      "Result exceeds 1 MB; extract in smaller batches and save artifacts.",
+    );
+  return {
+    kind: "page",
+    source: "website",
+    trust: "untrusted",
+    target: tab.target,
+    documentEpoch: tab.documentEpoch,
+    url: tab.url,
+    data,
+  };
+}
+async function readOrWait(
+  debuggee: chrome.debugger.Debuggee,
+  request: ExtraRequest,
+  revalidate: () => Promise<void>,
+): Promise<unknown> {
+  const step = request.step;
+  if (step.op === "read")
+    return evaluate(
+      debuggee,
+      `(${extract.toString()})(${JSON.stringify(step.selector)},${step.limit},${step.textLimit},${JSON.stringify(step.attributes)})`,
+    );
+  if (step.op !== "wait") throw new Error("UNSUPPORTED");
+  const deadline = Date.now() + step.timeoutMs;
+  while (Date.now() < deadline) {
+    await revalidate();
+    const found = await evaluate(
+      debuggee,
+      `(${selectorState.toString()})(${JSON.stringify(step.selector)},${JSON.stringify(step.state)})`,
+    );
+    if (found) return { found: true };
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new BrowserActionError(
+    "TIMEOUT",
+    `Selector ${JSON.stringify(step.selector)} did not become ${step.state} within ${step.timeoutMs}ms. Inspect the page or use another selector.`,
+  );
+}
+function extract(
+  selector: string,
+  limit: number,
+  textLimit: number,
+  attributes: string[],
+): unknown {
+  const elements = document.querySelectorAll(selector);
+  return {
+    count: elements.length,
+    truncated: elements.length > limit,
+    items: [...elements].slice(0, limit).map((element) => ({
+      text: ((element as HTMLElement).innerText ?? element.textContent ?? "")
+        .trim()
+        .slice(0, textLimit),
+      attributes: Object.fromEntries(
+        attributes.map((attribute) => [
+          attribute,
+          element.getAttribute(attribute)?.slice(0, textLimit) ?? null,
+        ]),
+      ),
+    })),
+  };
+}
+async function evaluate(debuggee: chrome.debugger.Debuggee, expression: string): Promise<unknown> {
+  const result = (await chrome.debugger.sendCommand(debuggee, "Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+  })) as {
+    result?: { value?: unknown };
+    exceptionDetails?: unknown;
+  };
+  if (result.exceptionDetails) throw new Error("INVALID_TARGET");
+  return result.result?.value;
+}
+
+async function pressElement(
+  debuggee: chrome.debugger.Debuggee,
+  request: ExtraRequest,
+  revalidate: () => Promise<void>,
+) {
+  if (request.step.op !== "press") throw new Error("INVALID_TARGET");
+  if (request.step.focus === false) {
+    const element = request.step.element;
+    if (element.kind === "backend" && element.documentEpoch !== request.expectedDocumentEpoch)
+      throw new Error("STALE_REF");
+    if (!(await isFocusedInput(debuggee))) throw new Error("NOT_EDITABLE");
+  } else {
+    const { node } = await prepareElement(debuggee, request, request.step.element, revalidate);
+    await focusNode(debuggee, node.backendNodeId);
+  }
+  await primeBrowserSettle(debuggee);
+  await revalidate();
+  await pressKey(debuggee, request.step.key);
+  return { pressed: request.step.key, settle: await settleBrowserPage(debuggee) };
+}
+
+export { releaseBrowserExecutor } from "./native-browser-session.js";
+
+const claimGenerations = new Map<string, number>();
+const usedClaims = new Set<string>();
+const targetChains = new Map<string, Promise<BrowserExecutorResult>>();
+
+export function handleBrowserExecutorMessage(
+  identity: BrowserIdentity,
+  socket: WebSocket,
+  candidate: unknown,
+): boolean {
+  if (handleScriptSync(candidate) || handleBrowserRelease(candidate)) return true;
+  const request = BrowserExecutorRequestSchema.safeParse(candidate);
+  if (!request.success) return false;
+  registerBrowserRequest(request.data);
+  if (needsClaim(request.data.step) && !claimIsFresh(request.data))
+    return respondFailure(socket, request.data, "CLAIM_CONFLICT");
+  const work = isTargetStep(request.data.step)
+    ? enqueueTarget(request.data.step.target, () => executeStep(identity, request.data))
+    : executeStep(identity, request.data);
+  void work.then(
+    (result) => sendResult(socket, request.data, result),
+    (error: unknown) =>
+      sendFailure(socket, request.data, errorCode(error), browserErrorDetail(error)),
+  );
+  return true;
+}
+
+function needsClaim(step: BrowserStep): boolean {
+  return step.op !== "listTabs" && step.op !== "openTab";
+}
+
+function claimIsFresh(request: BrowserExecutorRequest): boolean {
+  if (
+    !request.claimId ||
+    !request.claimGeneration ||
+    request.step.op === "listTabs" ||
+    request.step.op === "openTab" ||
+    request.step.op === "attachTab"
+  )
+    return false;
+  const key = targetIdentity(request.step.target);
+  const previous = claimGenerations.get(key) ?? 0;
+  if (request.claimGeneration <= previous || usedClaims.has(request.claimId)) return false;
+  usedClaims.add(request.claimId);
+  if (usedClaims.size > 2048) usedClaims.delete(usedClaims.values().next().value as string);
+  return true;
+}
+
+async function executeStep(
+  identity: BrowserIdentity,
+  request: BrowserExecutorRequest,
+): Promise<BrowserExecutorResult> {
+  const step = request.step;
+  assertRequestActive(request);
+  if (step.op === "listTabs") return listTabs(step.query);
+  if (step.op === "openTab") return openTab(identity, request);
+  if (step.op === "attachTab") throw new Error("UNSUPPORTED");
+  activateClaim(request);
+  const tab = await assertTarget(request);
+  bindBrowserSession(step.target.tabId, request.chatId);
+  if (isCapabilityStep(step)) return performCapability({ ...request, step }, revalidateTarget);
+  if (step.op === "observe")
+    return step.kind === "semantic"
+      ? observeSemantic(request, tab, revalidateTarget)
+      : captureScreenshot(request, tab, revalidateTarget);
+  if (step.op === "click" || step.op === "fill" || step.op === "scroll")
+    return performAction({ ...request, step }, revalidateTarget);
+  if (isExtraStep(step)) return performExtra({ ...request, step }, revalidateTarget);
+  throw new Error("UNSUPPORTED");
+}
+
+function listTabs(query: string | undefined): BrowserExecutorResult {
+  const tabs = currentInventoryTabs().filter((tab) => safePage(tab.url));
+  const filtered = query
+    ? tabs.filter((tab) => `${tab.title} ${tab.url}`.toLowerCase().includes(query.toLowerCase()))
+    : tabs;
+  return BrowserExecutorResultSchema.parse({ kind: "tabs", tabs: filtered.slice(0, 256) });
+}
+
+async function openTab(
+  identity: BrowserIdentity,
+  request: BrowserExecutorRequest,
+): Promise<BrowserExecutorResult> {
+  const step = validOpenTab(request, identity);
+  const created = await chrome.tabs.create({ url: "about:blank", active: step.foreground });
+  if (created.id === undefined) throw new Error("TARGET_LOST");
+  bindBrowserSession(created.id, request.chatId);
+  await withBrowserDebugger(created.id, () => navigateReady(created.id as number, step.url));
+  assertRequestActive(request);
+  const tab = await refreshInventoryTab(created.id);
+  if (!tab || !sameIdentity(tab.target, identity)) throw new Error("TARGET_LOST");
+  bindBrowserSession(created.id, request.chatId);
+  return BrowserExecutorResultSchema.parse({ kind: "tab", tab });
+}
+
+function validOpenTab(
+  request: BrowserExecutorRequest,
+  identity: BrowserIdentity,
+): Extract<BrowserStep, { op: "openTab" }> {
+  if (
+    request.step.op !== "openTab" ||
+    request.step.clientInstanceId !== identity.clientInstanceId ||
+    !safePage(request.step.url)
+  )
+    throw new Error("INVALID_TARGET");
+  return request.step;
+}
+
+async function assertTarget(request: BrowserExecutorRequest): Promise<chrome.tabs.Tab> {
+  if (!isTargetStep(request.step)) throw new Error("INVALID_TARGET");
+  const target = request.step.target;
+  const known = currentInventoryTabs().find((tab) => sameTarget(tab.target, target));
+  if (!inventoryMatchesRequest(known, request)) throw new Error("TARGET_LOST");
+  const live = await chrome.tabs.get(target.tabId).catch(() => undefined);
+  if (!live?.url || !safePage(live.url)) throw new Error("TARGET_LOST");
+  const refreshed = await refreshInventoryTab(target.tabId);
+  if (!inventoryMatchesRequest(refreshed, request)) throw new Error("TARGET_LOST");
+  return live;
+}
+
+function inventoryMatchesRequest(
+  tab: ReturnType<typeof currentInventoryTabs>[number] | undefined,
+  request: BrowserExecutorRequest,
+): boolean {
+  return Boolean(
+    tab &&
+    isTargetStep(request.step) &&
+    sameTarget(tab.target, request.step.target) &&
+    (request.step.op === "event" ||
+      request.step.op === "downloads" ||
+      tab.documentEpoch === request.expectedDocumentEpoch) &&
+    safePage(tab.url),
+  );
+}
+
+async function isLivePage(tabId: number): Promise<boolean> {
+  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+  return Boolean(tab?.url && safePage(tab.url));
+}
+
+async function revalidateTarget(request: BrowserExecutorRequest, tabId: number): Promise<void> {
+  assertClaimActive(request);
+  if (!isTargetStep(request.step) || request.step.target.tabId !== tabId)
+    throw new Error("INVALID_TARGET");
+  const current = await refreshInventoryTab(tabId);
+  if (!inventoryMatchesRequest(current, request)) throw new Error("TARGET_LOST");
+  if (!(await isLivePage(tabId))) throw new Error("TARGET_LOST");
+}
+
+function activateClaim(request: BrowserExecutorRequest): void {
+  if (!isTargetStep(request.step) || !request.claimGeneration || !request.claimId)
+    throw new Error("CLAIM_CONFLICT");
+  const key = targetIdentity(request.step.target);
+  if (request.claimGeneration <= (claimGenerations.get(key) ?? 0))
+    throw new Error("CLAIM_CONFLICT");
+  claimGenerations.set(key, request.claimGeneration);
+}
+
+function assertClaimActive(request: BrowserExecutorRequest): void {
+  assertRequestActive(request);
+  if (!isTargetStep(request.step) || !request.claimGeneration) throw new Error("CLAIM_CONFLICT");
+  if (claimGenerations.get(targetIdentity(request.step.target)) !== request.claimGeneration)
+    throw new Error("CLAIM_CONFLICT");
+}
+
+function enqueueTarget(
+  target: BrowserTargetKey,
+  action: () => Promise<BrowserExecutorResult>,
+): Promise<BrowserExecutorResult> {
+  const key = targetIdentity(target);
+  const previous = targetChains.get(key) ?? Promise.resolve(undefined);
+  const current = previous.catch(() => undefined).then(action);
+  targetChains.set(key, current);
+  const cleanup = () => {
+    if (targetChains.get(key) === current) targetChains.delete(key);
+  };
+  void current.then(cleanup, cleanup);
+  return current;
+}
+
+type TargetStep = Exclude<BrowserStep, { op: "listTabs" | "openTab" | "attachTab" }>;
+function isTargetStep(step: BrowserStep): step is TargetStep {
+  return !["listTabs", "openTab", "attachTab"].includes(step.op);
+}
+function isExtraStep(step: BrowserStep): step is Extract<
+  BrowserStep,
+  {
+    op:
+      | "press"
+      | "read"
+      | "wait"
+      | "navigate"
+      | "diagnostics"
+      | "siteScript"
+      | "popups"
+      | "evaluate"
+      | "cdp"
+      | "waitFor";
+  }
+> {
+  return [
+    "press",
+    "read",
+    "wait",
+    "navigate",
+    "diagnostics",
+    "siteScript",
+    "popups",
+    "evaluate",
+    "cdp",
+    "waitFor",
+  ].includes(step.op);
+}
+
+function sendResult(
+  socket: WebSocket,
+  request: BrowserExecutorRequest,
+  result: BrowserExecutorResult,
+): void {
+  completeBrowserRequest(request);
+  if (socket.readyState !== WebSocket.OPEN) return;
+  socket.send(
+    JSON.stringify(
+      BrowserOperationResultSchema.parse({
+        kind: "browser.operation.result",
+        requestId: request.requestId,
+        operationId: request.operationId,
+        ok: true,
+        result,
+      }),
+    ),
+  );
+}
+
+function sendFailure(
+  socket: WebSocket,
+  request: BrowserExecutorRequest,
+  code: string,
+  detail?: string,
+): void {
+  completeBrowserRequest(request);
+  if (socket.readyState !== WebSocket.OPEN) return;
+  const safe = [
+    "TARGET_LOST",
+    "AMBIGUOUS_TARGET",
+    "TARGET_NOT_FOUND",
+    "TARGET_HIDDEN",
+    "TARGET_DISABLED",
+    "TARGET_BLOCKED",
+    "NOT_EDITABLE",
+    "INPUT_FAILED",
+    "STALE_REF",
+    "CLAIM_CONFLICT",
+    "UNSUPPORTED",
+    "INVALID_TARGET",
+    "TIMEOUT",
+    "BROWSER_OFFLINE",
+    "DAEMON_OFFLINE",
+    "OPERATION_FAILED",
+  ].includes(code)
+    ? code
+    : "OPERATION_FAILED";
+  socket.send(
+    JSON.stringify(
+      BrowserOperationResultSchema.parse({
+        kind: "browser.operation.result",
+        requestId: request.requestId,
+        operationId: request.operationId,
+        ok: false,
+        code: safe,
+        ...(detail ? { detail } : {}),
+      }),
+    ),
+  );
+}
+
+function respondFailure(socket: WebSocket, request: BrowserExecutorRequest, code: string): true {
+  sendFailure(socket, request, code);
+  return true;
+}
+
+/** Runs one browser_code step inside the extension: same queueing, claims and target checks, no socket. */
+export async function executeLocalBrowserStep(
+  identity: BrowserIdentity,
+  chatId: string,
+  toolCallId: string,
+  operationId: string,
+  step: BrowserStep,
+): Promise<BrowserExecutorResult> {
+  const target = isTargetStep(step) ? step.target : undefined;
+  const known = target && currentInventoryTabs().find((tab) => sameTarget(tab.target, target));
+  if (target && !known) throw new Error("TARGET_LOST");
+  const key = target && targetIdentity(target);
+  const claimGeneration = key
+    ? Math.max((claimGenerations.get(key) ?? 0) + 1, Date.now() * 1000)
+    : undefined;
+  const request = BrowserExecutorRequestSchema.parse({
+    kind: "browser.operation",
+    requestId: crypto.randomUUID(),
+    operationId,
+    toolCallId,
+    chatId,
+    step,
+    ...(known
+      ? {
+          claimId: crypto.randomUUID(),
+          claimGeneration,
+          expectedDocumentEpoch: known.documentEpoch,
+        }
+      : {}),
+  });
+  registerBrowserRequest(request);
+  try {
+    return target
+      ? await enqueueTarget(target, () => executeStep(identity, request))
+      : await executeStep(identity, request);
+  } finally {
+    completeBrowserRequest(request);
+  }
+}

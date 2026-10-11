@@ -1,0 +1,19 @@
+{
+  "name": "@browser-use-extension/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser control engine for Chrome extensions: a persistent code runtime, tab ownership, input, observation, hand-off and network learning.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.6.0.tgz",
+    "acorn": "8.18.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.0"
+  }
+}

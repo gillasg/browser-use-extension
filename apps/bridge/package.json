@@ -1,0 +1,10 @@
+{
+  "name": "browser-use-extension",
+  "version": "0.1.0",
+  "description": "Let Claude Code, Codex and any MCP client use your real Chrome through the Browser Use Extension.",
+  "type": "module",
+  "bin": { "browser-use-extension": "dist/cli.js" },
+  "files": ["dist"],
+  "dependencies": { "ws": "8.22.0" },
+  "devDependencies": { "@types/node": "26.6.3", "@types/ws": "8.18.1" }
+}

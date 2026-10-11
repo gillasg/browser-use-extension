@@ -1,0 +1,115 @@
+// One chat's browser_code realm. Runs in a manifest sandbox page, where eval is allowed and
+// no extension APIs exist; every browser or workspace request goes to the parent document.
+import { toReplScript } from "./code-repl.js";
+import {
+  browserCapabilityApi,
+  browserCodeApi,
+  browserDocumentApi,
+  browserFastApi,
+} from "./code-api.js";
+
+type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
+const scope = globalThis as unknown as Record<string, unknown>;
+const evaluate = (source: string): unknown => (0, eval)(source);
+const pending = new Map<string, Waiter>();
+let cellId = "";
+let sequence = 0;
+let output = "";
+let asynchronousError: string | undefined;
+
+function format(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === undefined) return "undefined";
+  if (typeof value === "function") return `[Function ${value.name || "anonymous"}]`;
+  try {
+    return (
+      JSON.stringify(
+        value,
+        (_key, item: unknown) => (typeof item === "bigint" ? String(item) : item),
+        2,
+      ) ?? String(value)
+    );
+  } catch {
+    return String(value);
+  }
+}
+const print = (...values: unknown[]) => {
+  output += values.map(format).join(" ") + "\n";
+  if (output.length > 1_000_000)
+    output =
+      output.slice(0, 999_900) +
+      "\n[Console limit reached; save large data with artifact() instead.]\n";
+};
+scope.console = Object.freeze({ log: print, info: print, warn: print, error: print, debug: print });
+scope.__encodeBytes = (bytes: Uint8Array) => {
+  if (bytes.byteLength > 16_000_000) throw new Error("Binary artifact exceeds 16 MB; split it");
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  return btoa(binary);
+};
+scope.__call = (request: unknown) =>
+  new Promise((resolve, reject) => {
+    const callId = String(++sequence);
+    pending.set(callId, { resolve, reject });
+    parent.postMessage({ kind: "call", cellId, callId, request }, "*");
+  });
+evaluate([browserCodeApi, browserFastApi, browserCapabilityApi, browserDocumentApi].join("\n"));
+
+window.addEventListener("unhandledrejection", (event) => {
+  asynchronousError = event.reason instanceof Error ? event.reason.message : String(event.reason);
+  event.preventDefault();
+});
+
+window.addEventListener("message", (event) => {
+  if (event.source !== parent) return;
+  const message = event.data as Record<string, unknown>;
+  if (message.kind === "reply") {
+    const waiter = pending.get(String(message.callId));
+    pending.delete(String(message.callId));
+    if (typeof message.error === "string") waiter?.reject(new Error(message.error));
+    else waiter?.resolve(message.value);
+  } else if (message.kind === "cell") void run(message);
+});
+
+async function run(message: Record<string, unknown>): Promise<void> {
+  cellId = String(message.cellId);
+  output = "";
+  asynchronousError = undefined;
+  let value: unknown;
+  let error: string | undefined;
+  try {
+    evaluate("__beginCell()");
+    if (message.attached && !evaluate("__lastTarget"))
+      (scope.bu as { use(target: unknown): unknown }).use(message.attached);
+    value = await evaluate(toReplScript(String(message.code)));
+    const delivered = evaluate("__hasDelivered ? {value: __deliveryValue} : null") as {
+      value: unknown;
+    } | null;
+    if (delivered) value = delivered.value;
+  } catch (caught) {
+    error = caught instanceof Error ? caught.message : String(caught);
+  }
+  // Calls the cell started but did not await still finish before the final observation.
+  for (let waited = 0; pending.size && waited < 10_000; waited += 5)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  try {
+    await evaluate("__finishCell()");
+  } catch (caught) {
+    print("Final observation unavailable:", String(caught));
+  }
+  error ??= asynchronousError;
+  parent.postMessage(
+    { kind: "done", cellId, value: portable(value), output, ...(error ? { error } : {}) },
+    "*",
+  );
+}
+
+function portable(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  try {
+    return JSON.parse(JSON.stringify(value)) as unknown;
+  } catch {
+    return String(value);
+  }
+}
