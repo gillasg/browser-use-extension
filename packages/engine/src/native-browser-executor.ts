@@ -24,6 +24,7 @@ import {
 } from "./native-browser-frames.js";
 import { executeBrowserEvent, readDiagnostics } from "./native-browser-events.js";
 import { executeDownload } from "./native-browser-downloads.js";
+import { groupAgentTab } from "./native-browser-groups.js";
 import {
   executeInteraction,
   interactFrame,
@@ -380,6 +381,7 @@ async function openTab(
   const created = await chrome.tabs.create({ url: "about:blank", active: step.foreground });
   if (created.id === undefined) throw new Error("TARGET_LOST");
   bindBrowserSession(created.id, request.chatId);
+  await groupAgentTab(created.id, created.windowId, request.chatId);
   await withBrowserDebugger(created.id, () => navigateReady(created.id as number, step.url));
   assertRequestActive(request);
   const tab = await refreshInventoryTab(created.id);

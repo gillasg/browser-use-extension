@@ -14,6 +14,8 @@ import { currentInventoryTabs } from "./native-inventory-client.js";
 import { notePreviewActivity } from "./native-browser-preview.js";
 import { handOffToUser } from "./native-browser-handoff.js";
 import { networkCall } from "./native-browser-network.js";
+import { isLibraryRequest, libraryCall } from "./native-browser-library.js";
+import { rulesCall } from "./native-browser-rules.js";
 import type { BrowserIdentity } from "./native-worker-identity.js";
 
 const OFFSCREEN = "code-offscreen.html";
@@ -174,6 +176,9 @@ function serveCall(cell: Cell, value: Record<string, unknown> | null): Promise<u
     return handoff(cell, value.handoff);
   if (value && typeof value.network === "string")
     return networkCall(authorizedTarget(cell, value.target).tabId, value.network, value);
+  if (value && typeof value.rules === "string")
+    return rulesCall(authorizedTarget(cell, value.target).tabId, value);
+  if (value && isLibraryRequest(value)) return libraryCall(value);
   return callCore(cell, value);
 }
 

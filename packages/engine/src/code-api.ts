@@ -32,6 +32,18 @@ var browser = Object.freeze({
       foreground: options.foreground === true});
     return bu.use(result.tab.target);
   },
+  history: Object.freeze({
+    search: (text = "", options = {}) => __call({history:"search", text, ...options}),
+  }),
+  bookmarks: Object.freeze({
+    search: (query, options = {}) => __call({bookmarks:"search", query, ...options}),
+    tree: () => __call({bookmarks:"tree"}),
+    children: (id) => __call({bookmarks:"children", id}),
+    create: (bookmark) => __call({bookmarks:"create", ...bookmark}),
+    update: (id, changes) => __call({bookmarks:"update", id, ...changes}),
+    move: (id, destination) => __call({bookmarks:"move", id, ...destination}),
+    remove: (id, options = {}) => __call({bookmarks:"remove", id, ...options}),
+  }),
   attachTab: async (target) => {
     target = await __tabTarget(target);
     await __step({op:'attachTab', target});
@@ -78,6 +90,13 @@ var browser = Object.freeze({
     inspect: async (fn, arg) => (await __step({op:'evaluate',target,expression:__expression(fn,arg)},true)).data.value,
     pdfText: (options = {}) => browser.page(target).inspect(__readPdfText,options),
     cdp: async (method, params = {}) => (await __step({op:'cdp',target,method,params})).data.value,
+    rules: Object.freeze({
+      block: (options) => __call({rules:"block", target, ...options}),
+      headers: (headers) => __call({rules:"headers", target, headers}),
+      mock: (url, body, contentType) => __call({rules:"mock", target, url, body, contentType}),
+      list: () => __call({rules:"list", target}),
+      clear: () => __call({rules:"clear", target}),
+    }),
     network: Object.freeze({
       start: () => __call({network:'start', target}),
       list: (options = {}) => __call({network:'list', target, match: typeof options === 'string' ? options : options.match}),

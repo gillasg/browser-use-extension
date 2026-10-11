@@ -6,12 +6,18 @@ export interface EngineConfig {
   idleTitle: string;
   /** Extension-relative icon used for hand-off notifications. */
   notificationIcon: string;
+  /** Whether tabs an agent opens are grouped per session. */
+  tabGroups: boolean;
+  /** Label of a session's tab group. */
+  tabGroupTitle: (owner: string) => string;
 }
 
 export const engineConfig: EngineConfig = {
   controllingTitle: () => "An agent is controlling this tab",
   idleTitle: "Browser Use Extension",
   notificationIcon: "icon-128.png",
+  tabGroups: true,
+  tabGroupTitle: () => "Agent",
 };
 
 export function configureEngine(patch: Partial<EngineConfig>): void {

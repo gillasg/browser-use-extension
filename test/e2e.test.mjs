@@ -25,6 +25,11 @@ test(
     const home = await mkdtemp(join(tmpdir(), "bue-home-"));
     const env = { ...process.env, BROWSER_USE_EXTENSION_HOME: home };
     const site = createServer((request, response) => {
+      if (request.url?.startsWith("/api/language")) {
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ language: request.headers["accept-language"] }));
+        return;
+      }
       if (request.url?.startsWith("/api/items")) {
         response.setHeader("content-type", "application/json");
         response.end(JSON.stringify({ items: ["a", "b", "c"] }));
@@ -66,7 +71,7 @@ test(
         ],
         { stdio: "ignore" },
       );
-      await connectExtension(profile, env);
+      const worker = await connectExtension(profile, env);
 
       await t.test("the CLI runs a cell that opens a tab and acts on it", async () => {
         const { stdout } = await run(
@@ -98,6 +103,48 @@ test(
           { env },
         );
         assert.match(stdout, /→ \[\s*true,\s*true\s*\]/);
+      });
+
+      await t.test("agent tabs are grouped, and rules, history and bookmarks work", async () => {
+        const cell = (code) =>
+          run(process.execPath, [cli, "repl", "--session", "tools", code], { env });
+        const opened = await cell(
+          `page = await browser.openTab(${JSON.stringify(siteUrl)}); page.target.tabId`,
+        );
+        assert.match(opened.stdout, /→ \d+/, opened.stdout + opened.stderr);
+        const tabId = Number(/→ (\d+)/.exec(opened.stdout)[1]);
+        const grouped = await worker("Runtime.evaluate", {
+          expression: `chrome.tabs.get(${tabId}).then(async (t) => t.groupId === -1 ? null : (await chrome.tabGroups.get(t.groupId)).title)`,
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        assert.equal(grouped.result.result.value, "Agent");
+
+        const { stdout } = await cell(`
+          await page.rules.block({ urls: ["/api/items"] });
+          await page.rules.mock("/api/mocked", { mocked: true });
+          await page.rules.headers({ "Accept-Language": "hi-IN" });
+          const blocked = await page.evaluate(() => fetch("/api/items").then(() => "loaded", () => "blocked"));
+          const mocked = await page.evaluate(() => fetch("/api/mocked").then((r) => r.json()));
+          const language = (await page.fetchJson("/api/language")).language;
+          const rules = (await page.rules.list()).length;
+          await page.rules.clear();
+          const after = await page.evaluate(() => fetch("/api/items").then(() => "loaded", () => "blocked"));
+          const visited = (await browser.history.search("Shop", { days: 1 })).length > 0;
+          const mark = await browser.bookmarks.create({ title: "bue-test", url: ${JSON.stringify(siteUrl)} });
+          const found = (await browser.bookmarks.search("bue-test")).length;
+          await browser.bookmarks.remove(mark.id);
+          console.log("RESULT " + JSON.stringify({ blocked, mocked, language, rules, after, visited, found }))`);
+        assert.match(stdout, /RESULT /, stdout);
+        assert.deepEqual(JSON.parse(/RESULT (.*)/.exec(stdout)[1]), {
+          blocked: "blocked",
+          mocked: { mocked: true },
+          language: "hi-IN",
+          rules: 3,
+          after: "loaded",
+          visited: true,
+          found: 1,
+        });
       });
 
       await t.test("MCP lists the tools and runs browser_code", async () => {
@@ -200,6 +247,7 @@ async function connectExtension(profile, env) {
     const { stdout } = await run(process.execPath, [cli, "status"], { env });
     if (!/1 browser/.test(stdout)) throw new Error(stdout);
   }, 30000);
+  return cdp;
 }
 
 function nativeBootstrap(env) {

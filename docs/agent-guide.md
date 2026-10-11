@@ -113,6 +113,35 @@ await skills.save({
 });
 ```
 
+## History and bookmarks
+
+```js
+await browser.history.search("flights", { days: 7, max: 20 }); // [{url, title, lastVisit, visits}]
+await browser.bookmarks.search("recipes");
+await browser.bookmarks.tree(); // folders with link counts
+const folder = await browser.bookmarks.create({ parentId: "1", title: "Trips" });
+await browser.bookmarks.create({ parentId: folder.id, title: "Goa", url: "https://example.com" });
+await browser.bookmarks.move(bookmarkId, { parentId: folder.id });
+await browser.bookmarks.update(bookmarkId, { title: "Goa hotels" });
+await browser.bookmarks.remove(bookmarkId); // a folder with contents needs { recursive: true }
+```
+
+## Network rules for a tab
+
+Rules apply only to that tab, never to the user's other tabs, and end when the tab closes:
+
+```js
+await page.rules.block({ ads: true, trackers: true, banners: true }); // cleaner, faster pages
+await page.rules.block({ images: true, media: true, fonts: true });  // fast scraping
+await page.rules.block({ urls: ["||example.com/popup.js"] });
+await page.rules.headers({ "Accept-Language": "hi-IN" });           // what the site sees
+await page.rules.mock("||shop.test/api/stock", { inStock: true });   // fixed response, for testing
+await page.rules.list();
+await page.rules.clear();
+```
+
+Tabs the agent opens are grouped per session in the tab bar, so the user can see or close them together.
+
 ## Hand-off to the user
 
 Hand off when a step needs the user, such as signing in, entering a 2FA code, or making a choice only they can make:
