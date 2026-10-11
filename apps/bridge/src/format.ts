@@ -7,7 +7,8 @@ export function formatResult(result: Json): {
   images: { data: string; mimeType: string }[];
 } {
   const parts: string[] = [];
-  if (typeof result.output === "string" && result.output.trim()) parts.push(result.output.trimEnd());
+  if (typeof result.output === "string" && result.output.trim())
+    parts.push(result.output.trimEnd());
   if (result.value !== undefined) parts.push("→ " + stringify(result.value));
   if (result.error) parts.push("Error: " + String(result.error));
   if (result.reset) parts.push("(The REPL was reset; variables from earlier cells are gone.)");
@@ -16,9 +17,14 @@ export function formatResult(result: Json): {
     text = text.slice(0, MAX_TEXT) + `\n[... ${text.length - MAX_TEXT} more characters clipped]`;
   const images = ((result.steps as Json[] | undefined) ?? [])
     .map((step) => step.result as Json | undefined)
-    .filter((item): item is Json => item?.kind === "screenshot" && typeof item.dataBase64 === "string")
+    .filter(
+      (item): item is Json => item?.kind === "screenshot" && typeof item.dataBase64 === "string",
+    )
     .slice(-3)
-    .map((item) => ({ data: String(item.dataBase64), mimeType: String(item.mimeType ?? "image/png") }));
+    .map((item) => ({
+      data: String(item.dataBase64),
+      mimeType: String(item.mimeType ?? "image/png"),
+    }));
   return { text, images };
 }
 

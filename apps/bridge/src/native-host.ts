@@ -8,7 +8,12 @@ export async function runNativeHost(): Promise<void> {
   const request = await readFrame();
   const version = request?.protocolVersion ?? { major: 1, minor: 6 };
   if (request?.kind !== "native.bootstrap") {
-    writeFrame({ kind: "native.bootstrap.result", protocolVersion: version, ok: false, code: "BOOTSTRAP_UNAVAILABLE" });
+    writeFrame({
+      kind: "native.bootstrap.result",
+      protocolVersion: version,
+      ok: false,
+      code: "BOOTSTRAP_UNAVAILABLE",
+    });
     return;
   }
   try {
@@ -23,7 +28,12 @@ export async function runNativeHost(): Promise<void> {
       daemonProtocolVersion: version,
     });
   } catch {
-    writeFrame({ kind: "native.bootstrap.result", protocolVersion: version, ok: false, code: "DAEMON_OFFLINE" });
+    writeFrame({
+      kind: "native.bootstrap.result",
+      protocolVersion: version,
+      ok: false,
+      code: "DAEMON_OFFLINE",
+    });
   }
 }
 

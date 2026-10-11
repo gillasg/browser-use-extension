@@ -12,7 +12,7 @@ const usage = `browser-use-extension: let agents use your real Chrome.
   repl "<code>"         run a browser_code cell  [--session name] [--timeout ms]
   tabs                  list the browser's open tabs
   status                show whether a browser is connected
-  mcp                   run the stdio MCP server (for Claude Code, Codex, ...)
+  mcp                   run the stdio MCP server for coding agents and MCP clients
   serve                 run the bridge in the foreground`;
 
 async function main(argv: string[]): Promise<number> {
@@ -36,7 +36,8 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(nextSteps() + "\n");
     return 0;
   }
-  if (command === "repl" || command === "tabs" || command === "status") return client(command, rest);
+  if (command === "repl" || command === "tabs" || command === "status")
+    return client(command, rest);
   process.stdout.write(usage + "\n");
   return command ? 1 : 0;
 }
@@ -52,7 +53,9 @@ async function client(command: string, rest: string[]): Promise<number> {
     if (command === "tabs") {
       const reply = await bridge.request("tabs");
       for (const tab of (reply.tabs as Record<string, unknown>[] | undefined) ?? [])
-        process.stdout.write(`${String((tab.target as { tabId?: number })?.tabId)}\t${String(tab.title ?? "")}\t${String(tab.url ?? "")}\n`);
+        process.stdout.write(
+          `${String((tab.target as { tabId?: number })?.tabId)}\t${String(tab.title ?? "")}\t${String(tab.url ?? "")}\n`,
+        );
       return 0;
     }
     const code = rest.filter((_, index) => !isOption(rest, index)).join(" ");

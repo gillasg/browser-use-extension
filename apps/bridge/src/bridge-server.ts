@@ -162,7 +162,8 @@ export class Bridge {
       executor.tabs = new Map((message.tabs as Json[]).map((tab) => [tabIdOf(tab), tab]));
     else {
       const delta = message.delta as Json;
-      if (delta.kind === "tab.upsert") executor.tabs.set(tabIdOf(delta.tab as Json), delta.tab as Json);
+      if (delta.kind === "tab.upsert")
+        executor.tabs.set(tabIdOf(delta.tab as Json), delta.tab as Json);
       else if (delta.kind === "tab.remove")
         executor.tabs.delete(Number((delta.target as Json | undefined)?.tabId));
     }
@@ -212,9 +213,7 @@ export class Bridge {
       if (request.kind === "status") respond({ browsers: this.executors.size });
       else if (request.kind === "tabs") respond({ tabs: this.tabs() });
       else if (request.kind === "run")
-        void this.run(request, (event) => send(socket, { id: request.id, ...event })).then(
-          respond,
-        );
+        void this.run(request, (event) => send(socket, { id: request.id, ...event })).then(respond);
       else respond({ error: "Unknown request" });
     });
   }
@@ -279,7 +278,9 @@ function tabIdOf(tab: Json): number {
 export function sessionId(name: string): string {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(name))
     return name;
-  const hex = createHash("sha256").update("session:" + name).digest("hex");
+  const hex = createHash("sha256")
+    .update("session:" + name)
+    .digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 

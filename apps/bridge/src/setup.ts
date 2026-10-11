@@ -69,7 +69,16 @@ async function register(manifest: string): Promise<void> {
     if (process.platform === "win32") {
       execFileSync(
         "reg.exe",
-        ["add", `HKCU\\${browser.win}\\${NATIVE_HOST}`, "/ve", "/t", "REG_SZ", "/d", manifest, "/f"],
+        [
+          "add",
+          `HKCU\\${browser.win}\\${NATIVE_HOST}`,
+          "/ve",
+          "/t",
+          "REG_SZ",
+          "/d",
+          manifest,
+          "/f",
+        ],
         { stdio: "ignore", windowsHide: true },
       );
       continue;
@@ -82,19 +91,17 @@ async function register(manifest: string): Promise<void> {
 }
 
 export function nextSteps(): string {
-  const command = `"${process.execPath}" "${cli}" mcp`;
   return [
     "Native host registered for Chrome, Edge and Brave.",
     "",
     "1. Load the extension: open chrome://extensions, turn on Developer mode, click",
     `   "Load unpacked" and choose: ${extensionBuild}`,
     "2. Connect an agent:",
-    `   Claude Code:  claude mcp add browser-use-extension -- ${command}`,
     `   Codex:        add to ~/.codex/config.toml:`,
     `                 [mcp_servers.browser-use-extension]`,
     `                 command = ${JSON.stringify(process.execPath)}`,
     `                 args = [${JSON.stringify(cli)}, "mcp"]`,
     `   Any MCP client: {"command": ${JSON.stringify(process.execPath)}, "args": [${JSON.stringify(cli)}, "mcp"]}`,
-    "3. Try it: browser-use-extension repl \"(await browser.tabs()).length\"",
+    '3. Try it: browser-use-extension repl "(await browser.tabs()).length"',
   ].join("\n");
 }

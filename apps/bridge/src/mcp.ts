@@ -12,10 +12,14 @@ const tools = [
     inputSchema: {
       type: "object",
       properties: {
-        code: { type: "string", description: "JavaScript to run; the last expression is returned." },
+        code: {
+          type: "string",
+          description: "JavaScript to run; the last expression is returned.",
+        },
         session: {
           type: "string",
-          description: "Optional REPL session name; cells in the same session share variables and tabs.",
+          description:
+            "Optional REPL session name; cells in the same session share variables and tabs.",
         },
         timeoutMs: { type: "integer", minimum: 1000, maximum: 600000 },
       },
@@ -25,7 +29,8 @@ const tools = [
   },
   {
     name: "browser_tabs",
-    description: "List the open tabs of the connected browser, with the target to pass to browser.attachTab().",
+    description:
+      "List the open tabs of the connected browser, with the target to pass to browser.attachTab().",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
 ];
@@ -60,13 +65,15 @@ async function handle(message: Json, bridge: () => Promise<BridgeClient>): Promi
   const params = (message.params ?? {}) as Json;
   if (message.method === "initialize")
     return {
-      protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : "2025-06-18",
+      protocolVersion:
+        typeof params.protocolVersion === "string" ? params.protocolVersion : "2025-06-18",
       capabilities: { tools: {} },
       serverInfo: { name: "browser-use-extension", version: "0.1.0" },
     };
   if (message.method === "ping") return {};
   if (message.method === "tools/list") return { tools };
-  if (message.method !== "tools/call") throw new Error(`Unsupported method: ${String(message.method)}`);
+  if (message.method !== "tools/call")
+    throw new Error(`Unsupported method: ${String(message.method)}`);
   const args = (params.arguments ?? {}) as Json;
   const client = await bridge();
   if (params.name === "browser_tabs") {
@@ -83,7 +90,11 @@ async function handle(message: Json, bridge: () => Promise<BridgeClient>): Promi
   return {
     content: [
       { type: "text", text: formatted.text },
-      ...formatted.images.map((image) => ({ type: "image", data: image.data, mimeType: image.mimeType })),
+      ...formatted.images.map((image) => ({
+        type: "image",
+        data: image.data,
+        mimeType: image.mimeType,
+      })),
     ],
     isError: Boolean(result.error),
   };

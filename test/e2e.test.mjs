@@ -31,7 +31,9 @@ test(
         return;
       }
       response.setHeader("content-type", "text/html");
-      response.end(`<title>Shop</title><h1>Shop</h1><button onclick="document.title='bought'">Buy</button>`);
+      response.end(
+        `<title>Shop</title><h1>Shop</h1><button onclick="document.title='bought'">Buy</button>`,
+      );
     });
     await new Promise((done) => site.listen(0, "127.0.0.1", done));
     const siteUrl = `http://127.0.0.1:${site.address().port}/`;
@@ -39,7 +41,9 @@ test(
     const profile = await mkdtemp(join(tmpdir(), "bue-chrome-"));
     let chrome;
     try {
-      const state = await waitFor(async () => JSON.parse(await readFile(join(home, "bridge.json"), "utf8")));
+      const state = await waitFor(async () =>
+        JSON.parse(await readFile(join(home, "bridge.json"), "utf8")),
+      );
 
       await t.test("the native host answers the extension with the bridge endpoint", async () => {
         const reply = await nativeBootstrap(env);
@@ -67,7 +71,11 @@ test(
       await t.test("the CLI runs a cell that opens a tab and acts on it", async () => {
         const { stdout } = await run(
           process.execPath,
-          [cli, "repl", `page = await browser.openTab(${JSON.stringify(siteUrl)}); const s = await bu.state(); await bu.click(/\\[(\\d+)\\] button "Buy"/.exec(s)[1]); await page.evaluate(() => document.title)`],
+          [
+            cli,
+            "repl",
+            `page = await browser.openTab(${JSON.stringify(siteUrl)}); const s = await bu.state(); await bu.click(/\\[(\\d+)\\] button "Buy"/.exec(s)[1]); await page.evaluate(() => document.title)`,
+          ],
           { env },
         );
         assert.match(stdout, /button "Buy"/);
@@ -82,7 +90,10 @@ test(
       await t.test("MCP lists the tools and runs browser_code", async () => {
         const mcp = mcpClient(env);
         try {
-          const init = await mcp.call("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+          const init = await mcp.call("initialize", {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+          });
           assert.equal(init.serverInfo.name, "browser-use-extension");
           const listed = await mcp.call("tools/list", {});
           assert.deepEqual(
@@ -107,12 +118,24 @@ test(
       await t.test("site skills saved by one agent are offered to another", async () => {
         await run(
           process.execPath,
-          [cli, "repl", "--session", "one", `await skills.save({name: 'shop-buy', domains: ['127.0.0.1'], description: 'Buys the item', code: "var shop = {title: () => page.evaluate(() => document.title)}"})`],
+          [
+            cli,
+            "repl",
+            "--session",
+            "one",
+            `await skills.save({name: 'shop-buy', domains: ['127.0.0.1'], description: 'Buys the item', code: "var shop = {title: () => page.evaluate(() => document.title)}"})`,
+          ],
           { env },
         );
         const { stdout } = await run(
           process.execPath,
-          [cli, "repl", "--session", "two", `page = await browser.openTab(${JSON.stringify(siteUrl)}); await bu.state()`],
+          [
+            cli,
+            "repl",
+            "--session",
+            "two",
+            `page = await browser.openTab(${JSON.stringify(siteUrl)}); await bu.state()`,
+          ],
           { env },
         );
         assert.match(stdout, /Site skills .*shop-buy/);
@@ -122,8 +145,12 @@ test(
       bridge.kill();
       site.close();
       await sleep(300);
-      await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {});
-      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {});
+      await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(
+        () => {},
+      );
+      await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(
+        () => {},
+      );
     }
   },
 );
@@ -143,7 +170,10 @@ async function connectExtension(profile, env) {
   const reply = await nativeBootstrap(env);
   const cdp = await connect(worker.webSocketDebuggerUrl);
   await waitFor(async () => {
-    const ready = await cdp("Runtime.evaluate", { expression: "typeof chrome?.runtime?.id", returnByValue: true });
+    const ready = await cdp("Runtime.evaluate", {
+      expression: "typeof chrome?.runtime?.id",
+      returnByValue: true,
+    });
     if (ready.result?.result?.value !== "string") throw new Error("worker not ready");
   });
   await cdp("Runtime.evaluate", {
@@ -161,7 +191,11 @@ async function connectExtension(profile, env) {
 
 function nativeBootstrap(env) {
   return new Promise((resolveReply, reject) => {
-    const host = spawn(process.execPath, [cli, "chrome-extension://dmlgohfphkbenjopdphcojgjeidlmajj/"], { env });
+    const host = spawn(
+      process.execPath,
+      [cli, "chrome-extension://dmlgohfphkbenjopdphcojgjeidlmajj/"],
+      { env },
+    );
     const chunks = [];
     host.stdout.on("data", (chunk) => chunks.push(chunk));
     host.on("error", reject);
@@ -202,7 +236,9 @@ function mcpClient(env) {
     call: (method, params) =>
       new Promise((done, fail) => {
         const my = ++id;
-        waiting.set(my, (message) => (message.error ? fail(new Error(message.error.message)) : done(message.result)));
+        waiting.set(my, (message) =>
+          message.error ? fail(new Error(message.error.message)) : done(message.result),
+        );
         child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: my, method, params }) + "\n");
       }),
     close: () => child.kill(),
