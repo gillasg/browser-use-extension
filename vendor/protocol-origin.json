@@ -1,10 +1,10 @@
 {
   "package": "@aeon/protocol",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "source": "https://github.com/gillasg/core",
-  "revision": "ade03b156c7de7b539f00e60189b7d96c922c42c",
+  "revision": "ceac81bbacb5b2d8fe8be3e5f5e403b793988790",
   "sourceDirty": false,
-  "sourceSnapshotSha256": "8fbcd25af7380842d6f10e27f02a2318bcc68b7fb47fd01aa2b6616100330dc4",
-  "file": "aeon-protocol-0.6.0.tgz",
-  "sha256": "92c7360b6512f47176c7e7b75c87f8a2fa5388cdf2e175796cad3a020d5f3a67"
+  "sourceSnapshotSha256": "5430043ae7d4db845752663f7f25bd943878817c761e8a862bf6fa1d65ebc0d2",
+  "file": "aeon-protocol-0.7.0.tgz",
+  "sha256": "8799296306cc00c59f2a6b32b751e08b79ce281cd73da88cf3377cfe19b24dac"
 }

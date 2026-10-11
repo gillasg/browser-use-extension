@@ -7,7 +7,7 @@
     "build": "node scripts/build.mjs"
   },
   "dependencies": {
-    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.6.0.tgz",
+    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.7.0.tgz",
     "@browser-use-extension/engine": "workspace:*"
   },
   "devDependencies": {

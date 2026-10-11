@@ -39,8 +39,8 @@ importers:
   apps/extension:
     dependencies:
       "@aeon/protocol":
-        specifier: file:../../vendor/aeon-protocol-0.6.0.tgz
-        version: file:vendor/aeon-protocol-0.6.0.tgz
+        specifier: file:../../vendor/aeon-protocol-0.7.0.tgz
+        version: file:vendor/aeon-protocol-0.7.0.tgz
       "@browser-use-extension/engine":
         specifier: workspace:*
         version: link:../../packages/engine
@@ -62,20 +62,20 @@ importers:
         version: 4.6.5
     devDependencies:
       "@aeon/protocol":
-        specifier: file:../../vendor/aeon-protocol-0.6.0.tgz
-        version: file:vendor/aeon-protocol-0.6.0.tgz
+        specifier: file:../../vendor/aeon-protocol-0.7.0.tgz
+        version: file:vendor/aeon-protocol-0.7.0.tgz
       "@types/chrome":
         specifier: 0.3.0
         version: 0.3.0
 
 packages:
-  "@aeon/protocol@file:vendor/aeon-protocol-0.6.0.tgz":
+  "@aeon/protocol@file:vendor/aeon-protocol-0.7.0.tgz":
     resolution:
       {
-        integrity: sha512-+1ShNYbxcX1+9doSG43YELORgTFfJV0Uqpfu6qNs8NthbE/76u+i0viW8II0v4Xo5MZiZvxZf/yVGG+z6C1C6w==,
-        tarball: file:vendor/aeon-protocol-0.6.0.tgz,
+        integrity: sha512-IeKT09sxqW9RkVpBzoFwXFeLRRfcFoY9GkjNVuidCby8SSl6XxG+3le1iuL5yFSkjJCbUvn2B+wZ9cN2UsZetg==,
+        tarball: file:vendor/aeon-protocol-0.7.0.tgz,
       }
-    version: 0.6.0
+    version: 0.7.0
 
   "@esbuild/aix-ppc64@0.28.2":
     resolution:
@@ -407,7 +407,7 @@ packages:
       }
 
 snapshots:
-  "@aeon/protocol@file:vendor/aeon-protocol-0.6.0.tgz":
+  "@aeon/protocol@file:vendor/aeon-protocol-0.7.0.tgz":
     dependencies:
       zod: 4.6.5
 

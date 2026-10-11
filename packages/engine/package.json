@@ -14,13 +14,13 @@
   },
   "devDependencies": {
     "@types/chrome": "0.3.0",
-    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.6.0.tgz"
+    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.7.0.tgz"
   },
   "files": [
     "src",
     "assets"
   ],
   "peerDependencies": {
-    "@aeon/protocol": "0.6.0"
+    "@aeon/protocol": ">=0.6.0"
   }
 }
