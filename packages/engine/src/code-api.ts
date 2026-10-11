@@ -30,11 +30,12 @@ var browser = Object.freeze({
     }
     const result = await __step({op:'openTab', clientInstanceId, url,
       foreground: options.foreground === true});
-    return browser.page(result.tab.target);
+    return bu.use(result.tab.target);
   },
   attachTab: async (target) => {
+    target = await __tabTarget(target);
     await __step({op:'attachTab', target});
-    return browser.page(target);
+    return bu.use(target);
   },
   page: (target) => (__lastTarget = target, Object.freeze({
     target,
@@ -115,6 +116,14 @@ var browser = Object.freeze({
 export const browserFastApi = `
 var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __lastTarget;
 var __key = target => JSON.stringify(target);
+// A bare tab id from browser.tabs() or a step line stands for that tab's full target.
+async function __tabTarget(target) {
+  if (typeof target !== 'number') return target;
+  var find = () => [...__tabs.values()].find(tab => tab.target.tabId === target);
+  var tab = find() || (await browser.tabs(), find());
+  if (!tab) throw Error('TARGET_LOST: no open tab ' + target);
+  return tab.target;
+}
 function __beginCell() { __dirty.clear(); __hasDelivered=false; __deliveryValue=undefined; }
 async function __step(step, readOnly = false) {
   if (step.target) __lastTarget = step.target;
@@ -124,6 +133,7 @@ async function __step(step, readOnly = false) {
   if (action) __dirty.set(__key(step.target), step.target);
   var result = await __call(step);
   if (result.kind === 'tab') { __lastTarget = result.tab.target; __tabs.set(__key(__lastTarget),result.tab); }
+  if (result.kind === 'tabs') for (var tab of result.tabs) __tabs.set(__key(tab.target),tab);
   var observation = result.kind === 'semantic' ? result : result.observation;
   if (observation) {
     __states.set(__key(step.target), observation);
@@ -179,7 +189,10 @@ function __formatState(state, max = 3000) {
 }
 Object.defineProperty(globalThis,'page',{value:undefined,writable:true,configurable:true});
 var bu = Object.freeze({
-  use: target => { __lastTarget = target; globalThis.page = browser.page(target); return globalThis.page; },
+  use: target => {
+    if (typeof target === 'number') return __tabTarget(target).then(bu.use);
+    __lastTarget = target; globalThis.page = browser.page(target); return globalThis.page;
+  },
   state: async (options = {}) => {
     var target = options.target || __lastTarget;
     if (!target) throw Error('Use bu.use(attachedTarget) or browser.page(target) first');

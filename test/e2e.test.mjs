@@ -87,6 +87,19 @@ test(
         assert.match(stdout, new RegExp("→ " + siteUrl.replaceAll(".", "\\.")));
       });
 
+      await t.test("openTab makes the new tab current and bu.use takes a tab id", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            `const first = page.target.tabId; await browser.openTab(${JSON.stringify(siteUrl + "api/items")}); const opened = page.url; await bu.use(first); [opened.endsWith("/api/items"), page.target.tabId === first]`,
+          ],
+          { env },
+        );
+        assert.match(stdout, /→ \[\s*true,\s*true\s*\]/);
+      });
+
       await t.test("MCP lists the tools and runs browser_code", async () => {
         const mcp = mcpClient(env);
         try {
