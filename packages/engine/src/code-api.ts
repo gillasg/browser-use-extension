@@ -144,7 +144,7 @@ function __element(target, element) {
   if (typeof element !== 'number' && typeof element !== 'string') return element;
   var state = __states.get(__key(target));
   if (!state) throw Error('Observe this page with bu.state() before using an id');
-  var node = state.nodes.find(n => n.backendNodeId === element || n.ref === element);
+  var node = state.nodes.find(n => n.backendNodeId === element || n.ref === element || (typeof element === "string" && n.backendNodeId === Number(element)));
   if (!node) throw Error('STALE_REF: id absent from the latest state; observe again');
   return node.backendNodeId ? {kind:'backend',backendNodeId:node.backendNodeId,documentEpoch:state.documentEpoch}
     : {kind:'ref',snapshotId:state.snapshotId,ref:node.ref};

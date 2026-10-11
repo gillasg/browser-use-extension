@@ -9,11 +9,18 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.6.0.tgz",
     "acorn": "8.18.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@types/chrome": "0.3.0"
+    "@types/chrome": "0.3.0",
+    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.6.0.tgz"
+  },
+  "files": [
+    "src",
+    "assets"
+  ],
+  "peerDependencies": {
+    "@aeon/protocol": "0.6.0"
   }
 }

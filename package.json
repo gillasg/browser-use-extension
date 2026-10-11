@@ -9,7 +9,8 @@
     "format": "prettier --write \"apps/**/*.{ts,mjs,json,html}\" \"packages/**/*.{ts,mjs,json}\" \"test/*.mjs\" \"*.{json,yaml}\"",
     "format:check": "prettier --check \"apps/**/*.{ts,mjs,json,html}\" \"packages/**/*.{ts,mjs,json}\" \"test/*.mjs\" \"*.{json,yaml}\"",
     "test": "pnpm build && node --test",
-    "check": "pnpm format:check && pnpm typecheck && pnpm test"
+    "check": "pnpm format:check && pnpm typecheck && pnpm test",
+    "export:engine": "node scripts/export-engine.mjs"
   },
   "devDependencies": {
     "@types/node": "26.6.3",
