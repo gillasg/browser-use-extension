@@ -60,7 +60,7 @@ await bu.type(815, "headphones", { enter: true }); // replaces text; also choose
 await page.scroll("down", 800);
 await page.scrollToEnd();
 await page.navigate("https://shop.test/cart");
-await page.keyboard("Control+a");
+await page.keyboard("ControlOrMeta+a"); // Cmd on macOS, Ctrl elsewhere
 ```
 
 Do not add sleeps: actions wait for the page to settle. If an id is gone (`STALE_REF`), call `bu.state()` again.
