@@ -71,6 +71,8 @@ test(
           "--no-first-run",
           "--no-default-browser-check",
           "--headless=new",
+          // Linux CI runners forbid the user namespaces Chrome's sandbox needs.
+          ...(process.platform === "linux" && process.env.CI ? ["--no-sandbox"] : []),
           "about:blank",
         ],
         { stdio: "ignore" },
