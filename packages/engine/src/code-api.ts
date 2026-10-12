@@ -10,8 +10,8 @@ function __geolocationShim(coords) {
   geo.watchPosition = (ok, fail, options) => real.watch(ok, fallback(ok, fail), options);
   Object.defineProperty(geo, "__aeonShim", { value: true });
 }
-function __locator(target, element) {
-  return Object.freeze({
+function __locator(target, element, index) {
+  return Object.freeze(__extendLocator(target, element, {
     element,
     click: () => __step({op:'click',target,element,observe:false}),
     fill: (value) => __step({op:'fill',target,element,value,observe:false}),
@@ -24,7 +24,7 @@ function __locator(target, element) {
       if (element.kind !== 'query' || element.by !== 'css') throw Error('Scope with a CSS locator');
       return __locator(target,{kind:'query',by:'css',value:selector,scope:element.value});
     },
-  });
+  }, index));
 }
 var browser = Object.freeze({
   waitFor: (event, options = {}) => __event(options.target || __lastTarget,event,options),
@@ -65,11 +65,13 @@ var browser = Object.freeze({
     await __step({op:'attachTab', target});
     return bu.use(target);
   },
-  page: (target) => (__lastTarget = target, Object.freeze({
+  page: (target) => (__lastTarget = target, Object.freeze(__extendPage(target, {
     target,
-    get url() { return __states.get(__key(target))?.url || __tabs.get(__key(target))?.url; },
-    get title() { return __tabs.get(__key(target))?.title; },
-    [Symbol.for('nodejs.util.inspect.custom')]() { return {target,url:this.url,title:this.title}; },
+    // Both page.url / page.title (properties) and page.url() / await page.title() (Playwright) work.
+    get url() { return __callableString(() => __states.get(__key(target))?.url || __tabs.get(__key(target))?.url); },
+    get title() { return __callableString(() => __tabs.get(__key(target))?.title,
+      () => browser.page(target).inspect(() => document.title)); },
+    [Symbol.for('nodejs.util.inspect.custom')]() { return {target,url:String(this.url),title:String(this.title)}; },
     waitForEvent: (event, options = {}) => __event(target,event,options),
     expect: async (event, action, options = {}) => {var wait=__event(target,event,options);await wait.ready;try {await action();return await wait;}catch(error){await wait.dispose().catch(()=>{});throw error;}},
     frames: async () => (await __step({op:'frames',target,action:'list'})).data.map(info=>__framePage(target,info)),
@@ -160,7 +162,7 @@ var browser = Object.freeze({
       }
       return {reachedEnd:false, reason:'step_limit', steps:maxSteps, scroll:last.scroll};
     },
-  })),
+  }))),
 });
 `;
 export const browserFastApi = `
@@ -202,6 +204,9 @@ function __element(target, element) {
     throw Error('INVALID_ELEMENT: use page.getByText(text).click(), page.locator(css).click(), an observed id, or a target with kind');
   }
   if (typeof element !== 'number' && typeof element !== 'string') return element;
+  // A string that is not an observed id is a CSS selector, as in Playwright's page.click(selector).
+  var looksLikeId = typeof element === 'number' || /^(\\d+|e\\d+|[a-z]\\d+)$/i.test(element);
+  if (!looksLikeId) return {kind:'query',by:'css',value:element};
   var state = __states.get(__key(target));
   if (!state) throw Error('Observe this page with bu.state() before using an id');
   var node = state.nodes.find(n => n.backendNodeId === element || n.ref === element || (typeof element === "string" && n.backendNodeId === Number(element)));

@@ -14,9 +14,23 @@ const COLORS = [
   "grey",
 ] as const;
 const groups = new Map<string, number>();
+// Tabs opened together (Promise.all) would each see "no group yet" and make their own; grouping
+// for one owner runs in order so the first creates the group and the rest join it.
+const pending = new Map<string, Promise<void>>();
 
-export async function groupAgentTab(tabId: number, windowId: number, owner: string): Promise<void> {
-  if (!engineConfig.tabGroups || typeof chrome.tabGroups === "undefined") return;
+export function groupAgentTab(tabId: number, windowId: number, owner: string): Promise<void> {
+  if (!engineConfig.tabGroups || typeof chrome.tabGroups === "undefined") return Promise.resolve();
+  const run = (pending.get(owner) ?? Promise.resolve()).then(() =>
+    joinGroup(tabId, windowId, owner),
+  );
+  pending.set(owner, run);
+  void run.finally(() => {
+    if (pending.get(owner) === run) pending.delete(owner);
+  });
+  return run;
+}
+
+async function joinGroup(tabId: number, windowId: number, owner: string): Promise<void> {
   try {
     const existing = await reusableGroup(owner, windowId);
     const groupId = await chrome.tabs.group(

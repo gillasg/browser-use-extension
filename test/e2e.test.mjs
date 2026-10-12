@@ -29,6 +29,17 @@ test(
     const home = await mkdtemp(join(tmpdir(), "bue-home-"));
     const env = { ...process.env, BROWSER_USE_EXTENSION_HOME: home };
     const site = createServer((request, response) => {
+      if (request.url?.startsWith("/catalog")) {
+        response.setHeader("content-type", "text/html");
+        response.end(
+          `<title>Catalog</title><h1>Catalog</h1><input id="q" placeholder="Search">
+          <ul><li>Alpha</li><li>Beta</li><li>Gamma</li></ul>
+          <button onclick="document.getElementById('out').textContent='added'">Add</button><p id="out"></p>
+          <table><tr><th>Model</th><th>Price</th></tr><tr><td>iPhone 16</td><td>69,900</td></tr><tr><td>iPhone 16 Plus</td><td>79,900</td></tr></table>
+          <a href="/catalog?page=2">Next page</a>`,
+        );
+        return;
+      }
       if (request.url?.startsWith("/api/language")) {
         response.setHeader("content-type", "application/json");
         response.end(JSON.stringify({ language: request.headers["accept-language"] }));
@@ -181,6 +192,74 @@ test(
           cursor: true,
         });
       });
+
+      await t.test(
+        "Playwright-style calls, extraction, one group for parallel tabs, Google parsing",
+        async () => {
+          const catalog = siteUrl + "catalog";
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "playwright",
+              `page = await browser.openTab(${JSON.stringify(catalog)});
+            const title = await page.title();
+            const url = page.url();
+            const count = await page.locator("li").count();
+            const second = await page.locator("li").nth(1).innerText();
+            const texts = await page.locator("li").allInnerTexts();
+            const heading = await page.$eval("h1", (el) => el.textContent);
+            const items = await page.$$eval("li", (els) => els.length);
+            await page.getByRole("button", { name: "Add" }).click();
+            const added = await page.textContent("#out");
+            await page.fill("#q", "phones");
+            const typed = await page.inputValue("#q");
+            const rows = await page.table("table");
+            const links = (await page.links()).map((link) => link.text);
+            const tabs = await Promise.all(["a", "b", "c"].map((q) => browser.openTab(${JSON.stringify(siteUrl)} + "?q=" + q)));
+            const sample = '<div data-rpos="0"><a href="/url?q=https://example.com/one"><h3>One result</h3></a><span>First snippet</span></div>' +
+              '<div data-rpos="1"><a href="https://www.google.com/x"><h3>Google itself</h3></a></div>';
+            const parsed = __parseGoogle(sample, 5);
+            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed,
+              tabIds: tabs.map((tab) => tab.target.tabId) }))`,
+            ],
+            { env },
+          );
+          assert.match(stdout, /RESULT /, stdout);
+          const result = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+          assert.equal(result.title, "Catalog");
+          assert.equal(result.url, catalog);
+          assert.equal(result.count, 3);
+          assert.equal(result.second, "Beta");
+          assert.deepEqual(result.texts, ["Alpha", "Beta", "Gamma"]);
+          assert.equal(result.heading, "Catalog");
+          assert.equal(result.items, 3);
+          assert.equal(result.added, "added");
+          assert.equal(result.typed, "phones");
+          assert.deepEqual(result.rows, [
+            { Model: "iPhone 16", Price: "69,900" },
+            { Model: "iPhone 16 Plus", Price: "79,900" },
+          ]);
+          assert.ok(result.links.includes("Next page"));
+          assert.deepEqual(result.parsed, [
+            {
+              title: "One result",
+              url: "https://example.com/one",
+              source: "example.com",
+              snippet: "First snippet",
+            },
+          ]);
+          const groups = await worker("Runtime.evaluate", {
+            expression: `Promise.all(${JSON.stringify(result.tabIds)}.map((id) => chrome.tabs.get(id))).then((tabs) => [...new Set(tabs.map((tab) => tab.groupId))])`,
+            awaitPromise: true,
+            returnByValue: true,
+          });
+          assert.equal(groups.result.result.value.length, 1, "parallel tabs share one group");
+          assert.notEqual(groups.result.result.value[0], -1);
+        },
+      );
 
       await t.test("MCP lists the tools and runs browser_code", async () => {
         const mcp = mcpClient(env);

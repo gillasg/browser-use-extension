@@ -65,6 +65,43 @@ await page.keyboard("ControlOrMeta+a"); // Cmd on macOS, Ctrl elsewhere
 
 Do not add sleeps: actions wait for the page to settle. If an id is gone (`STALE_REF`), call `bu.state()` again.
 
+## Playwright-style API
+
+`page` and its locators answer to the Playwright names agents already know:
+
+```js
+await page.goto("https://shop.test/");
+await page.title(); page.url();                      // page.url and page.title also work as properties
+await page.locator("li").count();
+await page.locator("li").nth(1).innerText();
+await page.locator(".price").allInnerTexts();
+await page.getByRole("button", { name: "Add to cart" }).click();
+await page.getByLabel("Email").fill("me@example.com");
+await page.$eval("h1", (el) => el.textContent);
+await page.$$eval("a", (links) => links.map((a) => a.href));
+await page.fill("#q", "headphones"); await page.keyboard.press("Enter");
+await page.waitForSelector(".results");
+```
+
+Big pages: scope the state with `bu.state({ selector: "#results" })` or `bu.state({ query: "price" })`. Structured data: `await page.table("table")` returns rows keyed by header, and `await page.links()` returns `{ text, href }`.
+
+## Google search in the browser
+
+```js
+await google.search("PVR showtimes Delhi tomorrow", { limit: 5 }); // [{ title, url, source, snippet }]
+```
+
+It runs a real Google search with the user's cookies, region and language, so results are local and live. Run searches one after another, never in parallel.
+
+## Working rules
+
+- **Do the whole task yourself.** Hand off only for what only the user can do: their password, a 2FA code or a payment.
+- **Clear obstacles first:** pop-ups, cookie banners, and delivery, location or pincode prompts. Use what the page already tells you, and state assumptions in the answer.
+- **Apply the site's own search and filters** before browsing results.
+- **Look properly before saying something is missing:** scroll, search the page, or try another URL.
+- **Never repeat a failing action more than twice:** change strategy instead.
+- **Check every part of the request** against what you actually saw before answering. Never invent values, and say which facts came from search and which from the site.
+
 ## Raw access
 
 Use raw access when a helper is not enough:

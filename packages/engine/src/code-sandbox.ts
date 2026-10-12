@@ -7,6 +7,7 @@ import {
   browserDocumentApi,
   browserFastApi,
 } from "./code-api.js";
+import { browserPlaywrightApi } from "./code-api-playwright.js";
 
 type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 const scope = globalThis as unknown as Record<string, unknown>;
@@ -20,6 +21,8 @@ let asynchronousError: string | undefined;
 function format(value: unknown): string {
   if (typeof value === "string") return value;
   if (value === undefined) return "undefined";
+  // page.url and page.title are callable strings; print them as the string they stand for.
+  if (typeof value === "function" && Symbol.toPrimitive in value) return String(value);
   if (typeof value === "function") return `[Function ${value.name || "anonymous"}]`;
   try {
     return (
@@ -54,7 +57,15 @@ scope.__call = (request: unknown) =>
     pending.set(callId, { resolve, reject });
     parent.postMessage({ kind: "call", cellId, callId, request }, "*");
   });
-evaluate([browserCodeApi, browserFastApi, browserCapabilityApi, browserDocumentApi].join("\n"));
+evaluate(
+  [
+    browserCodeApi,
+    browserFastApi,
+    browserCapabilityApi,
+    browserDocumentApi,
+    browserPlaywrightApi,
+  ].join("\n"),
+);
 
 window.addEventListener("unhandledrejection", (event) => {
   asynchronousError = event.reason instanceof Error ? event.reason.message : String(event.reason);

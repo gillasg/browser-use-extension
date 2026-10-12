@@ -13,10 +13,12 @@ import { browserSessionOwner } from "./native-browser-session.js";
 import { currentInventoryTabs } from "./native-inventory-client.js";
 import { notePreviewActivity } from "./native-browser-preview.js";
 import { handOffToUser } from "./native-browser-handoff.js";
+import { presentBrowserTask } from "./native-browser-layout.js";
 import { networkCall } from "./native-browser-network.js";
 import { isLibraryRequest, libraryCall } from "./native-browser-library.js";
 import { rulesCall } from "./native-browser-rules.js";
 import { permissionCall } from "./native-browser-permissions.js";
+import { googleCall } from "./native-browser-google.js";
 import type { BrowserIdentity } from "./native-worker-identity.js";
 
 const OFFSCREEN = "code-offscreen.html";
@@ -182,6 +184,7 @@ function serveCall(cell: Cell, value: Record<string, unknown> | null): Promise<u
   if (value && value.permission === "set")
     return permissionCall(authorizedTarget(cell, value.target).tabId, value);
   if (value && isLibraryRequest(value)) return libraryCall(value);
+  if (value && typeof value.google === "string") return googleCall(value);
   return callCore(cell, value);
 }
 
@@ -232,6 +235,8 @@ async function handoff(cell: Cell, request: object): Promise<"done" | "cancelled
   const { message } = request as { message?: unknown };
   const target = authorizedTarget(cell, (request as { target?: unknown }).target);
   void notePreviewActivity(cell.run.chatId, target.tabId);
+  // The user needs to see the tab: pair it beside its Chat in Split View, whatever the view setting.
+  void presentBrowserTask(cell.run.chatId, target.tabId, true);
   const text = String(message ?? "").slice(0, 500) || "Please take over, then click Done.";
   const entry: Record<string, unknown> = {
     index: cell.steps.length,
