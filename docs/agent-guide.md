@@ -21,19 +21,23 @@ This guide is for agents using browser-use-extension, and for people writing pro
 
 ```js
 page = await browser.openTab("https://example.com"); // opens in the background and becomes the current page
-await browser.openTab("https://example.org");        // now page and bu point at this tab
-await bu.use(firstTabId);                            // switch back by tab id
-const tabs = await browser.tabs("example");          // search open tabs by title or URL
-await browser.attachTab(tabs[0].target.tabId);       // take over one of the user's tabs
-page.url; page.title;                                // properties, not functions
-await page.close();                                  // close a tab you opened
+await browser.openTab("https://example.org"); // now page and bu point at this tab
+await bu.use(firstTabId); // switch back by tab id
+const tabs = await browser.tabs("example"); // search open tabs by title or URL
+await browser.attachTab(tabs[0].target.tabId); // take over one of the user's tabs
+page.url;
+page.title; // properties, not functions
+await page.close(); // close a tab you opened
 ```
 
 Several tabs can be driven in one call, in parallel:
 
 ```js
 const [a, b] = await Promise.all([browser.openTab(urlA), browser.openTab(urlB)]);
-const [ta, tb] = await Promise.all([a.evaluate(() => document.title), b.evaluate(() => document.title)]);
+const [ta, tb] = await Promise.all([
+  a.evaluate(() => document.title),
+  b.evaluate(() => document.title),
+]);
 ```
 
 ## Looking and acting
@@ -71,7 +75,8 @@ Do not add sleeps: actions wait for the page to settle. If an id is gone (`STALE
 
 ```js
 await page.goto("https://shop.test/");
-await page.title(); page.url();                      // page.url and page.title also work as properties
+await page.title();
+page.url(); // page.url and page.title also work as properties
 await page.locator("li").count();
 await page.locator("li").nth(1).innerText();
 await page.locator(".price").allInnerTexts();
@@ -79,7 +84,8 @@ await page.getByRole("button", { name: "Add to cart" }).click();
 await page.getByLabel("Email").fill("me@example.com");
 await page.$eval("h1", (el) => el.textContent);
 await page.$$eval("a", (links) => links.map((a) => a.href));
-await page.fill("#q", "headphones"); await page.keyboard.press("Enter");
+await page.fill("#q", "headphones");
+await page.keyboard.press("Enter");
 await page.waitForSelector(".results");
 ```
 
@@ -98,12 +104,15 @@ It runs a real Google search with the user's cookies, region and language, so re
 - **Browser first.** Anything on a specific site, or anything live, comes from that site in the browser: search snippets go stale. Use search to find which page to open.
 - **Check the date.** Before any task with a date or relative time ("tomorrow", "this week"), run `new Date().toString()`: it is the user's real local date and time zone.
 - **Autocomplete fields** (airports, cities, addresses): type, wait for the suggestions, then click the matching option.
+- **Read each form field back** after filling it, before moving to the next.
+- **`TARGET_BLOCKED`** means something covers the control, and the error names it. Act inside that dialog or close it.
+- **Errors are not a block.** Before leaving a site, try at least two other ways of using it: its own search URL or parameters, the keyboard, the dialog that opened, screenshots, or its JSON APIs. Only a bot wall, an access-denied page or a sign-in wall justifies falling back early.
 - **Do the whole task yourself.** Hand off only for what only the user can do: their password, a 2FA code or a payment.
 - **Clear obstacles first:** pop-ups, cookie banners, and delivery, location or pincode prompts. Use what the page already tells you, and state assumptions in the answer.
 - **Apply the site's own search and filters** before browsing results.
 - **Look properly before saying something is missing:** scroll, search the page, or try another URL.
 - **Never repeat a failing action more than twice:** change strategy instead.
-- **Check every part of the request** against what you actually saw before answering. Never invent values, and say which facts came from search and which from the site.
+- **Check every part of the request** against what you actually saw before answering. Never invent values, and say which facts came from search and which from the site. If something cannot be done, say what you tried and give the closest facts you did verify, each with its source.
 
 ## Raw access
 
@@ -112,10 +121,14 @@ Use raw access when a helper is not enough:
 ```js
 await page.evaluate(() => [...document.querySelectorAll("h2")].map((h) => h.innerText));
 await page.waitFor(() => document.querySelector(".results"), { timeoutMs: 10000 });
-await page.cdp("Emulation.setGeolocationOverride", { latitude: 28.6, longitude: 77.2, accuracy: 10 });
-await page.screenshot();               // for visual questions
+await page.cdp("Emulation.setGeolocationOverride", {
+  latitude: 28.6,
+  longitude: 77.2,
+  accuracy: 10,
+});
+await page.screenshot(); // for visual questions
 await page.screenshot({ labels: true }); // draws bu ids on elements
-await page.clickAt(400, 300);          // viewport coordinates
+await page.clickAt(400, 300); // viewport coordinates
 await page.upload("input[type=file]", ["C:/path/file.pdf"]);
 await page.download(url);
 ```
@@ -127,8 +140,8 @@ Most sites load their data as JSON. Record it once, then call it directly:
 ```js
 await page.network.start();
 // ...do the flow once with clicks...
-await page.network.list("/api");       // fetch/XHR calls: id, url, method, status, json
-await page.network.body(id);           // one response
+await page.network.list("/api"); // fetch/XHR calls: id, url, method, status, json
+await page.network.body(id); // one response
 await page.fetchJson("/api/items?page=2"); // call an endpoint with the user's session
 ```
 
@@ -172,7 +185,7 @@ Chrome's permission prompts (location, notifications, camera…) are browser UI 
 
 ```js
 await page.permissions.allow("location"); // or block / reset; also notifications, camera, microphone, popups, downloads
-await page.setLocation(28.61, 77.21);     // browse as if in Delhi (also allows location)
+await page.setLocation(28.61, 77.21); // browse as if in Delhi (also allows location)
 ```
 
 ## Network rules for a tab
@@ -181,10 +194,10 @@ Rules apply only to that tab, never to the user's other tabs, and end when the t
 
 ```js
 await page.rules.block({ ads: true, trackers: true, banners: true }); // cleaner, faster pages
-await page.rules.block({ images: true, media: true, fonts: true });  // fast scraping
+await page.rules.block({ images: true, media: true, fonts: true }); // fast scraping
 await page.rules.block({ urls: ["||example.com/popup.js"] });
-await page.rules.headers({ "Accept-Language": "hi-IN" });           // what the site sees
-await page.rules.mock("||shop.test/api/stock", { inStock: true });   // fixed response, for testing
+await page.rules.headers({ "Accept-Language": "hi-IN" }); // what the site sees
+await page.rules.mock("||shop.test/api/stock", { inStock: true }); // fixed response, for testing
 await page.rules.list();
 await page.rules.clear();
 ```
@@ -206,7 +219,7 @@ The tab comes to the front with the message and **Done / Cancel** buttons. The c
 
 ```js
 await artifact("results.json", JSON.stringify(rows)); // write a file to the session workspace
-await checkpoint("progress", { done: 40 });           // survives runtime resets
+await checkpoint("progress", { done: 40 }); // survives runtime resets
 await loadCheckpoint("progress");
 ```
 
@@ -214,11 +227,11 @@ For long lists, checkpoint as you go and continue until every item is done.
 
 ## Errors
 
-| Error | What to do |
-|---|---|
-| `STALE_REF` | The page changed. Call `bu.state()` and use the new ids. |
-| `TARGET_LOST` | The tab is gone. Reopen it by URL only if needed. |
-| `HANDOFF_CANCELLED` | The user declined. Ask before trying again. |
-| `BROWSER_OFFLINE` | No browser is connected. The extension must be loaded and connected. |
+| Error               | What to do                                                           |
+| ------------------- | -------------------------------------------------------------------- |
+| `STALE_REF`         | The page changed. Call `bu.state()` and use the new ids.             |
+| `TARGET_LOST`       | The tab is gone. Reopen it by URL only if needed.                    |
+| `HANDOFF_CANCELLED` | The user declined. Ask before trying again.                          |
+| `BROWSER_OFFLINE`   | No browser is connected. The extension must be loaded and connected. |
 
 After an action whose outcome is unclear, inspect before repeating it. Verify the requested result before reporting success.

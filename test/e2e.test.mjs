@@ -223,11 +223,14 @@ test(
             await page.getByRole("button", { name: /^ad+$/i }).click();
             const regexClick = await page.textContent("#out");
             const viaTab = String((await browser.tab(page.target.tabId)).url);
+            await page.evaluate(() => { const d = document.createElement("div"); d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "Enter your origin"); d.style.cssText = "position:fixed;inset:0;background:#fff"; d.innerHTML = '<input aria-label="Where else?">'; document.body.append(d); });
+            const blocked = await page.getByRole("button", { name: "Add" }).click().then(() => "clicked", (error) => String(error.message || error));
+            await page.evaluate(() => document.querySelector("[role=dialog]").remove());
             const tabs = await Promise.all(["a", "b", "c"].map((q) => browser.openTab(${JSON.stringify(siteUrl)} + "?q=" + q)));
             const sample = '<div data-rpos="0"><a href="/url?q=https://example.com/one"><h3>One result</h3></a><span>First snippet</span></div>' +
               '<div data-rpos="1"><a href="https://www.google.com/x"><h3>Google itself</h3></a></div>';
             const parsed = __parseGoogle(sample, 5);
-            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed, regexText, regexClick, viaTab,
+            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed, regexText, regexClick, viaTab, blocked,
               tabIds: tabs.map((tab) => tab.target.tabId) }))`,
             ],
             { env },
@@ -245,6 +248,10 @@ test(
           assert.equal(result.regexText, "Gamma");
           assert.equal(result.regexClick, "added");
           assert.equal(result.viaTab, catalog);
+          assert.match(
+            result.blocked,
+            /TARGET_BLOCKED: covered by dialog "Enter your origin"; its fields: "Where else."/,
+          );
           assert.equal(result.typed, "phones");
           assert.deepEqual(result.rows, [
             { Model: "iPhone 16", Price: "69,900" },

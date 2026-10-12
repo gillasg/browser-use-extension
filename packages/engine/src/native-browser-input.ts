@@ -19,7 +19,7 @@ import {
   screenshotPoint,
   observeSemantic,
 } from "./native-browser-observation.js";
-import { type AxRef, safePage } from "./native-browser-common.js";
+import { type AxRef, BrowserActionError, safePage } from "./native-browser-common.js";
 import {
   viewportFingerprint,
   primeBrowserSettle,
@@ -56,7 +56,34 @@ export async function actionablePoint(
     prior = current;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error("TARGET_BLOCKED");
+  const cover = await onNode<string>(debuggee, id, coveringElement).catch(() => "");
+  throw cover ? new BrowserActionError("TARGET_BLOCKED", cover) : new Error("TARGET_BLOCKED");
+}
+// Names what sits on top of the target, so the agent acts in the open dialog or closes the
+// overlay instead of retrying the covered control.
+function coveringElement(this: HTMLElement): string {
+  const box = this.getBoundingClientRect();
+  const x = Math.min(Math.max(box.left + box.width / 2, 0), innerWidth - 1);
+  const y = Math.min(Math.max(box.top + box.height / 2, 0), innerHeight - 1);
+  const hit = (this.getRootNode() as Document | ShadowRoot).elementFromPoint(x, y);
+  if (!hit) return "";
+  const layer =
+    hit.closest(
+      "dialog,[role=dialog],[role=alertdialog],[role=listbox],[role=menu],[aria-modal]",
+    ) ?? hit;
+  const label = (el: Element) =>
+    (el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 60);
+  const role = layer.getAttribute("role") || layer.tagName.toLowerCase();
+  const fields = [...layer.querySelectorAll("input,textarea,select,[role=combobox]")]
+    .slice(0, 5)
+    .map((el) => `"${label(el) || el.getAttribute("name") || "field"}"`);
+  const parts = [`covered by ${role} "${label(layer)}"`];
+  if (fields.length) parts.push(`its fields: ${fields.join(", ")}`);
+  parts.push("act inside it (bu.state() shows its ids) or close it first");
+  return parts.join("; ");
 }
 function hitPoint(this: HTMLElement) {
   const box = this.getBoundingClientRect();
