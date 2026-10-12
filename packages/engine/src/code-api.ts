@@ -1,5 +1,15 @@
 // The browser_code page API, evaluated once in each chat's sandbox realm. Browser steps go through __call.
 export const browserCodeApi = `
+function __geolocationShim(coords) {
+  var geo = navigator.geolocation;
+  if (!geo || geo.__aeonShim) return;
+  var real = { get: geo.getCurrentPosition.bind(geo), watch: geo.watchPosition.bind(geo) };
+  var position = () => ({ coords: { ...coords, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });
+  var fallback = (ok, fail) => (error) => (error && error.code === 1 ? ok(position()) : fail && fail(error));
+  geo.getCurrentPosition = (ok, fail, options) => real.get(ok, fallback(ok, fail), options);
+  geo.watchPosition = (ok, fail, options) => real.watch(ok, fallback(ok, fail), options);
+  Object.defineProperty(geo, "__aeonShim", { value: true });
+}
 function __locator(target, element) {
   return Object.freeze({
     element,
@@ -104,6 +114,11 @@ var browser = Object.freeze({
     setLocation: async (latitude, longitude, accuracy = 50) => {
       await __call({permission:'set', target, type:'location', setting:'allow'});
       await __step({op:'cdp', target, method:'Emulation.setGeolocationOverride', params:{latitude, longitude, accuracy}});
+      // When the OS has location turned off, Chrome still denies the request; answer it with the
+      // chosen coordinates instead, on this page and on pages this tab loads later.
+      const shim = '(' + __geolocationShim.toString() + ')(' + JSON.stringify({latitude, longitude, accuracy}) + ')';
+      await __step({op:'cdp', target, method:'Page.addScriptToEvaluateOnNewDocument', params:{source: shim}});
+      await __step({op:'evaluate', target, expression: shim});
       return {latitude, longitude};
     },
     rules: Object.freeze({

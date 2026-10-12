@@ -1,6 +1,6 @@
 {
   "name": "@browser-use-extension/engine",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "description": "Browser control engine for Chrome extensions: a persistent code runtime, tab ownership, input, observation, hand-off and network learning.",
