@@ -6,7 +6,10 @@ export function dataDirectory(): string {
   if (process.env.BROWSER_USE_EXTENSION_HOME) return process.env.BROWSER_USE_EXTENSION_HOME;
   if (process.platform === "win32" && process.env.LOCALAPPDATA)
     return join(process.env.LOCALAPPDATA, "browser-use-extension");
-  return join(homedir(), ".browser-use-extension");
+  if (process.platform === "darwin")
+    return join(homedir(), "Library", "Application Support", "browser-use-extension");
+  const xdg = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
+  return join(xdg, "browser-use-extension");
 }
 
 export const statePath = (): string => join(dataDirectory(), "bridge.json");

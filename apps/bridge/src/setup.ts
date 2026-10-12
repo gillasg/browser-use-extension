@@ -22,6 +22,11 @@ const browsers: Record<string, { win: string; mac: string; linux: string }> = {
     mac: "Library/Application Support/Microsoft Edge/NativeMessagingHosts",
     linux: ".config/microsoft-edge/NativeMessagingHosts",
   },
+  chromium: {
+    win: "Software\\Chromium\\NativeMessagingHosts",
+    mac: "Library/Application Support/Chromium/NativeMessagingHosts",
+    linux: ".config/chromium/NativeMessagingHosts",
+  },
   brave: {
     win: "Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts",
     mac: "Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts",
@@ -92,7 +97,7 @@ async function register(manifest: string): Promise<void> {
 
 export function nextSteps(): string {
   return [
-    "Native host registered for Chrome, Edge and Brave.",
+    "Native host registered for Chrome, Edge, Chromium and Brave.",
     "",
     "1. Load the extension: open chrome://extensions, turn on Developer mode, click",
     `   "Load unpacked" and choose: ${extensionBuild}`,

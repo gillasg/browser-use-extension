@@ -20,7 +20,11 @@ const run = promisify(execFile);
 
 test(
   "agents drive real Chrome through the bridge, the CLI and MCP",
-  { skip: !existsSync(chromePath) || !existsSync(extension) || !existsSync(cli) },
+  {
+    skip:
+      !process.env.REQUIRE_E2E &&
+      (!existsSync(chromePath) || !existsSync(extension) || !existsSync(cli)),
+  },
   async (t) => {
     const home = await mkdtemp(join(tmpdir(), "bue-home-"));
     const env = { ...process.env, BROWSER_USE_EXTENSION_HOME: home };

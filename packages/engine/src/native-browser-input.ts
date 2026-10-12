@@ -202,6 +202,14 @@ export async function executeInteraction(
   }
   return { clicked: true };
 }
+const IS_MAC = /Mac/i.test(globalThis.navigator?.platform ?? "");
+const MAC_COMMANDS: Record<string, string> = {
+  a: "selectAll",
+  c: "copy",
+  v: "paste",
+  x: "cut",
+  z: "undo",
+};
 async function keyboard(debuggee: chrome.debugger.Debuggee, combo: string): Promise<unknown> {
   const parts = combo.split("+"),
     key = parts.pop();
@@ -216,8 +224,9 @@ async function keyboard(debuggee: chrome.debugger.Debuggee, combo: string): Prom
   };
   let modifiers = 0;
   for (const part of parts) {
-    if (!masks[part]) throw new Error("Unknown modifier: " + part);
-    modifiers |= masks[part];
+    const mask = part === "ControlOrMeta" || part === "Mod" ? (IS_MAC ? 4 : 2) : masks[part];
+    if (!mask) throw new Error("Unknown modifier: " + part);
+    modifiers |= mask;
   }
   const names: Record<string, number> = {
     Enter: 13,
@@ -239,10 +248,13 @@ async function keyboard(debuggee: chrome.debugger.Debuggee, combo: string): Prom
     names[key] ?? (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
   if (!windowsVirtualKeyCode) throw new Error("Unsupported key");
   const params = { key: key === "Space" ? " " : key, modifiers, windowsVirtualKeyCode };
+  // macOS runs Cmd shortcuts as editing commands, which synthetic key events do not trigger alone.
+  const command = IS_MAC && modifiers === 4 ? MAC_COMMANDS[key.toLowerCase()] : undefined;
   await chrome.debugger.sendCommand(debuggee, "Input.dispatchKeyEvent", {
     type: "keyDown",
     ...params,
     ...(!modifiers && key.length === 1 ? { text: key } : {}),
+    ...(command ? { commands: [command] } : {}),
   });
   await chrome.debugger.sendCommand(debuggee, "Input.dispatchKeyEvent", {
     type: "keyUp",
