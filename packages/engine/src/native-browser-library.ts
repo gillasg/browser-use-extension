@@ -6,12 +6,16 @@ type Request = Record<string, unknown>;
 
 export function isLibraryRequest(value: Request | null): boolean {
   return Boolean(
-    value && (typeof value.history === "string" || typeof value.bookmarks === "string"),
+    value &&
+    (typeof value.history === "string" ||
+      typeof value.bookmarks === "string" ||
+      typeof value.downloads === "string"),
   );
 }
 
 export function libraryCall(value: Request): Promise<unknown> {
   if (typeof value.history === "string") return historyCall(value.history, value);
+  if (typeof value.downloads === "string") return downloadsCall(value.downloads, value);
   return bookmarksCall(String(value.bookmarks), value);
 }
 
@@ -28,6 +32,26 @@ async function historyCall(action: string, value: Request): Promise<unknown> {
     title: item.title,
     lastVisit: item.lastVisitTime ? new Date(item.lastVisitTime).toISOString() : undefined,
     visits: item.visitCount,
+  }));
+}
+
+// Recent downloads, so the agent can find a file the user or a page just saved.
+async function downloadsCall(action: string, value: Request): Promise<unknown> {
+  if (action !== "list") throw new Error("UNSUPPORTED: browser.downloads." + action);
+  const items = await chrome.downloads.search({
+    query: value.text ? [String(value.text)] : [],
+    orderBy: ["-startTime"],
+    limit: limit(value.max, 20),
+  });
+  return items.map((item) => ({
+    downloadId: item.id,
+    filename: item.filename,
+    url: item.finalUrl || item.url,
+    state: item.state,
+    bytes: item.totalBytes,
+    mime: item.mime,
+    started: item.startTime,
+    exists: item.exists,
   }));
 }
 

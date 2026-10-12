@@ -226,11 +226,21 @@ test(
             await page.evaluate(() => { const d = document.createElement("div"); d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "Enter your origin"); d.style.cssText = "position:fixed;inset:0;background:#fff"; d.innerHTML = '<input aria-label="Where else?">'; document.body.append(d); });
             const blocked = await page.getByRole("button", { name: "Add" }).click().then(() => "clicked", (error) => String(error.message || error));
             await page.evaluate(() => document.querySelector("[role=dialog]").remove());
+            await page.console({ clear: true });
+            await page.evaluate(() => console.error("boom from page"));
+            const consoleErrors = (await page.console({ errors: true })).map((entry) => entry.text).join(" ");
+            await page.dialogs("dismiss");
+            const confirmed = await page.evaluate(() => window.confirm("Remove item?"));
+            const pdf = await page.pdf("catalog.pdf");
+            await page.emulate({ device: "iPhone", colorScheme: "dark" });
+            const mobile = await page.evaluate(() => ({ w: screen.width, dark: matchMedia("(prefers-color-scheme: dark)").matches, ua: /iPhone/.test(navigator.userAgent) }));
+            await page.emulate({ reset: true });
+            const downloads = Array.isArray(await browser.downloads.list());
             const tabs = await Promise.all(["a", "b", "c"].map((q) => browser.openTab(${JSON.stringify(siteUrl)} + "?q=" + q)));
             const sample = '<div data-rpos="0"><a href="/url?q=https://example.com/one"><h3>One result</h3></a><span>First snippet</span></div>' +
               '<div data-rpos="1"><a href="https://www.google.com/x"><h3>Google itself</h3></a></div>';
             const parsed = __parseGoogle(sample, 5);
-            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed, regexText, regexClick, viaTab, blocked,
+            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed, regexText, regexClick, viaTab, blocked, consoleErrors, confirmed, pdf, mobile, downloads,
               tabIds: tabs.map((tab) => tab.target.tabId) }))`,
             ],
             { env },
@@ -248,6 +258,11 @@ test(
           assert.equal(result.regexText, "Gamma");
           assert.equal(result.regexClick, "added");
           assert.equal(result.viaTab, catalog);
+          assert.match(result.consoleErrors, /boom from page/);
+          assert.equal(result.confirmed, false);
+          assert.deepEqual(result.pdf, { saved: "catalog.pdf" });
+          assert.deepEqual(result.mobile, { w: 390, dark: true, ua: true });
+          assert.equal(result.downloads, true);
           assert.match(
             result.blocked,
             /TARGET_BLOCKED: covered by dialog "Enter your origin"; its fields: "Where else."/,

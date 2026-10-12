@@ -133,6 +133,23 @@ await page.upload("input[type=file]", ["C:/path/file.pdf"]);
 await page.download(url);
 ```
 
+## Console, dialogs, PDFs, devices, downloads
+
+```js
+await page.console({ errors: true }); // page console messages and errors; the first call starts recording
+await page.dialogs("dismiss"); // alert/confirm/prompt are accepted by default; this declines them
+await page.dialogs("accept", "my answer"); // answer prompts
+await page.pdf("receipt.pdf"); // save the page as a PDF file
+await page.emulate({
+  device: "iPhone",
+  colorScheme: "dark",
+  timezone: "Asia/Kolkata",
+  locale: "hi-IN",
+});
+await page.emulate({ reset: true });
+await browser.downloads.list("invoice"); // recent downloads: filename, url, state
+```
+
 ## Site APIs: often much faster than clicking
 
 Most sites load their data as JSON. Record it once, then call it directly:

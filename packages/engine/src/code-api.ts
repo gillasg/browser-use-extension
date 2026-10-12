@@ -1,5 +1,17 @@
 // The browser_code page API, evaluated once in each chat's sandbox realm. Browser steps go through __call.
 export const browserCodeApi = `
+// Chrome accepts every alert/confirm/prompt by default; this lets the agent decline or answer them.
+function __dialogShim(policy) {
+  var accept = policy.mode !== 'dismiss';
+  window.confirm = (message) => { console.info('[dialog confirm] ' + message + (accept ? ' (accepted)' : ' (dismissed)')); return accept; };
+  window.prompt = (message, value) => { console.info('[dialog prompt] ' + message); return accept ? (policy.promptText || value || '') : null; };
+  window.alert = (message) => { console.info('[dialog alert] ' + message); };
+}
+var __devices = {
+  iphone: {width: 390, height: 844, scale: 3, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'},
+  android: {width: 412, height: 915, scale: 2.625, userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36'},
+  ipad: {width: 820, height: 1180, scale: 2, userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'},
+};
 function __geolocationShim(coords) {
   var geo = navigator.geolocation;
   if (!geo || geo.__aeonShim) return;
@@ -48,6 +60,9 @@ var browser = Object.freeze({
     __opened.set(url, result.tab.target);
     return bu.use(result.tab.target);
   },
+  downloads: Object.freeze({
+    list: (text = "", options = {}) => __call({downloads:"list", text, ...options}),
+  }),
   history: Object.freeze({
     search: (text = "", options = {}) => __call({history:"search", text, ...options}),
   }),
@@ -94,6 +109,44 @@ var browser = Object.freeze({
       ...(typeof options === "number" ? {timeoutMs:options} : options)}),
     navigate: (url) => __step({op:"navigate", target, url}),
     diagnostics: (clear = false) => __step({op:"diagnostics", target, clear}),
+    console: async (options = {}) => {
+      var entries = (await __step({op:"diagnostics", target, clear: !!options.clear})).data.console || [];
+      return options.errors ? entries.filter((entry) => /error|exception/i.test(entry.level || '')) : entries;
+    },
+    dialogs: async (mode = 'accept', promptText = '') => {
+      var shim = '(' + __dialogShim.toString() + ')(' + JSON.stringify({mode, promptText}) + ')';
+      await __step({op:'cdp', target, method:'Page.addScriptToEvaluateOnNewDocument', params:{source: shim}});
+      await __step({op:'evaluate', target, expression: shim});
+      return {mode};
+    },
+    pdf: async (name = 'page.pdf', options = {}) => {
+      var result = await __step({op:'cdp', target, method:'Page.printToPDF', params:{printBackground:true, ...options}});
+      await __call({workspace:'artifact', name, value: result.data.value.data, base64: true});
+      return {saved: name};
+    },
+    emulate: async (options = {}) => {
+      var page = browser.page(target), device = __devices[String(options.device || '').toLowerCase()];
+      if (options.reset) {
+        await page.cdp('Emulation.clearDeviceMetricsOverride', {}).catch(() => {});
+        await page.cdp('Emulation.setTouchEmulationEnabled', {enabled: false}).catch(() => {});
+        await page.cdp('Emulation.setUserAgentOverride', {userAgent: ''}).catch(() => {});
+        await page.cdp('Emulation.setEmulatedMedia', {features: []}).catch(() => {});
+        await page.cdp('Emulation.setTimezoneOverride', {timezoneId: ''}).catch(() => {});
+        await page.cdp('Emulation.setLocaleOverride', {}).catch(() => {});
+        return {reset: true};
+      }
+      if (options.device && !device) throw Error('Unknown device; use one of ' + Object.keys(__devices).join(', '));
+      if (device) {
+        await page.cdp('Emulation.setDeviceMetricsOverride', {width: device.width, height: device.height, deviceScaleFactor: device.scale, mobile: true});
+        await page.cdp('Emulation.setTouchEmulationEnabled', {enabled: true});
+        await page.cdp('Emulation.setUserAgentOverride', {userAgent: device.userAgent});
+      }
+      if (options.colorScheme) await page.cdp('Emulation.setEmulatedMedia', {features: [{name: 'prefers-color-scheme', value: options.colorScheme}]});
+      if (options.timezone) await page.cdp('Emulation.setTimezoneOverride', {timezoneId: options.timezone});
+      if (options.locale) await page.cdp('Emulation.setLocaleOverride', {locale: options.locale});
+      if (device && options.reload !== false) await page.cdp('Page.reload', {});
+      return {device: options.device, colorScheme: options.colorScheme, timezone: options.timezone, locale: options.locale};
+    },
     popups: () => __step({op:"popups", target}),
     removePreview: (scriptId) => __step({op:"siteScript", target, action:"remove", scriptId}),
     snapshot: (options = {}) => { const {max,target:ignored,...filters}=options; return __step({op:'observe',target,kind:'semantic',...filters}); },
