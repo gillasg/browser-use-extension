@@ -54,7 +54,7 @@ async function alignTabs(tabs: SplitTabs, chat: SplitTab, target: SplitTab): Pro
   // pulling the agent tab out, so a chat and the tabs it works in stay together.
   if (current.groupId !== chat.groupId) {
     if (current.groupId >= 0) await tabs.group({ tabIds: [chat.id], groupId: current.groupId });
-    else await tabs.ungroup(chat.id);
+    else await tabs.group({ tabIds: [target.id], groupId: chat.groupId });
   }
   await makeAdjacent(tabs, chat.id, target.id);
 }
