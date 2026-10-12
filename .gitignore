@@ -5,3 +5,10 @@ apps/extension/build/
 coverage/
 *.log
 .env
+
+# Local planning notes and agent instructions stay out of the repo
+AGENTS.md
+PLAN*.md
+*.plan.md
+plans/
+notes/
