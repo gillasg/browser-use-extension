@@ -153,6 +153,35 @@ test(
         });
       });
 
+      await t.test("tabs are reused, permissions preset, and the cursor shows", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "reuse",
+            `const a = await browser.openTab(${JSON.stringify(siteUrl)});
+            const b = await browser.openTab(${JSON.stringify(siteUrl)});
+            const flat = (await browser.tabs()).every((tab) => typeof tab.tabId === "number");
+            await page.setLocation(28.61, 77.21);
+            const latitude = await page.evaluate(() => new Promise((done) =>
+              navigator.geolocation.getCurrentPosition((p) => done(p.coords.latitude), (e) => done("error " + e.code))));
+            await page.getByRole("button", { name: "Buy" }).click();
+            const cursor = await page.evaluate(() => Boolean(document.getElementById("aeon-agent-cursor")));
+            console.log("RESULT " + JSON.stringify({ reused: a.target.tabId === b.target.tabId, flat, latitude, cursor }))`,
+          ],
+          { env },
+        );
+        assert.match(stdout, /RESULT /, stdout);
+        assert.deepEqual(JSON.parse(/RESULT (.*)/.exec(stdout)[1]), {
+          reused: true,
+          flat: true,
+          latitude: 28.61,
+          cursor: true,
+        });
+      });
+
       await t.test("MCP lists the tools and runs browser_code", async () => {
         const mcp = mcpClient(env);
         try {

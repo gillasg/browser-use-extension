@@ -10,6 +10,8 @@ export interface EngineConfig {
   tabGroups: boolean;
   /** Label of a session's tab group. */
   tabGroupTitle: (owner: string) => string;
+  /** How a chat page shows its agent's tabs: Split View beside the chat, or live thumbnails. */
+  agentView: () => Promise<"split" | "thumbnails">;
 }
 
 export const engineConfig: EngineConfig = {
@@ -18,6 +20,7 @@ export const engineConfig: EngineConfig = {
   notificationIcon: "icon-128.png",
   tabGroups: true,
   tabGroupTitle: () => "Agent",
+  agentView: () => Promise.resolve("split"),
 };
 
 export function configureEngine(patch: Partial<EngineConfig>): void {

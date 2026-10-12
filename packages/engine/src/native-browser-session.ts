@@ -116,7 +116,7 @@ async function attach(tabId: number): Promise<void> {
   } catch (error) {
     if (!/already attached/i.test(String(error))) throw error;
     // sendCommand succeeds only for our extension's attachment; do not take over DevTools.
-    await chrome.debugger.sendCommand({ tabId }, "Runtime.enable");
+    await chrome.debugger.sendCommand({ tabId }, "Page.getFrameTree");
   }
   trackBrowserActivity(tabId);
   await chrome.debugger.sendCommand({ tabId }, "Page.enable");

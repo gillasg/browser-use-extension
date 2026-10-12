@@ -18,7 +18,8 @@ function __locator(target, element) {
 }
 var browser = Object.freeze({
   waitFor: (event, options = {}) => __event(options.target || __lastTarget,event,options),
-  tabs: Object.assign(async (query) => (await __step({op:'listTabs', ...(query ? {query} : {})})).tabs,
+  tabs: Object.assign(async (query) => (await __step({op:'listTabs', ...(query ? {query} : {})})).tabs
+      .map(tab => ({tabId: tab.target.tabId, url: tab.url, title: tab.title, active: tab.active, ...tab})),
     {list: async (query) => browser.tabs(query)}),
   openTab: async (url, options = {}) => {
     let clientInstanceId = options.clientInstanceId || __lastTarget?.clientInstanceId;
@@ -28,8 +29,13 @@ var browser = Object.freeze({
       if (clients.length !== 1) throw Error('Multiple browser profiles are connected; choose clientInstanceId from browser.tabs()');
       clientInstanceId = clients[0];
     }
+    // Reuse the tab this session already opened for the same URL instead of stacking duplicates.
+    const known = options.new === true ? undefined : __opened.get(url);
+    if (known && (await browser.tabs()).some(tab => __key(tab.target) === __key(known)))
+      return bu.use(known);
     const result = await __step({op:'openTab', clientInstanceId, url,
       foreground: options.foreground === true});
+    __opened.set(url, result.tab.target);
     return bu.use(result.tab.target);
   },
   history: Object.freeze({
@@ -90,6 +96,16 @@ var browser = Object.freeze({
     inspect: async (fn, arg) => (await __step({op:'evaluate',target,expression:__expression(fn,arg)},true)).data.value,
     pdfText: (options = {}) => browser.page(target).inspect(__readPdfText,options),
     cdp: async (method, params = {}) => (await __step({op:'cdp',target,method,params})).data.value,
+    permissions: Object.freeze({
+      allow: (type) => __call({permission:'set', target, type, setting:'allow'}),
+      block: (type) => __call({permission:'set', target, type, setting:'block'}),
+      reset: (type) => __call({permission:'set', target, type, setting:'ask'}),
+    }),
+    setLocation: async (latitude, longitude, accuracy = 50) => {
+      await __call({permission:'set', target, type:'location', setting:'allow'});
+      await __step({op:'cdp', target, method:'Emulation.setGeolocationOverride', params:{latitude, longitude, accuracy}});
+      return {latitude, longitude};
+    },
     rules: Object.freeze({
       block: (options) => __call({rules:"block", target, ...options}),
       headers: (headers) => __call({rules:"headers", target, headers}),
@@ -133,7 +149,7 @@ var browser = Object.freeze({
 });
 `;
 export const browserFastApi = `
-var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __lastTarget;
+var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __lastTarget;
 var __key = target => JSON.stringify(target);
 // A bare tab id from browser.tabs() or a step line stands for that tab's full target.
 async function __tabTarget(target) {

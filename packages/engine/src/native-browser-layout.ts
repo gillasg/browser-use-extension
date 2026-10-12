@@ -1,3 +1,5 @@
+import { engineConfig } from "./engine-config.js";
+
 type SplitTab = chrome.tabs.Tab & { splitViewId?: number };
 type SplitTabs = typeof chrome.tabs & {
   createSplit?: (ids: [number, number]) => Promise<number>;
@@ -5,10 +7,18 @@ type SplitTabs = typeof chrome.tabs & {
 };
 const pending = new Map<string, Promise<void>>();
 const pairs = new Map<string, { targetId: number; splitId: number }>();
-/** Present browser work beside its regular chat. Side-panel-only chats keep their panel. */
-export async function presentBrowserTask(chatId: string, tabId: number): Promise<void> {
+/**
+ * Present browser work beside its regular chat. Side-panel-only chats keep their panel. In
+ * thumbnail view the chat page shows live thumbnails instead, and a clicked thumbnail forces it.
+ */
+export async function presentBrowserTask(
+  chatId: string,
+  tabId: number,
+  force = false,
+): Promise<void> {
   const tabs = chrome.tabs as SplitTabs;
   if (!tabs.createSplit || !tabs.unsplit) return;
+  if (!force && (await engineConfig.agentView().catch(() => "split")) === "thumbnails") return;
   const prior = pending.get(chatId) ?? Promise.resolve();
   const work = prior
     .then(() => pairChat(tabs, chatId, tabId))
@@ -40,9 +50,11 @@ async function alignTabs(tabs: SplitTabs, chat: SplitTab, target: SplitTab): Pro
     await tabs.move(target.id, { windowId: chat.windowId, index: -1 });
   if (target.pinned !== chat.pinned) await tabs.update(target.id, { pinned: chat.pinned });
   const current = await tabs.get(target.id);
+  // Split View needs both tabs in one group. The chat joins its agent's group rather than
+  // pulling the agent tab out, so a chat and the tabs it works in stay together.
   if (current.groupId !== chat.groupId) {
-    if (chat.groupId >= 0) await tabs.group({ tabIds: [target.id], groupId: chat.groupId });
-    else if (current.groupId >= 0) await tabs.ungroup(target.id);
+    if (current.groupId >= 0) await tabs.group({ tabIds: [chat.id], groupId: current.groupId });
+    else await tabs.ungroup(chat.id);
   }
   await makeAdjacent(tabs, chat.id, target.id);
 }

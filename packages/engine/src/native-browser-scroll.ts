@@ -6,6 +6,7 @@ import {
   scrollAt,
 } from "./native-browser-debugger.js";
 import { browserObservationRefs } from "./native-browser-observation.js";
+import { showAgentCursor } from "./native-browser-cursor.js";
 
 export async function selectScrollContainer(
   debuggee: chrome.debugger.Debuggee,
@@ -69,6 +70,7 @@ export async function scrollWithFeedback(
   const objectId = await selectScrollContainer(debuggee, point, horizontal);
   try {
     const before = await measureScroll(debuggee, objectId, horizontal);
+    showAgentCursor(debuggee, point.x, point.y, false, { caption: "Scrolling " + step.direction });
     await scrollAt(debuggee, point.x, point.y, step.direction, step.amount);
     let after = before;
     for (let attempt = 0; attempt < 6; attempt++) {

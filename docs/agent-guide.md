@@ -126,6 +126,15 @@ await browser.bookmarks.update(bookmarkId, { title: "Goa hotels" });
 await browser.bookmarks.remove(bookmarkId); // a folder with contents needs { recursive: true }
 ```
 
+## Site permissions and location
+
+Chrome's permission prompts (location, notifications, camera…) are browser UI that no page or extension can click. Set the permission before the site asks, and the prompt never appears:
+
+```js
+await page.permissions.allow("location"); // or block / reset; also notifications, camera, microphone, popups, downloads
+await page.setLocation(28.61, 77.21);     // browse as if in Delhi (also allows location)
+```
+
 ## Network rules for a tab
 
 Rules apply only to that tab, never to the user's other tabs, and end when the tab closes:

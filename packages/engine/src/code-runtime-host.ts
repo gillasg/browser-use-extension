@@ -16,6 +16,7 @@ import { handOffToUser } from "./native-browser-handoff.js";
 import { networkCall } from "./native-browser-network.js";
 import { isLibraryRequest, libraryCall } from "./native-browser-library.js";
 import { rulesCall } from "./native-browser-rules.js";
+import { permissionCall } from "./native-browser-permissions.js";
 import type { BrowserIdentity } from "./native-worker-identity.js";
 
 const OFFSCREEN = "code-offscreen.html";
@@ -178,6 +179,8 @@ function serveCall(cell: Cell, value: Record<string, unknown> | null): Promise<u
     return networkCall(authorizedTarget(cell, value.target).tabId, value.network, value);
   if (value && typeof value.rules === "string")
     return rulesCall(authorizedTarget(cell, value.target).tabId, value);
+  if (value && value.permission === "set")
+    return permissionCall(authorizedTarget(cell, value.target).tabId, value);
   if (value && isLibraryRequest(value)) return libraryCall(value);
   return callCore(cell, value);
 }
@@ -214,7 +217,7 @@ async function serve(cell: Cell, request: unknown): Promise<unknown> {
         : "target" in step
           ? step.target.tabId
           : undefined;
-    if (tabId !== undefined) notePreviewActivity(cell.run.chatId, tabId);
+    if (tabId !== undefined) void notePreviewActivity(cell.run.chatId, tabId);
     recordScreenshot(cell, step, result);
     return result;
   } catch (error) {
@@ -228,7 +231,7 @@ async function serve(cell: Cell, request: unknown): Promise<unknown> {
 async function handoff(cell: Cell, request: object): Promise<"done" | "cancelled"> {
   const { message } = request as { message?: unknown };
   const target = authorizedTarget(cell, (request as { target?: unknown }).target);
-  notePreviewActivity(cell.run.chatId, target.tabId);
+  void notePreviewActivity(cell.run.chatId, target.tabId);
   const text = String(message ?? "").slice(0, 500) || "Please take over, then click Done.";
   const entry: Record<string, unknown> = {
     index: cell.steps.length,

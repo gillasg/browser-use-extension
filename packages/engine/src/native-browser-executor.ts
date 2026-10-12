@@ -22,9 +22,22 @@ import {
   evaluateFrame,
   uploadFiles,
 } from "./native-browser-frames.js";
-import { executeBrowserEvent, readDiagnostics } from "./native-browser-events.js";
+import {
+  enableConsoleCapture,
+  executeBrowserEvent,
+  readDiagnostics,
+} from "./native-browser-events.js";
 import { executeDownload } from "./native-browser-downloads.js";
 import { groupAgentTab } from "./native-browser-groups.js";
+import { showAgentCaption } from "./native-browser-cursor.js";
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www./, "");
+  } catch {
+    return "page";
+  }
+}
 import {
   executeInteraction,
   interactFrame,
@@ -186,7 +199,10 @@ export async function performExtra(
       if (request.step.op === "press")
         return pressElement(debuggee, request, () => revalidate(request, tabId));
       if (request.step.op === "navigate") return navigateReady(tabId, request.step.url);
-      if (request.step.op === "diagnostics") return readDiagnostics(tabId, request.step.clear);
+      if (request.step.op === "diagnostics") {
+        await enableConsoleCapture(tabId);
+        return readDiagnostics(tabId, request.step.clear);
+      }
       if (request.step.op === "popups") return { tabs: await browserPopups(tabId) };
       return readOrWait(debuggee, request, () => revalidate(request, tabId));
     });
@@ -355,6 +371,11 @@ async function executeStep(
   const tab = await assertTarget(request);
   bindBrowserSession(step.target.tabId, request.chatId);
   if (isCapabilityStep(step)) return performCapability({ ...request, step }, revalidateTarget);
+  if (step.op === "observe" || step.op === "navigate")
+    showAgentCaption(
+      { tabId: step.target.tabId },
+      step.op === "navigate" ? "Opening " + hostOf(step.url) : "Reading the page",
+    );
   if (step.op === "observe")
     return step.kind === "semantic"
       ? observeSemantic(request, tab, revalidateTarget)

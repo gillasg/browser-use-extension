@@ -1,4 +1,4 @@
-import { showAgentCursor } from "./native-browser-cursor.js";
+import { showAgentCursor, type CursorUpdate } from "./native-browser-cursor.js";
 import { onNode, nodeState, fillTextNode } from "./native-browser-dom.js";
 import {
   type BrowserExecutorRequest,
@@ -172,7 +172,15 @@ export async function executeInteraction(
   if (step.op === "keys") return keyboard(debuggee, step.keys);
   const send = (type: string, x: number, y: number, extra: Record<string, unknown> = {}) =>
     chrome.debugger.sendCommand(debuggee, "Input.dispatchMouseEvent", { type, x, y, ...extra });
-  showAgentCursor(debuggee, step.x, step.y, step.action !== "hover");
+  if (step.action === "drag" && step.toX !== undefined && step.toY !== undefined)
+    showAgentCursor(debuggee, step.toX, step.toY, false, {
+      from: { x: step.x, y: step.y },
+      caption: "Dragging",
+    });
+  else
+    showAgentCursor(debuggee, step.x, step.y, step.action !== "hover", {
+      caption: step.action === "hover" ? "Hovering" : "Clicking",
+    });
   await send("mouseMoved", step.x, step.y);
   if (step.action === "hover") return { hovered: true };
   if (step.action === "drag") {
@@ -263,6 +271,24 @@ async function keyboard(debuggee: chrome.debugger.Debuggee, combo: string): Prom
   return { pressed: combo };
 }
 
+function elementCaption(
+  request: BrowserExecutorRequest,
+  node: AxRef,
+  editable: boolean,
+): Omit<CursorUpdate, "x" | "y" | "press"> {
+  const value = (request.step as { value?: unknown }).value;
+  if (editable && typeof value === "string")
+    return { text: true, typing: true, caption: `Typing "${value.slice(0, 60)}"` };
+  const label = node.name ? `"${node.name.slice(0, 50)}"` : node.role || "element";
+  const verb =
+    request.step.op === "click"
+      ? "Clicking "
+      : request.step.op === "press"
+        ? "Pressing on "
+        : "Using ";
+  return { text: editable, caption: verb + label };
+}
+
 // Retry only preparation. A delivered click, key or insertion is never replayed.
 export async function prepareElement(
   debuggee: chrome.debugger.Debuggee,
@@ -284,7 +310,7 @@ export async function prepareElement(
         request.expectedDocumentEpoch,
       );
       const point = await actionablePoint(debuggee, node.backendNodeId, editable);
-      showAgentCursor(debuggee, point.x, point.y);
+      showAgentCursor(debuggee, point.x, point.y, false, elementCaption(request, node, editable));
       await revalidate();
       return { node, point };
     } catch (caught) {

@@ -147,6 +147,8 @@ async function subscribe(
 
   if (!step.event || !/^(Page|Network|Runtime|DOM)\.[A-Za-z]+$|^(popup|download)$/.test(step.event))
     throw new Error("UNSUPPORTED");
+  if (step.event.startsWith("Runtime.") && debuggee.tabId !== undefined)
+    await enableConsoleCapture(debuggee.tabId);
   if (subscriptions.size >= 128)
     throw new Error("Too many browser subscriptions; dispose unused listeners");
   const domain = step.event.split(".")[0];
@@ -203,10 +205,16 @@ export async function enableDiagnostics(tabId: number): Promise<void> {
   if (enabled.has(tabId)) return;
   enabled.add(tabId);
   buffers.set(tabId, { console: [], network: [] });
-  await Promise.allSettled([
-    chrome.debugger.sendCommand({ tabId }, "Runtime.enable"),
-    chrome.debugger.sendCommand({ tabId }, "Network.enable"),
-  ]);
+  await chrome.debugger.sendCommand({ tabId }, "Network.enable").catch(() => undefined);
+}
+
+// Runtime.enable is the signal anti-automation scripts look for (console serialization side
+// effects), so console capture starts only once the agent asks for diagnostics or Runtime events.
+const runtimeEnabled = new Set<number>();
+export async function enableConsoleCapture(tabId: number): Promise<void> {
+  if (runtimeEnabled.has(tabId)) return;
+  runtimeEnabled.add(tabId);
+  await chrome.debugger.sendCommand({ tabId }, "Runtime.enable").catch(() => undefined);
 }
 export function readDiagnostics(tabId: number, clear = false): Diagnostics {
   const buffer = buffers.get(tabId) ?? { console: [], network: [] };
@@ -219,6 +227,7 @@ export function readDiagnostics(tabId: number, clear = false): Diagnostics {
 }
 export function forgetDiagnostics(tabId: number): void {
   buffers.delete(tabId);
+  runtimeEnabled.delete(tabId);
   enabled.delete(tabId);
   for (const key of requests.keys()) if (key.startsWith(tabId + ":")) requests.delete(key);
 }
