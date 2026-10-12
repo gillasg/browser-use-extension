@@ -218,11 +218,16 @@ test(
             const typed = await page.inputValue("#q");
             const rows = await page.table("table");
             const links = (await page.links()).map((link) => link.text);
+            const regexText = await page.getByText(/^Gam/).innerText();
+            await page.evaluate(() => { document.getElementById("out").textContent = ""; });
+            await page.getByRole("button", { name: /^ad+$/i }).click();
+            const regexClick = await page.textContent("#out");
+            const viaTab = String((await browser.tab(page.target.tabId)).url);
             const tabs = await Promise.all(["a", "b", "c"].map((q) => browser.openTab(${JSON.stringify(siteUrl)} + "?q=" + q)));
             const sample = '<div data-rpos="0"><a href="/url?q=https://example.com/one"><h3>One result</h3></a><span>First snippet</span></div>' +
               '<div data-rpos="1"><a href="https://www.google.com/x"><h3>Google itself</h3></a></div>';
             const parsed = __parseGoogle(sample, 5);
-            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed,
+            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed, regexText, regexClick, viaTab,
               tabIds: tabs.map((tab) => tab.target.tabId) }))`,
             ],
             { env },
@@ -237,6 +242,9 @@ test(
           assert.equal(result.heading, "Catalog");
           assert.equal(result.items, 3);
           assert.equal(result.added, "added");
+          assert.equal(result.regexText, "Gamma");
+          assert.equal(result.regexClick, "added");
+          assert.equal(result.viaTab, catalog);
           assert.equal(result.typed, "phones");
           assert.deepEqual(result.rows, [
             { Model: "iPhone 16", Price: "69,900" },

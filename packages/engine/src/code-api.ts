@@ -60,6 +60,8 @@ var browser = Object.freeze({
     move: (id, destination) => __call({bookmarks:"move", id, ...destination}),
     remove: (id, options = {}) => __call({bookmarks:"remove", id, ...options}),
   }),
+  // Agents sometimes ask for a tab object by id: browser.tab(tabId or a listed tab).
+  tab: async (tab) => bu.use(typeof tab === 'object' && tab ? (tab.target || tab) : tab),
   attachTab: async (target) => {
     target = await __tabTarget(target);
     await __step({op:'attachTab', target});

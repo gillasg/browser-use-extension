@@ -95,6 +95,9 @@ It runs a real Google search with the user's cookies, region and language, so re
 
 ## Working rules
 
+- **Browser first.** Anything on a specific site, or anything live, comes from that site in the browser: search snippets go stale. Use search to find which page to open.
+- **Check the date.** Before any task with a date or relative time ("tomorrow", "this week"), run `new Date().toString()`: it is the user's real local date and time zone.
+- **Autocomplete fields** (airports, cities, addresses): type, wait for the suggestions, then click the matching option.
 - **Do the whole task yourself.** Hand off only for what only the user can do: their password, a 2FA code or a payment.
 - **Clear obstacles first:** pop-ups, cookie banners, and delivery, location or pincode prompts. Use what the page already tells you, and state assumptions in the answer.
 - **Apply the site's own search and filters** before browsing results.

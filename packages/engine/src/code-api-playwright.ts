@@ -21,7 +21,8 @@ function __resolveInPage(spec) {
   var roots = spec.scope ? [...document.querySelectorAll(spec.scope)] : [document];
   var all = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
   var text = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
-  var match = (value) => spec.exact ? value === spec.value : value.toLowerCase().includes(String(spec.value).toLowerCase());
+  var pattern = spec.regex ? new RegExp(spec.regex[0], spec.regex[1]) : null;
+  var match = (value) => pattern ? pattern.test(value) : spec.exact ? value === spec.value : value.toLowerCase().includes(String(spec.value).toLowerCase());
   var found;
   if (spec.by === 'css') found = all(spec.value);
   else if (spec.by === 'text') found = all('body *').filter((el) => match(text(el)) && ![...el.children].some((child) => match(text(child))));
@@ -34,17 +35,16 @@ function __resolveInPage(spec) {
       radio:'input[type=radio],[role=radio]', combobox:'select,[role=combobox]', option:'option,[role=option]', img:'img,[role=img]',
       listitem:'li,[role=listitem]', list:'ul,ol,[role=list]', row:'tr,[role=row]', cell:'td,[role=cell]', table:'table,[role=table]', tab:'[role=tab]', menuitem:'[role=menuitem]', dialog:'dialog,[role=dialog]'};
     found = all(roles[spec.role] || '[role="' + spec.role + '"]');
-    if (spec.name) {
-      var name = (el) => (el.getAttribute('aria-label') || text(el) || el.value || el.alt || el.title || '').replace(/\\s+/g, ' ').trim();
-      found = found.filter((el) => spec.exact ? name(el) === spec.name : name(el).toLowerCase().includes(spec.name.toLowerCase()));
-    }
+    var name = (el) => (el.getAttribute('aria-label') || text(el) || el.value || el.alt || el.title || '').replace(/\\s+/g, ' ').trim();
+    if (pattern) found = found.filter((el) => pattern.test(name(el)));
+    else if (spec.name) found = found.filter((el) => spec.exact ? name(el) === spec.name : name(el).toLowerCase().includes(spec.name.toLowerCase()));
   }
   if (spec.hasText) found = found.filter((el) => text(el).toLowerCase().includes(String(spec.hasText).toLowerCase()));
   return found;
 }
 function __spec(element) {
-  if (element.kind === 'locator') return {role: element.role, name: element.name, exact: element.exact, scope: element.scope, hasText: element.hasText};
-  return {by: element.by, value: element.value, exact: element.exact, scope: element.scope, hasText: element.hasText};
+  if (element.kind === 'locator') return {role: element.role, name: element.name, exact: element.exact, scope: element.scope, hasText: element.hasText, regex: element.regex};
+  return {by: element.by, value: element.value, exact: element.exact, scope: element.scope, hasText: element.hasText, regex: element.regex};
 }
 // Runs a read on the matched elements in the page: op receives (elements, arg). The expression is
 // assembled as source, not eval'd in the page, so strict Content-Security-Policy pages allow it.
@@ -164,7 +164,18 @@ function __extendPage(target, base) {
     type: (text) => base.cdp('Input.insertText', {text: String(text)}),
     insertText: (text) => base.cdp('Input.insertText', {text: String(text)}),
   });
+  var byRole = base.getByRole, byText = base.getByText;
   return Object.assign(base, {
+    // Playwright accepts a RegExp for names and text. The engine's own targeting matches strings,
+    // so a regex locator resolves in the page and acts on its first match.
+    getByRole: (role, options = {}) => options.name instanceof RegExp
+      ? __locator(target, {kind: 'locator', role, regex: [options.name.source, options.name.flags]}, 0)
+      : byRole(role, options),
+    getByText: (value, options = {}) => value instanceof RegExp
+      ? __locator(target, {kind: 'query', by: 'text', regex: [value.source, value.flags]}, 0)
+      : byText(value, options),
+    // Playwright-style text snapshot of the page: the same view as bu.state().
+    ariaSnapshot: (options = {}) => bu.state({...options, target}),
     goto: (url) => base.navigate(url),
     reload: () => base.cdp('Page.reload', {}),
     goBack: () => base.evaluate(() => history.back()),
