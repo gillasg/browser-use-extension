@@ -8,6 +8,7 @@ import {
   browserFastApi,
 } from "./code-api.js";
 import { browserPlaywrightApi } from "./code-api-playwright.js";
+import { browserDataApi } from "./code-api-data.js";
 
 type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 const scope = globalThis as unknown as Record<string, unknown>;
@@ -64,6 +65,7 @@ evaluate(
     browserCapabilityApi,
     browserDocumentApi,
     browserPlaywrightApi,
+    browserDataApi,
   ].join("\n"),
 );
 

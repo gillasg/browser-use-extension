@@ -10,6 +10,7 @@
     "dist"
   ],
   "dependencies": {
+    "pi-ai-login": "file:../../vendor/pi-ai-login-0.1.1.tgz",
     "ws": "8.22.0"
   },
   "devDependencies": {

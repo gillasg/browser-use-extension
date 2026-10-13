@@ -212,6 +212,14 @@ export class Bridge {
       const respond = (body: Json) => send(socket, { id: request.id, ...body });
       if (request.kind === "status") respond({ browsers: this.executors.size });
       else if (request.kind === "tabs") respond({ tabs: this.tabs() });
+      else if (request.kind === "model.login")
+        // Loaded on first use: the model providers are only needed for signing in.
+        void import("./model-login.js")
+          .then(({ openModelLogin }) => openModelLogin())
+          .then(
+            (url) => respond({ url }),
+            (error: unknown) => respond({ error: String(error) }),
+          );
       else if (request.kind === "run")
         void this.run(request, (event) => send(socket, { id: request.id, ...event })).then(respond);
       else respond({ error: "Unknown request" });

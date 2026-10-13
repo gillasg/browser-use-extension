@@ -155,12 +155,50 @@ await browser.downloads.list("invoice"); // recent downloads: filename, url, sta
 Most sites load their data as JSON. Record it once, then call it directly:
 
 ```js
-await page.network.start();
+await page.network.start(); // { types: "all" } records every resource, { bodies: false } skips bodies
 // ...do the flow once with clicks...
-await page.network.list("/api"); // fetch/XHR calls: id, url, method, status, json
-await page.network.body(id); // one response
-await page.fetchJson("/api/items?page=2"); // call an endpoint with the user's session
+await page.network.list("/api"); // or { match, method, type }: id, url, method, status, json
+await page.network.get(id); // full request and response: headers (cookies too), bodies, initiator stack
+await page.network.body(id); // the parsed response
+await page.network.save("flow.har"); // a HAR file in the workspace
 ```
+
+Recording keeps the tab's debugger attached, captures bodies as each request finishes (before
+navigation throws them away), follows redirects and records WebSocket frames and server-sent
+events. `initiator.stack` shows which script made a call, which helps find request-signing code.
+
+Calling the site yourself, from inside its page, so cookies, origin and signatures apply:
+
+```js
+await page.replay(id, { query: { page: 2 }, json: { sort: "price" } }); // re-send with changes
+await page.request("/api/cart", { method: "POST", json: { id: 7 }, csrf: true }); // a new call
+await page.fetchJson("/api/items?page=2"); // shorthand for a JSON GET
+```
+
+`csrf: true` adds the page's CSRF token (from its meta tag or cookie) as `x-csrf-token`.
+
+## Page data without parsing HTML
+
+```js
+await page.data(); // JSON-LD, __NEXT_DATA__, Nuxt/Apollo/Redux state, JSON scripts, metadata
+await page.metadata(); // title, description, canonical, language, Open Graph and Twitter tags
+await page.markdown(); // the main content as clean Markdown ({ mainOnly: false } for everything)
+await page.status(); // the page's HTTP status
+await page.session(); // the page's cookies (HttpOnly too), localStorage and sessionStorage
+```
+
+## Many pages at once
+
+```js
+// No tab: the extension fetches with the user's cookies. Fast for pages that need no JavaScript.
+await browser.fetch("https://shop.example/api/items", { method: "GET" }); // { status, json | text }
+
+// Parallel tabs, each reused, with retries and back-off on 429 or 503.
+const results = await browser.pool(urls, async (tab, url) => tab.markdown(), { concurrency: 4 });
+// [{ ok: true, item, value } | { ok: false, item, error }]
+```
+
+`browser.pool` also takes `retries` (default 2), `perHostDelayMs` and `keepTabs`.
 
 ## Site skills: remembered per site
 

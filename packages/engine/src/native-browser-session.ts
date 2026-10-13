@@ -18,6 +18,29 @@ const attachments = new Map<number, Attachment>();
 const owners = new Map<number, string>();
 const cancelled = new Map<number, string | undefined>();
 const closing = new Map<number, Promise<void>>();
+/** Tabs that must stay attached while idle, e.g. while their network traffic is being recorded. */
+const held = new Set<number>();
+const attachListeners = new Set<(tabId: number) => Promise<void> | void>();
+
+/** Keeps (or stops keeping) a tab's debugger attached through idle periods. */
+export function holdBrowserDebugger(tabId: number, hold: boolean): void {
+  if (hold) held.add(tabId);
+  else held.delete(tabId);
+}
+
+/** Runs after every debugger attach, so features can re-enable the CDP domains they need. */
+export function onBrowserDebuggerAttached(listener: (tabId: number) => Promise<void> | void): void {
+  attachListeners.add(listener);
+}
+
+function idleDetach(tabId: number): void {
+  const entry = attachments.get(tabId);
+  if (held.has(tabId) && entry) {
+    entry.timer = globalThis.setTimeout(() => idleDetach(tabId), 90_000);
+    return;
+  }
+  void detach(tabId);
+}
 
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return;
@@ -25,6 +48,7 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   if (reason === "canceled_by_user") cancelled.set(source.tabId, owners.get(source.tabId));
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
+  held.delete(tabId);
   forget(tabId);
   owners.delete(tabId);
   cancelled.delete(tabId);
@@ -59,7 +83,7 @@ export async function withBrowserDebugger<T>(
     await ensureBrowserViewport(tabId);
     if (attachments.get(tabId) !== entry) throw new Error("OPERATION_FAILED");
     if (entry.timer !== undefined) clearTimeout(entry.timer);
-    entry.timer = globalThis.setTimeout(() => void detach(tabId), 90_000);
+    entry.timer = globalThis.setTimeout(() => idleDetach(tabId), 90_000);
     void chrome.action.setBadgeText({ tabId, text: "AI" });
     void chrome.action.setBadgeBackgroundColor({ tabId, color: "#4299ff" });
     void chrome.action.setTitle({ tabId, title: engineConfig.controllingTitle(chatId) });
@@ -128,6 +152,8 @@ async function attach(tabId: number): Promise<void> {
     .sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true })
     .catch(() => undefined);
   await enableDiagnostics(tabId);
+  for (const listener of attachListeners)
+    await Promise.resolve(listener(tabId)).catch(() => undefined);
 }
 
 function detach(tabId: number): Promise<void> {

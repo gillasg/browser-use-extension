@@ -19,6 +19,7 @@ import { isLibraryRequest, libraryCall } from "./native-browser-library.js";
 import { rulesCall } from "./native-browser-rules.js";
 import { permissionCall } from "./native-browser-permissions.js";
 import { googleCall } from "./native-browser-google.js";
+import { fetchCall, isFetchRequest } from "./native-browser-fetch.js";
 import type { BrowserIdentity } from "./native-worker-identity.js";
 
 const OFFSCREEN = "code-offscreen.html";
@@ -185,6 +186,7 @@ function serveCall(cell: Cell, value: Record<string, unknown> | null): Promise<u
     return permissionCall(authorizedTarget(cell, value.target).tabId, value);
   if (value && isLibraryRequest(value)) return libraryCall(value);
   if (value && typeof value.google === "string") return googleCall(value);
+  if (value && isFetchRequest(value)) return fetchCall(value);
   return callCore(cell, value);
 }
 

@@ -12,6 +12,8 @@ const usage = `browser-use-extension: let agents use your real Chrome.
   repl "<code>"         run a browser_code cell  [--session name] [--timeout ms]
   tabs                  list the browser's open tabs
   status                show whether a browser is connected
+  login                 sign in to an AI model in the browser (shared with Pi and its apps)
+  logout <provider>     sign out of an AI model provider
   mcp                   run the stdio MCP server for coding agents and MCP clients
   serve                 run the bridge in the foreground`;
 
@@ -36,10 +38,38 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(nextSteps() + "\n");
     return 0;
   }
+  if (command === "login" || command === "logout") return modelCommand(command, rest);
   if (command === "repl" || command === "tabs" || command === "status")
     return client(command, rest);
   process.stdout.write(usage + "\n");
   return command ? 1 : 0;
+}
+
+/** Model sign-in for features that need an AI model; loaded only when asked for. */
+async function modelCommand(command: string, rest: string[]): Promise<number> {
+  const models = await import("pi-ai-login");
+  if (command === "logout") {
+    if (!rest[0]) throw new Error("Usage: browser-use-extension logout <provider>");
+    await models.logout(rest[0]);
+    process.stdout.write(`Signed out of ${rest[0]}.\n`);
+    return 0;
+  }
+  const state =
+    rest[0] === "status"
+      ? await models.status()
+      : await models.login({
+          onUrl: (url) =>
+            process.stdout.write(`Opening the sign-in page… If nothing opens, visit:\n${url}\n`),
+        });
+  const connected = state.providers.filter((provider) => provider.connected);
+  process.stdout.write(
+    connected.length
+      ? `Connected: ${connected.map((provider) => provider.name).join(", ")}\n`
+      : "No AI model connected. Run: browser-use-extension login\n",
+  );
+  const chosen = state.defaultModel;
+  if (chosen) process.stdout.write(`Default model: ${chosen.provider}/${chosen.model}\n`);
+  return 0;
 }
 
 async function client(command: string, rest: string[]): Promise<number> {

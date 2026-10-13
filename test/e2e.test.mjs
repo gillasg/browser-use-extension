@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
+import { dataRoutes } from "./data-site.mjs";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,7 +28,9 @@ test(
   },
   async (t) => {
     const home = await mkdtemp(join(tmpdir(), "bue-home-"));
-    const env = { ...process.env, BROWSER_USE_EXTENSION_HOME: home };
+    // A throwaway Pi folder: model sign-in tests never touch real logins.
+    const piHome = await mkdtemp(join(tmpdir(), "bue-pi-"));
+    const env = { ...process.env, BROWSER_USE_EXTENSION_HOME: home, PI_CODING_AGENT_DIR: piHome };
     const site = createServer((request, response) => {
       if (request.url?.startsWith("/catalog")) {
         response.setHeader("content-type", "text/html");
@@ -50,6 +53,7 @@ test(
         response.end(JSON.stringify({ items: ["a", "b", "c"] }));
         return;
       }
+      if (dataRoutes(request, response)) return;
       response.setHeader("content-type", "text/html");
       response.end(
         `<title>Shop</title><h1>Shop</h1><button onclick="document.title='bought'">Buy</button>`,
@@ -70,6 +74,17 @@ test(
         assert.equal(reply.ok, true);
         assert.equal(reply.endpoint, `ws://127.0.0.1:${state.port}/aeon/v1`);
         assert.equal(reply.connectionGrant, state.token);
+      });
+
+      await t.test("the popup can check models and open the model sign-in page", async () => {
+        const status = await nativeBootstrap(env, { kind: "model.status" });
+        assert.equal(status.ok, true);
+        assert.deepEqual(status.connected, []);
+        const login = await nativeBootstrap(env, { kind: "model.login" });
+        assert.equal(login.ok, true, JSON.stringify(login));
+        assert.match(login.url, /^http:\/\/127\.0\.0\.1:\d+\/#token=/);
+        const page = await fetch(login.url.replace(/#.*/, ""));
+        assert.match(await page.text(), /Connect an AI model/);
       });
 
       chrome = spawn(
@@ -291,6 +306,82 @@ test(
         },
       );
 
+      await t.test(
+        "network capture, page requests, page data, Markdown, fetch and the tab pool",
+        async () => {
+          const deals = siteUrl + "deals";
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "data",
+              `page = await browser.openTab(${JSON.stringify(siteUrl)});
+            await page.network.start();
+            await page.goto(${JSON.stringify(deals)});
+            await page.waitFor(() => document.readyState === "complete");
+            let calls = [];
+            for (let tries = 0; tries < 50 && !calls.some((call) => !call.loading); tries++) {
+              calls = await page.network.list("/api/search");
+              if (!calls.some((call) => !call.loading)) await new Promise((done) => setTimeout(done, 100));
+            }
+            const call = await page.network.get(calls[0].id);
+            const body = await page.network.body(calls[0].id);
+            const replayed = await page.replay(calls[0].id, { json: { page: 2 }, query: { q: "laptop" } });
+            const requested = await page.request("/api/echo", { method: "POST", json: { a: 1 }, csrf: true });
+            const har = await page.network.har();
+            const data = await page.data();
+            const markdown = await page.markdown();
+            const fetched = await browser.fetch(${JSON.stringify(siteUrl + "api/items")});
+            const httpStatus = await page.status();
+            const pooled = await browser.pool([1, 2, 3, 4].map((n) => ${JSON.stringify(siteUrl)} + "item/" + n),
+              async (tab) => tab.title(), { concurrency: 2 });
+            console.log("RESULT " + JSON.stringify({
+              type: call.type, method: call.method, signature: call.requestHeaders["x-signature"],
+              requestBody: JSON.parse(call.requestBody), initiator: call.initiator?.type,
+              setCookie: Object.keys(call.responseHeaders).some((name) => name.toLowerCase() === "set-cookie"),
+              bodyQuery: body.query, replayed: [replayed.json.query.q, replayed.json.body.page, replayed.json.body.q, replayed.json.signature],
+              csrf: requested.json.csrf, harEntries: har.log.entries.some((entry) => entry.request.url.includes("/api/search")),
+              jsonLd: data.jsonLd[0].name, next: data.nextData.props.pageProps.items[0].name,
+              canonical: data.metadata.canonical, og: data.metadata.meta["og:title"],
+              markdown, fetched: fetched.json.items.length, status: httpStatus,
+              pooled: pooled.map((result) => result.ok && result.value),
+            }));`,
+            ],
+            { env },
+          );
+          assert.match(stdout, /RESULT /, stdout);
+          const result = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+          assert.equal(result.type, "Fetch");
+          assert.equal(result.method, "POST");
+          assert.equal(result.signature, "sig-1");
+          assert.deepEqual(result.requestBody, { q: "phone", page: 1 });
+          assert.equal(result.initiator, "script");
+          assert.equal(result.setCookie, true);
+          assert.deepEqual(result.bodyQuery, { q: "phone" });
+          assert.deepEqual(result.replayed, ["laptop", 2, "phone", "sig-1"]);
+          assert.equal(result.csrf, "token-123");
+          assert.equal(result.harEntries, true);
+          assert.equal(result.jsonLd, "Phone");
+          assert.equal(result.next, "Phone");
+          assert.equal(result.canonical, "https://shop.example/deals");
+          assert.equal(result.og, "Deals page");
+          assert.match(result.markdown, /^# Deals/);
+          assert.match(result.markdown, /Prices from \*\*today\*\* ?, see \[terms\]\(http/);
+          assert.match(result.markdown, /- Phone\n- Laptop/);
+          assert.match(
+            result.markdown,
+            /\| Item \| Price \|\n\| --- \| --- \|\n\| Phone \| 699 \|/,
+          );
+          assert.match(result.markdown, /```\ncode block\n```/);
+          assert.doesNotMatch(result.markdown, /Footer text|About/);
+          assert.equal(result.fetched, 3);
+          assert.equal(result.status, 200);
+          assert.deepEqual(result.pooled, ["Item 1", "Item 2", "Item 3", "Item 4"]);
+        },
+      );
+
       await t.test("MCP lists the tools and runs browser_code", async () => {
         const mcp = mcpClient(env);
         try {
@@ -394,7 +485,7 @@ async function connectExtension(profile, env) {
   return cdp;
 }
 
-function nativeBootstrap(env) {
+function nativeBootstrap(env, message) {
   return new Promise((resolveReply, reject) => {
     const host = spawn(
       process.execPath,
@@ -409,12 +500,14 @@ function nativeBootstrap(env) {
       resolveReply(JSON.parse(buffer.subarray(4, 4 + buffer.readUInt32LE(0)).toString("utf8")));
     });
     const body = Buffer.from(
-      JSON.stringify({
-        kind: "native.bootstrap",
-        protocolVersion: { major: 1, minor: 6 },
-        clientInstanceId: "091b9308-1ee9-420e-b71f-a564a5a27701",
-        browserRunId: "3ee7ba6e-5aad-4692-9e4e-fb4cff0964f8",
-      }),
+      JSON.stringify(
+        message ?? {
+          kind: "native.bootstrap",
+          protocolVersion: { major: 1, minor: 6 },
+          clientInstanceId: "091b9308-1ee9-420e-b71f-a564a5a27701",
+          browserRunId: "3ee7ba6e-5aad-4692-9e4e-fb4cff0964f8",
+        },
+      ),
     );
     const header = Buffer.alloc(4);
     header.writeUInt32LE(body.length);

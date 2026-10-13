@@ -60,6 +60,9 @@ var browser = Object.freeze({
     __opened.set(url, result.tab.target);
     return bu.use(result.tab.target);
   },
+  // Fetch without a tab: from the extension, with the user's cookies (credentials: 'omit' to skip).
+  fetch: (url, init = {}) => __call({fetch: {...init, url: String(url)}}),
+  pool: (items, worker, options = {}) => __pool(items, worker, options),
   downloads: Object.freeze({
     list: (text = "", options = {}) => __call({downloads:"list", text, ...options}),
   }),
@@ -186,9 +189,13 @@ var browser = Object.freeze({
       clear: () => __call({rules:"clear", target}),
     }),
     network: Object.freeze({
-      start: () => __call({network:'start', target}),
-      list: (options = {}) => __call({network:'list', target, match: typeof options === 'string' ? options : options.match}),
+      start: (options = {}) => __call({network:'start', target, ...options}),
+      list: (options = {}) => __call({network:'list', target, ...(typeof options === 'string' ? {match: options} : options)}),
+      get: (id) => __call({network:'get', target, id}),
       body: (id) => __call({network:'body', target, id}),
+      har: () => __call({network:'har', target}),
+      save: async (name = 'network.har') => (await artifact(name, JSON.stringify(await __call({network:'har', target}))), {saved: name}),
+      clear: () => __call({network:'clear', target}),
       stop: () => __call({network:'stop', target}),
     }),
     fetchJson: async (url, init = {}) => {
