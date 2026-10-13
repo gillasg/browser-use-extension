@@ -49,6 +49,7 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   held.delete(tabId);
+  emulated.delete(tabId);
   forget(tabId);
   owners.delete(tabId);
   cancelled.delete(tabId);
@@ -212,8 +213,16 @@ export async function restoreBrowserOwners(owners: Map<number, string>): Promise
 }
 
 const overridden = new Set<number>();
+/** Device sizes the agent chose (page.emulate); they win over the background-tab viewport. */
+const emulated = new Map<number, unknown>();
+
+export function noteDeviceEmulation(tabId: number, method: string, params: unknown): void {
+  if (method === "Emulation.setDeviceMetricsOverride") emulated.set(tabId, params);
+  else if (method === "Emulation.clearDeviceMetricsOverride") emulated.delete(tabId);
+}
 chrome.tabs.onActivated?.addListener(({ tabId }) => void restoreBrowserViewport(tabId));
 export async function ensureBrowserViewport(tabId: number): Promise<void> {
+  if (emulated.has(tabId)) return;
   if (overridden.has(tabId)) return;
   const tab = await chrome.tabs.get?.(tabId).catch(() => undefined);
   if (!tab) return;
@@ -230,6 +239,7 @@ export async function ensureBrowserViewport(tabId: number): Promise<void> {
   overridden.add(tabId);
 }
 export async function restoreBrowserViewport(tabId: number): Promise<void> {
+  if (emulated.has(tabId)) return;
   overridden.delete(tabId);
   await chrome.debugger
     .sendCommand({ tabId }, "Emulation.clearDeviceMetricsOverride")

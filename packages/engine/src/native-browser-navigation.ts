@@ -1,3 +1,4 @@
+import { noteDeviceEmulation } from "./native-browser-session.js";
 import type { BrowserExecutorRequest } from "@aeon/protocol";
 import { BrowserActionError } from "./native-browser-common.js";
 
@@ -317,6 +318,7 @@ export async function executePageCode(
         "Use browser.openTab/attachTab for target management; page.cdp addresses the selected page only.",
       );
     value = await chrome.debugger.sendCommand(debuggee, step.method, step.params);
+    if (debuggee.tabId !== undefined) noteDeviceEmulation(debuggee.tabId, step.method, step.params);
   }
   return {
     value,
