@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@types/chrome": "0.3.0",
-    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.9.0.tgz"
+    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.10.0.tgz"
   },
   "files": [
     "src",
