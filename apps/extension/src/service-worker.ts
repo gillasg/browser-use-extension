@@ -24,8 +24,11 @@ import {
   synchronizeBrowserInventory,
   type BrowserIdentity,
 } from "@browser-use-extension/engine";
+import { listenToCompanions } from "./companion.js";
 
 const NATIVE_HOST = "com.browser_use_extension.bridge";
+
+listenToCompanions();
 
 interface Connection extends BrowserIdentity {
   socket: WebSocket;

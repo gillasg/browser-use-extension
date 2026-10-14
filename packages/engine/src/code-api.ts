@@ -66,6 +66,8 @@ var browser = Object.freeze({
   downloads: Object.freeze({
     list: (text = "", options = {}) => __call({downloads:"list", text, ...options}),
   }),
+  // Messages to other installed extensions that accept them, by extension id.
+  sendToExtension: (id, message) => __call({extension: String(id), message}),
   history: Object.freeze({
     search: (text = "", options = {}) => __call({history:"search", text, ...options}),
   }),

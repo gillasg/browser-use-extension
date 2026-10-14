@@ -234,6 +234,19 @@ await browser.bookmarks.update(bookmarkId, { title: "Goa hotels" });
 await browser.bookmarks.remove(bookmarkId); // a folder with contents needs { recursive: true }
 ```
 
+## Other extensions
+
+Extensions that accept messages from other extensions can be driven by id:
+
+```js
+// Site Boosts: a lasting change to a site (here, hiding its sidebar on every visit).
+await browser.sendToExtension("kcfodpkdfapojnbhkgdlpkikipneejpf", {
+  type: "site-boosts",
+  kind: "boosts.save",
+  data: { boost: { name: "No sidebar", sites: ["example.com"], zaps: [{ selector: "aside" }] } },
+});
+```
+
 ## Site permissions and location
 
 Chrome's permission prompts (location, notifications, camera…) are browser UI that no page or extension can click. Set the permission before the site asks, and the prompt never appears:

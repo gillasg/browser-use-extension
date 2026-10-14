@@ -85,6 +85,14 @@ test(
         assert.match(login.url, /^http:\/\/127\.0\.0\.1:\d+\/#token=/);
         const page = await fetch(login.url.replace(/#.*/, ""));
         assert.match(await page.text(), /Connect an AI model/);
+        // Other extensions can borrow the model; with none signed in, they are told so.
+        const completion = await nativeBootstrap(env, {
+          kind: "model.complete",
+          system: "Be brief.",
+          messages: [{ role: "user", content: "Hi" }],
+        });
+        assert.equal(completion.ok, false);
+        assert.match(completion.error, /No AI model is connected/);
       });
 
       chrome = spawn(

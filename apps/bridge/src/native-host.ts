@@ -11,6 +11,10 @@ export async function runNativeHost(): Promise<void> {
     writeFrame(await modelRequest(String(request.kind)));
     return;
   }
+  if (request?.kind === "model.complete") {
+    writeFrame(await completeRequest(request));
+    return;
+  }
   if (request?.kind !== "native.bootstrap") {
     writeFrame({
       kind: "native.bootstrap.result",
@@ -55,6 +59,19 @@ async function modelRequest(kind: string): Promise<Json> {
     } finally {
       bridge.close();
     }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** A completion for another extension the user allowed (see the extension's companion.ts). */
+async function completeRequest(request: Json): Promise<Json> {
+  try {
+    const { modelComplete } = await import("./model-login.js");
+    const messages = Array.isArray(request.messages)
+      ? (request.messages as { role: string; content: string }[])
+      : [];
+    return { ok: true, text: await modelComplete(String(request.system ?? ""), messages) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

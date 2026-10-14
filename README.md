@@ -58,10 +58,10 @@ args = ["/path/to/browser-use-extension/apps/bridge/dist/cli.js", "mcp"]
 
 It exposes two tools:
 
-| Tool | Arguments | What it does |
-|---|---|---|
+| Tool           | Arguments                                 | What it does                                                                                                                |
+| -------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `browser_code` | `code` (required), `session`, `timeoutMs` | Runs JavaScript in a persistent REPL inside the browser. The last expression is returned; `console.log` output is included. |
-| `browser_tabs` | none | Lists open tabs. |
+| `browser_tabs` | none                                      | Lists open tabs.                                                                                                            |
 
 The tool description carries the full API, so agents can use it without extra setup. [docs/agent-guide.md](docs/agent-guide.md) is the longer reference with examples, for agents and people writing prompts.
 
@@ -78,6 +78,8 @@ browser-use-extension login     # sign in to an AI model, for features that use 
 ```
 
 `login` opens a sign-in page in your browser for Claude, ChatGPT, GitHub Copilot, OpenRouter and 40+ other providers (subscriptions or API keys). The extension's popup has the same **Connect a model** button. Logins are shared with [pi-ai-login](https://github.com/gillasg/pi-ai-login) and every app built on Pi.
+
+Other extensions can borrow that model too: [Site Boosts](https://github.com/gillasg/site-boosts) uses it to write boosts. Chrome asks you once per extension before it is allowed.
 
 ## How it fits together
 

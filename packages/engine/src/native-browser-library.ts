@@ -9,14 +9,31 @@ export function isLibraryRequest(value: Request | null): boolean {
     value &&
     (typeof value.history === "string" ||
       typeof value.bookmarks === "string" ||
-      typeof value.downloads === "string"),
+      typeof value.downloads === "string" ||
+      typeof value.extension === "string"),
   );
 }
 
 export function libraryCall(value: Request): Promise<unknown> {
   if (typeof value.history === "string") return historyCall(value.history, value);
   if (typeof value.downloads === "string") return downloadsCall(value.downloads, value);
+  if (typeof value.extension === "string") return extensionCall(value.extension, value.message);
   return bookmarksCall(String(value.bookmarks), value);
+}
+
+/** A message to another installed extension that accepts them (for example Site Boosts). */
+async function extensionCall(id: string, message: unknown): Promise<unknown> {
+  if (!/^[a-p]{32}$/.test(id)) throw new Error("INVALID_EXTENSION_ID: " + id);
+  try {
+    return await Promise.race([
+      chrome.runtime.sendMessage(id, message),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timed out")), 120_000)),
+    ]);
+  } catch (error) {
+    throw new Error(
+      `EXTENSION_UNAVAILABLE: ${id} is not installed or did not answer (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
 }
 
 async function historyCall(action: string, value: Request): Promise<unknown> {
