@@ -60,8 +60,14 @@ export async function modelComplete(
     systemPrompt: system,
     messages: [{ role: "user", content, timestamp: Date.now() }],
   });
-  return reply.content
+  if (reply.stopReason === "error" || reply.stopReason === "aborted")
+    throw new Error(
+      `${handle.model.provider}/${handle.model.id}: ${reply.errorMessage ?? "the model failed"}`,
+    );
+  const text = reply.content
     .map((part) => (part.type === "text" ? part.text : ""))
     .join("")
     .trim();
+  if (!text) throw new Error(`${handle.model.provider}/${handle.model.id} returned no text`);
+  return text;
 }
