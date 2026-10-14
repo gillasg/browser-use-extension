@@ -40,16 +40,21 @@ export async function findCompanion(): Promise<CompanionInfo | undefined> {
       [settings.companionId, ...KNOWN_COMPANIONS].filter((id): id is string => Boolean(id)),
     ),
   ];
-  for (const id of ids) {
-    try {
-      const info = await ask<{ name: string; features: string[] }>(id, "ping", undefined, 1500);
-      if (settings.companionId !== id) await setSettings({ companionId: id });
-      return { id, ...info };
-    } catch {
-      /* not installed, or not a companion */
-    }
-  }
-  return undefined;
+  const answers = await Promise.all(
+    ids.map((id) =>
+      ask<{ name: string; features: string[] }>(id, "ping", undefined, 1500).then(
+        (info): CompanionInfo => ({ id, ...info }),
+        () => undefined, // not installed, or not a companion
+      ),
+    ),
+  );
+  const found = answers.filter((info): info is CompanionInfo => Boolean(info));
+  // The one chosen in settings, else the one that can do the most.
+  const best =
+    found.find((info) => info.id === settings.companionId) ??
+    found.sort((a, b) => b.features.length - a.features.length)[0];
+  if (best && settings.companionId !== best.id) await setSettings({ companionId: best.id });
+  return best;
 }
 
 async function companionId(): Promise<string> {
