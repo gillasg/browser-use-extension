@@ -222,7 +222,12 @@ async function serve(cell: Cell, request: unknown): Promise<unknown> {
         : "target" in step
           ? step.target.tabId
           : undefined;
-    if (tabId !== undefined) void notePreviewActivity(cell.run.chatId, tabId);
+    if (tabId !== undefined) {
+      void notePreviewActivity(cell.run.chatId, tabId);
+      // Whatever the step (reading, navigating, opening), the tab being worked on joins its chat in
+      // Split View, as the view setting allows.
+      void presentBrowserTask(cell.run.chatId, tabId);
+    }
     recordScreenshot(cell, step, result);
     return result;
   } catch (error) {
