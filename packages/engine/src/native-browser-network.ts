@@ -26,6 +26,8 @@ interface Recorder {
   bodyBytes: number;
 }
 const recorders = new Map<number, Recorder>();
+/** Recordings that were stopped: still readable (list, har, save) until a new start or the tab closes. */
+const stopped = new Map<number, Recorder>();
 type Params = Record<string, unknown>;
 
 // Runs inside the attach itself, so it talks to the debugger directly.
@@ -263,6 +265,7 @@ function initiatorOf(value: unknown): Pick<NetworkEntry, "initiator"> {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   recorders.delete(tabId);
+  stopped.delete(tabId);
   holdBrowserDebugger(tabId, false);
 });
 
@@ -286,9 +289,11 @@ export async function networkCall(
   if (action === "start") return start(tabId, options);
   if (action === "stop") {
     holdBrowserDebugger(tabId, false);
+    const active = recorders.get(tabId);
+    if (active) stopped.set(tabId, active);
     return { stopped: recorders.delete(tabId) };
   }
-  const recorder = recorders.get(tabId);
+  const recorder = recorders.get(tabId) ?? stopped.get(tabId);
   if (!recorder) throw new Error("Not recording: call page.network.start() first");
   if (action === "list") return list(recorder, options);
   if (action === "get") return entryOf(recorder, options.id);
@@ -303,18 +308,20 @@ export async function networkCall(
 }
 
 async function start(tabId: number, options: Params): Promise<unknown> {
-  const recorder: Recorder = recorders.get(tabId) ?? {
-    entries: new Map(),
-    early: new Map(),
-    allTypes: false,
-    bodies: true,
-    maxBody: DEFAULT_MAX_BODY,
-    bodyBytes: 0,
-  };
+  const recorder: Recorder = recorders.get(tabId) ??
+    stopped.get(tabId) ?? {
+      entries: new Map(),
+      early: new Map(),
+      allTypes: false,
+      bodies: true,
+      maxBody: DEFAULT_MAX_BODY,
+      bodyBytes: 0,
+    };
   recorder.allTypes = options.types === "all";
   recorder.bodies = options.bodies !== false;
   if (typeof options.maxBodyBytes === "number" && options.maxBodyBytes > 0)
     recorder.maxBody = Math.min(options.maxBodyBytes, 10_000_000);
+  stopped.delete(tabId);
   recorders.set(tabId, recorder);
   holdBrowserDebugger(tabId, true);
   await enableNetwork(tabId);

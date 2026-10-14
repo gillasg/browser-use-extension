@@ -338,6 +338,8 @@ test(
             const body = await page.network.body(calls[0].id);
             const replayed = await page.replay(calls[0].id, { json: { page: 2 }, query: { q: "laptop" } });
             const requested = await page.request("/api/echo", { method: "POST", json: { a: 1 }, csrf: true });
+            await page.network.stop();
+            // A stopped recording can still be read and saved.
             const har = await page.network.har();
             const data = await page.data();
             const markdown = await page.markdown();
