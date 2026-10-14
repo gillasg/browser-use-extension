@@ -165,6 +165,8 @@ function __extendPage(target, base) {
     insertText: (text) => base.cdp('Input.insertText', {text: String(text)}),
   });
   var byRole = base.getByRole, byText = base.getByText;
+  // Agents sometimes reach for page.playwright.X: it is the page itself.
+  base.playwright = base;
   return __extendPageData(target, Object.assign(base, {
     // Playwright accepts a RegExp for names and text. The engine's own targeting matches strings,
     // so a regex locator resolves in the page and acts on its first match.
@@ -192,7 +194,7 @@ function __extendPage(target, base) {
     isVisible: (selector) => css(selector).isVisible(),
     hoverSelector: (selector) => css(selector).first().hover(),
     waitForSelector: (selector, options = {}) => base.wait(selector, {timeoutMs: options.timeout ?? 10000}).then(() => css(selector).first()),
-    waitForLoadState: (_state, options = {}) => base.waitFor(() => document.readyState === 'complete', {timeoutMs: options.timeout ?? 15000}),
+    waitForLoadState: (state, options = {}) => base.waitFor(state === 'domcontentloaded' ? () => document.readyState !== 'loading' : () => document.readyState === 'complete', {timeoutMs: Math.min(options.timeout ?? 8000, 8000)}),
     waitForURL: (pattern, options = {}) => __waitUntil(async () => {
       var url = await base.evaluate(() => location.href);
       return pattern instanceof RegExp ? pattern.test(url) : String(url).includes(String(pattern).replace(/\\*\\*/g, ''));

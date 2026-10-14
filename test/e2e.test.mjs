@@ -145,6 +145,22 @@ test(
         assert.match(stdout, /→ \[\s*true,\s*true\s*\]/);
       });
 
+      await t.test(
+        "common Playwright habits work: getTab, page.playwright, load states, wheel scrolls",
+        async () => {
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              `const tab = await browser.getTab(page.target.tabId); await tab.playwright.waitForLoadState('domcontentloaded'); await tab.waitForLoadState('load', { timeout: 20000 }); await tab.scroll({ deltaY: 300 }); await tab.scroll({ direction: 'up', amount: 300 }); await tab.title()`,
+            ],
+            { env },
+          );
+          assert.match(stdout, /→ "Shop"|→ Shop|bought/);
+        },
+      );
+
       await t.test("agent tabs are grouped, and rules, history and bookmarks work", async () => {
         const cell = (code) =>
           run(process.execPath, [cli, "repl", "--session", "tools", code], { env });

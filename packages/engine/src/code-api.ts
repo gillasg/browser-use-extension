@@ -82,6 +82,7 @@ var browser = Object.freeze({
   }),
   // Agents sometimes ask for a tab object by id: browser.tab(tabId or a listed tab).
   tab: async (tab) => bu.use(typeof tab === 'object' && tab ? (tab.target || tab) : tab),
+  getTab: async (tab) => browser.tab(tab),
   attachTab: async (target) => {
     target = await __tabTarget(target);
     await __step({op:'attachTab', target});
@@ -211,8 +212,15 @@ var browser = Object.freeze({
     },
     close: async () => { await __step({op:'cdp',target,method:'Page.close',params:{}}).catch(() => {}); __states.delete(__key(target)); __tabs.delete(__key(target)); },
     waitFor: (fn, options = {}) => __step({op:'waitFor',target,expression:'('+fn.toString()+')()',...options}),
-    scroll: (direction = 'down', amount = 1200, element) =>
-      __step({op:'scroll', target, direction, amount, ...(element ? {element} : {})}),
+    // Also takes {direction, amount} or a wheel-style {deltaY}.
+    scroll: (direction = 'down', amount = 1200, element) => {
+      if (direction && typeof direction === 'object') {
+        var o = direction;
+        direction = o.direction || ((o.deltaY ?? o.y ?? 1) < 0 ? 'up' : 'down');
+        amount = o.amount ?? Math.abs(o.deltaY ?? o.y ?? 1200);
+      }
+      return __step({op:'scroll', target, direction, amount, ...(element ? {element} : {})});
+    },
     scrollToEnd: async (options = {}) => {
       const page = browser.page(target);
       const maxSteps = Math.min(40, Math.max(1, options.maxSteps || 30));
