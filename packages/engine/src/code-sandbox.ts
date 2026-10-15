@@ -9,6 +9,7 @@ import {
 } from "./code-api.js";
 import { browserPlaywrightApi } from "./code-api-playwright.js";
 import { browserDataApi } from "./code-api-data.js";
+import { browserEventsApi } from "./code-api-events.js";
 
 type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 const scope = globalThis as unknown as Record<string, unknown>;
@@ -66,6 +67,7 @@ evaluate(
     browserDocumentApi,
     browserPlaywrightApi,
     browserDataApi,
+    browserEventsApi,
   ].join("\n"),
 );
 

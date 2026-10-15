@@ -1,15 +1,20 @@
-import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   crawl,
+  findList,
   mapSite,
   scrape,
   search,
   type Format,
 } from "@browser-use-extension/tools/browser-crawl";
 import {
+  checkCaptures,
   explore,
   importCaptures,
+  isSiteToolAction,
+  runSiteToolAction,
+  SITE_TOOL_ACTIONS,
+  SITE_TOOL_HELP,
   listSites,
   loadModel,
   rebuild,
@@ -34,11 +39,17 @@ export const webTools = [
   {
     name: "crawl",
     description:
-      "Read web pages as Markdown and data: scrape a URL, crawl a site or section (include ['/docs/**']), map a site's URLs, or search Google. Plain HTTP first, this browser (with its logins) when a page needs it. Prefer it over browser_code to read many pages; use browser_code to act on pages.",
+      "Read web pages as Markdown and data: scrape a URL, crawl a site or section (include ['/docs/**']), map a site's URLs, search Google, or find: build a list from the web (search, keep results meeting criteria, fill columns; needs a model). Plain HTTP first, this browser (with its logins) when a page needs it. Prefer it over browser_code to read many pages; use browser_code to act on pages.",
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["scrape", "crawl", "map", "search"] },
+        action: { type: "string", enum: ["scrape", "crawl", "map", "search", "find"] },
+        columns: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          description: "For find: column name → what to fill in.",
+        },
+        criteria: { type: "string", description: "For find: what every row must be." },
         url: { type: "string" },
         query: {
           type: "string",
@@ -57,14 +68,24 @@ export const webTools = [
   },
   {
     name: "site_api",
-    description: `Call the APIs of sites mapped from this browser's own traffic: one call replaces many page actions and returns JSON, with the user's logins. sites lists mapped sites; operations lists what a site can do; call runs one; watch runs one and returns only items new or changed since the last watch of it. explore maps sites by name (an agent uses each in a background tab, looking only) and needs a connected model. To map a site yourself: in browser_code open it, await tab.network.start({ types: 'all' }), do something that loads new data, then await tab.network.save('<site>.har'); then learn with files ['<site>.har']. ${HOW_TO_CALL}`,
+    description: `Call the APIs of sites mapped from this browser's own traffic: one call replaces many page actions and returns JSON, with the user's logins. sites lists mapped sites; operations lists what a site can do; call runs one; watch runs one and returns only items new or changed since the last watch of it. explore maps sites by name (an agent uses each in a background tab, looking only) and needs a connected model. To map a site yourself: in browser_code open it, await tab.network.start({ types: 'all' }), do something that loads new data, then await tab.network.save('<site>.har'); then learn with files ['<site>.har'] (mitmproxy flow files from phone or desktop apps work too). ${SITE_TOOL_HELP.join(" ")} ${HOW_TO_CALL}`,
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["sites", "operations", "call", "watch", "learn", "explore"],
+          enum: ["sites", "operations", "call", "watch", "learn", "explore", ...SITE_TOOL_ACTIONS],
         },
+        name: { type: "string", description: "For action, actions and channel: its name or id." },
+        steps: {
+          ...strings,
+          description: "For actions: operation ids in order, to save an action.",
+        },
+        description: { type: "string" },
+        change: { type: "string", description: "For edit: the change in plain English." },
+        folder: { type: "string", description: "For export: the folder to write into." },
+        repair: { type: "boolean", description: "For heal: re-record failing operations." },
+        actions: { type: "boolean", description: "For explore: also map actions in dry run." },
         site: { type: "string" },
         sites: { ...strings, description: "For explore: site names or URLs to map." },
         goal: { type: "string", description: "For explore: extra things to do on each site." },
@@ -97,6 +118,11 @@ async function runCrawl(args: Json): Promise<unknown> {
     (args.query ? ["fitMarkdown", "metadata"] : ["markdown", "metadata"]);
   const render = (args.render as "auto" | "static" | "browser" | undefined) ?? "auto";
   const query = typeof args.query === "string" ? args.query : undefined;
+  if (args.action === "find")
+    return findList(requireString(query, "query"), {
+      columns: (args.columns as Record<string, string> | undefined) ?? { name: "name" },
+      ...(typeof args.criteria === "string" ? { criteria: args.criteria } : {}),
+    });
   if (args.action === "search")
     return search(requireString(query, "query"), { limit: Number(args.limit ?? 10) });
   const url = requireString(args.url, "url");
@@ -135,10 +161,7 @@ async function learn(site: string, files: unknown): Promise<unknown> {
   const paths = (files as string[]).map((file) => resolve(workspace, file));
   if (paths.some((path) => !path.startsWith(resolve(workspace))))
     throw new Error("Captures must be in the workspace of browser_code session 'mcp'");
-  for (const path of paths) {
-    const har = JSON.parse(await readFile(path, "utf8")) as { log?: { entries?: unknown[] } };
-    if (!har.log?.entries?.length) throw new Error(`${path} has no requests`);
-  }
+  await checkCaptures(paths);
   await importCaptures(site, paths);
   const result = await rebuild(site);
   return { site, howToCall: HOW_TO_CALL, operations: result.model.operations.map(describe) };
@@ -148,8 +171,16 @@ async function runSiteApi(args: Json): Promise<unknown> {
   if (args.action === "sites") return { sites: await listSites() };
   if (args.action === "explore") {
     const sites = Array.isArray(args.sites) ? (args.sites as string[]) : [args.site as string];
-    return explore(sites.filter(Boolean), typeof args.goal === "string" ? { goal: args.goal } : {});
+    return explore(sites.filter(Boolean), {
+      ...(typeof args.goal === "string" ? { goal: args.goal } : {}),
+      ...(args.actions === true ? { actions: true } : {}),
+    });
   }
+  if (isSiteToolAction(args.action))
+    return runSiteToolAction(args.action, {
+      ...(args as Record<string, never>),
+      site: requireString(args.site, "site"),
+    });
   const site = siteName(requireString(args.site, "site, for example shop.example.com"));
   if (args.action === "learn") return learn(site, args.files);
   if (args.action === "operations") {

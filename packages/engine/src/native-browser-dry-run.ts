@@ -1,0 +1,81 @@
+import { withBrowserDebugger } from "./native-browser-session.js";
+
+// Dry run: while a tab records with {dryRun: true}, requests that would change something (a like,
+// a message, a post, a purchase) are answered by the browser itself with an empty success and never
+// reach the site. The recorder still sees them, request and all, so the action can be mapped
+// without doing it. Reads (GET, searches, GraphQL queries) go through untouched.
+const dryRunTabs = new Set<number>();
+export const DRY_RUN_HEADER = "x-dry-run";
+type Params = Record<string, unknown>;
+
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+// When unsure, block: a blocked read only leaves a gap in the map, a passed write really happens.
+const READ_SEGMENT = /^(search|query|autocomplete|suggest|suggestions|typeahead|lookup)$/i;
+const READ_OPERATION = /^(get|list|search|fetch|load|find|query|read|view|lookup|browse)|Query$/;
+
+/** True when a request only reads: reads go through even during a dry run. */
+export function looksLikeRead(method: string, url: string, body?: string): boolean {
+  if (READ_METHODS.has(method.toUpperCase())) return true;
+  if (body && /"query"/.test(body) && /\bmutation\b/.test(body)) return false;
+  if (body && /"query"\s*:\s*"\s*(query\b|\{)/.test(body)) return true;
+  if (body && /"query"\s*:/.test(body)) return false;
+  const operation = body && /"operationName"\s*:\s*"([^"]*)"/.exec(body)?.[1];
+  if (operation) return READ_OPERATION.test(operation);
+  try {
+    return new URL(url).pathname.split("/").some((segment) => READ_SEGMENT.test(segment));
+  } catch {
+    return false;
+  }
+}
+
+chrome.debugger.onEvent.addListener((source, method, raw) => {
+  const tabId = source.tabId;
+  if (method !== "Fetch.requestPaused" || tabId === undefined || !dryRunTabs.has(tabId)) return;
+  void answer(tabId, source.sessionId, (raw ?? {}) as Params);
+});
+
+async function answer(tabId: number, sessionId: string | undefined, params: Params): Promise<void> {
+  const request = (params.request ?? {}) as Params;
+  const requestId = String(params.requestId);
+  const debuggee = sessionId ? { tabId, sessionId } : { tabId };
+  const read = looksLikeRead(
+    String(request.method ?? "GET"),
+    String(request.url ?? ""),
+    typeof request.postData === "string" ? request.postData : undefined,
+  );
+  const send = (command: string, body: Params) =>
+    chrome.debugger.sendCommand(debuggee, command, body).catch(() => undefined);
+  if (read) return void (await send("Fetch.continueRequest", { requestId }));
+  await send("Fetch.fulfillRequest", {
+    requestId,
+    responseCode: 200,
+    responseHeaders: [
+      { name: "content-type", value: "application/json" },
+      { name: DRY_RUN_HEADER, value: "blocked" },
+    ],
+    body: btoa("{}"),
+  });
+}
+
+const PATTERNS = ["XHR", "Fetch", "Document", "Ping", "Other"].map((resourceType) => ({
+  urlPattern: "*",
+  resourceType,
+  requestStage: "Request",
+}));
+
+export async function setDryRun(tabId: number, enabled: boolean): Promise<void> {
+  if (enabled === dryRunTabs.has(tabId)) return;
+  if (enabled) dryRunTabs.add(tabId);
+  else dryRunTabs.delete(tabId);
+  await withBrowserDebugger(tabId, (debuggee) =>
+    chrome.debugger.sendCommand(
+      debuggee,
+      enabled ? "Fetch.enable" : "Fetch.disable",
+      enabled ? { patterns: PATTERNS } : {},
+    ),
+  ).catch(() => undefined);
+}
+
+export const dryRunActive = (tabId: number): boolean => dryRunTabs.has(tabId);
+
+chrome.tabs.onRemoved.addListener((tabId) => dryRunTabs.delete(tabId));

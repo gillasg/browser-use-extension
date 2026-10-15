@@ -265,7 +265,35 @@ await siteApi.sites();
 await siteApi.call("shop.example", "searchProducts", { q: "lamp" });
 // Only what is new or changed since the last watch of the same call:
 const { new: fresh } = await siteApi.watch("shop.example", "searchProducts", { q: "lamp" });
+// A saved multi-step action, and a live channel (WebSocket or event stream):
+await siteApi.action("shop.example", "bookSlot", { date: "2026-11-02" });
+await siteApi.channel("shop.example", "liveFeed", { send: [{ type: "subscribe" }], seconds: 15 });
 ```
+
+## Waiting, live data and dry runs
+
+```js
+await page.waitForChange(".inbox", { timeoutMs: 55000 }); // that part of the page changed
+await page.waitForResponse("/api/messages"); // the next matching response
+await page.waitForMessage(/new_message/); // the next WebSocket or event-stream message
+await page.recordMedia("video", { seconds: 30 }); // a playing video or audio element, to a file
+// Map actions without doing them: requests that would change something are recorded and
+// blocked (answered with {}), never sent.
+await page.network.start({ types: "all", dryRun: true });
+```
+
+Recipes:
+
+- Several accounts on one site: save each one's `page.session()`, then switch with
+  `page.cdp("Network.clearBrowserCookies")` and `page.cdp("Network.setCookies", { cookies })`.
+- Login codes: read email codes from the inbox in the browser; SMS codes from Google Messages for
+  web (messages.google.com/web) once it is paired with the phone.
+- Phone and desktop apps: route them through mitmproxy (on Android, `adb` sets the proxy and
+  installs its certificate) and `learn` from the saved flow files.
+- An MCP server or SDK for a site: map it (`explore` with `actions: true`, or capture and
+  `learn`), check `operations` and `docs`, save multi-step actions, `heal` what breaks, then
+  `export` (OpenAPI and a typed client) or serve it with `npx site-to-api mcp <site>`.
+- Whole videos: `yt-dlp` in a shell.
 
 ## Other extensions
 

@@ -524,6 +524,8 @@ var siteApi=Object.freeze({
   operations:site=>__call({siteApi:'operations',site}),
   call:(site,operation,params={})=>__call({siteApi:'call',site,operation,params}),
   watch:(site,operation,params={},options={})=>__call({siteApi:'watch',site,operation,params,...options}),
+  action:(site,name,inputs={})=>__call({siteApi:'action',site,name,params:inputs}),
+  channel:(site,id,options={})=>__call({siteApi:'channel',site,name:id,params:options}),
 });
 var loadCheckpoint=name=>__call({workspace:'load',name});
 var saveHelper=(name,fn)=>__call({workspace:'helper',name,value:typeof fn==='function'?'('+fn.toString()+')':fn});

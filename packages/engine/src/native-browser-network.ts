@@ -4,6 +4,7 @@ import {
   withBrowserDebugger,
 } from "./native-browser-session.js";
 import { toHar, summarize, type NetworkEntry } from "./native-browser-network-format.js";
+import { dryRunActive, setDryRun } from "./native-browser-dry-run.js";
 
 // Network recording for learning a site's own APIs. While a tab records, its API traffic is
 // kept with full headers (cookies included), the script that made each call, request and
@@ -288,6 +289,7 @@ export async function networkCall(
 ): Promise<unknown> {
   if (action === "start") return start(tabId, options);
   if (action === "stop") {
+    await setDryRun(tabId, false);
     holdBrowserDebugger(tabId, false);
     const active = recorders.get(tabId);
     if (active) stopped.set(tabId, active);
@@ -317,15 +319,21 @@ async function start(tabId: number, options: Params): Promise<unknown> {
       maxBody: DEFAULT_MAX_BODY,
       bodyBytes: 0,
     };
-  recorder.allTypes = options.types === "all";
-  recorder.bodies = options.bodies !== false;
+  if (options.types !== undefined) recorder.allTypes = options.types === "all";
+  if (options.bodies !== undefined) recorder.bodies = options.bodies !== false;
   if (typeof options.maxBodyBytes === "number" && options.maxBodyBytes > 0)
     recorder.maxBody = Math.min(options.maxBodyBytes, 10_000_000);
   stopped.delete(tabId);
   recorders.set(tabId, recorder);
   holdBrowserDebugger(tabId, true);
   await enableNetwork(tabId);
-  return { recording: true, types: recorder.allTypes ? "all" : "api", bodies: recorder.bodies };
+  if (options.dryRun !== undefined) await setDryRun(tabId, options.dryRun === true);
+  return {
+    recording: true,
+    types: recorder.allTypes ? "all" : "api",
+    bodies: recorder.bodies,
+    dryRun: dryRunActive(tabId),
+  };
 }
 
 function list(recorder: Recorder, options: Params): unknown[] {
