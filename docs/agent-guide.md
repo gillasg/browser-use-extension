@@ -234,18 +234,28 @@ await browser.bookmarks.update(bookmarkId, { title: "Goa hotels" });
 await browser.bookmarks.remove(bookmarkId); // a folder with contents needs { recursive: true }
 ```
 
-## Other extensions
+## Boosts: lasting changes to sites
 
-Extensions that accept messages from other extensions can be driven by id:
+Boosts are saved changes that apply on every visit, in every tab, until removed: styles, hidden elements, clicks (a cookie banner), network rules and scripts. They come from [Site Boosts](https://github.com/gillasg/site-boosts)' engine, built into this extension.
 
 ```js
-// Site Boosts: a lasting change to a site (here, hiding its sidebar on every visit).
-await browser.sendToExtension("kcfodpkdfapojnbhkgdlpkikipneejpf", {
-  type: "site-boosts",
-  kind: "boosts.save",
-  data: { boost: { name: "No sidebar", sites: ["example.com"], zaps: [{ selector: "aside" }] } },
+// Hide a site's sidebar on every visit. Check the selector on the page first.
+const boost = await browser.boosts.save({
+  name: "No sidebar",
+  sites: ["example.com"],
+  zaps: [{ selector: "aside" }],
+  // css: "...", actions: [{ do: "click", text: "Accept all" }], network: [...], js: "..."
 });
+await browser.boosts.list("https://example.com/"); // the boosts for a page; no URL for all
+await browser.boosts.enable(boost.id, false); // switch off, or remove it:
+await browser.boosts.remove(boost.id);
 ```
+
+Saving with an existing `id` replaces that boost. Scripts (`js`) need **Allow User Scripts** switched on for the extension in `chrome://extensions`.
+
+## Other extensions
+
+Extensions that accept messages from other extensions can be driven by id with `browser.sendToExtension(id, message)`.
 
 ## Site permissions and location
 

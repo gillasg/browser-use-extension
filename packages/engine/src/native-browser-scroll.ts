@@ -1,4 +1,8 @@
-import type { BrowserScrollState, BrowserExecutorRequest, BrowserStep } from "@aeon/protocol";
+import type {
+  BrowserScrollState,
+  BrowserExecutorRequest,
+  BrowserStep,
+} from "@browser-use-extension/protocol";
 import {
   getCenter,
   getViewportCenter,

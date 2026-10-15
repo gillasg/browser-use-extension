@@ -15,12 +15,15 @@ Most browser-automation tools start a separate, empty browser. This one runs ins
 - **Hand-off.** When a step needs you (signing in, a 2FA code, a choice), the agent calls `bu.handoff("…")`. The tab comes forward with the request and **Done / Cancel**, and the agent continues from there.
 - **Many agents, one browser.** Each session owns the tabs it opens; sessions do not interfere with each other or with your own tabs.
 - **Visible work.** An on-page cursor shows where the agent clicks.
+- **Boosts.** `browser.boosts.save({ name, sites, css, zaps, actions, network, js })` saves a lasting change to a site that applies on every visit, from the [Site Boosts](https://github.com/gillasg/site-boosts) engine built in.
+- **Crawling and site APIs.** The `crawl` tool reads pages and whole sites as Markdown ([browser-crawl](https://github.com/gillasg/browser-crawl)); `site_api` turns sites mapped from your own traffic into APIs ([site-to-api](https://github.com/gillasg/site-to-api)).
 
 ## Setup
 
 Requires Node.js 22+ and Chrome, Edge or Brave.
 
 ```sh
+node scripts/link-repos.mjs   # fetches and builds site-to-api, browser-crawl, site-boosts and pi-ai-login next to this folder
 pnpm install
 pnpm build
 node apps/bridge/dist/cli.js setup
@@ -56,12 +59,14 @@ command = "node"
 args = ["/path/to/browser-use-extension/apps/bridge/dist/cli.js", "mcp"]
 ```
 
-It exposes two tools:
+It exposes four tools:
 
 | Tool           | Arguments                                 | What it does                                                                                                                |
 | -------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `browser_code` | `code` (required), `session`, `timeoutMs` | Runs JavaScript in a persistent REPL inside the browser. The last expression is returned; `console.log` output is included. |
 | `browser_tabs` | none                                      | Lists open tabs.                                                                                                            |
+| `crawl`        | `action`, `url`, `query`, `limit`, …      | Scrapes a page, crawls a site or section, maps a site's URLs, or searches Google, as Markdown and data.                     |
+| `site_api`     | `action`, `site`, `operation`, `params`   | Lists mapped sites and their operations, calls one, or maps a site from captures saved with `page.network.save()`.          |
 
 The tool description carries the full API, so agents can use it without extra setup. [docs/agent-guide.md](docs/agent-guide.md) is the longer reference with examples, for agents and people writing prompts.
 
@@ -90,9 +95,14 @@ agent ──MCP/CLI──▶ bridge (local, 127.0.0.1) ◀──WebSocket── 
 - `packages/engine`: the browser engine: code runtime, tab ownership, input, observation, hand-off, network recording. It can be embedded in other extensions.
 - `apps/extension`: the extension that connects Chrome to the bridge.
 - `apps/bridge`: the bridge, native messaging host, CLI and MCP server.
+- `packages/protocol`: the messages the engine speaks.
+- `packages/tools`: site-to-api and browser-crawl, for the bridge and for apps built on the engine.
+
+site-to-api, browser-crawl and Site Boosts are their own projects, each usable alone. This repo links to them in sibling folders (`link:../site-to-api`) instead of copying them, so a change there is used here on the next build. `node scripts/link-repos.mjs --revisions` prints the revision of each linked repo.
 
 ## Development
 
 ```sh
-pnpm check   # format, types, and an end-to-end test in real Chrome (set CHROME_PATH)
+node scripts/link-repos.mjs   # once, and after pulling the linked repos
+pnpm check                    # format, types, and an end-to-end test in real Chrome (set CHROME_PATH)
 ```

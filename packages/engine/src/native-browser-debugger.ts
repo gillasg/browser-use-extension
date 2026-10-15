@@ -6,7 +6,7 @@ import {
   type AxNode,
   type AxRef,
 } from "./native-browser-common.js";
-import type { BrowserElementTarget, BrowserTargetKey } from "@aeon/protocol";
+import type { BrowserElementTarget, BrowserTargetKey } from "@browser-use-extension/protocol";
 import { queryNodes, visibleNodes, scopedBackendIds } from "./native-browser-dom.js";
 export { withBrowserDebugger as withDebugger } from "./native-browser-session.js";
 

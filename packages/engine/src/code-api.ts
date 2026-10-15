@@ -68,6 +68,14 @@ var browser = Object.freeze({
   }),
   // Messages to other installed extensions that accept them, by extension id.
   sendToExtension: (id, message) => __call({extension: String(id), message}),
+  // Lasting changes to sites, applied on every visit: {name, sites, css, zaps, actions, network, js}.
+  boosts: Object.freeze({
+    list: (url) => __call({boosts:"list", ...(url ? {url: String(url)} : {})}),
+    get: (id) => __call({boosts:"get", id}),
+    save: (boost) => __call({boosts:"save", boost}),
+    remove: (id) => __call({boosts:"remove", id}),
+    enable: (id, enabled = true) => __call({boosts:"enable", id, enabled}),
+  }),
   history: Object.freeze({
     search: (text = "", options = {}) => __call({history:"search", text, ...options}),
   }),

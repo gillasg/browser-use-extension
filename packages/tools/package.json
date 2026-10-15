@@ -1,0 +1,31 @@
+{
+  "name": "@browser-use-extension/tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "site-to-api and browser-crawl, linked from their own repos, for everything built on the Browser Use Extension.",
+  "exports": {
+    "./site-to-api": {
+      "types": "./dist/site-to-api.d.ts",
+      "import": "./dist/site-to-api.js"
+    },
+    "./site-to-api/runtime": {
+      "types": "./dist/site-to-api-runtime.d.ts",
+      "import": "./dist/site-to-api-runtime.js"
+    },
+    "./browser-crawl": {
+      "types": "./dist/browser-crawl.d.ts",
+      "import": "./dist/browser-crawl.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "browser-crawl": "link:../../../browser-crawl",
+    "site-to-api": "link:../../../site-to-api"
+  },
+  "files": [
+    "dist"
+  ]
+}

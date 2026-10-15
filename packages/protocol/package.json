@@ -1,0 +1,23 @@
+{
+  "name": "@browser-use-extension/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The messages the browser engine speaks, as zod schemas.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}

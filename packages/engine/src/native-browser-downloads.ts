@@ -1,4 +1,4 @@
-import type { BrowserTargetKey, BrowserExecutorRequest } from "@aeon/protocol";
+import type { BrowserTargetKey, BrowserExecutorRequest } from "@browser-use-extension/protocol";
 import { browserSessionOwner } from "./native-browser-session.js";
 import { publishBrowserEvent } from "./native-browser-events.js";
 

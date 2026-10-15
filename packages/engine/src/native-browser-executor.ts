@@ -6,7 +6,7 @@ import {
   BrowserExecutorResultSchema,
   BrowserOperationResultSchema,
   type BrowserTargetKey,
-} from "@aeon/protocol";
+} from "@browser-use-extension/protocol";
 import {
   withBrowserDebugger,
   reconnectBrowserSession,

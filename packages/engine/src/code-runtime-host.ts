@@ -6,7 +6,7 @@ import {
   type BrowserCodeRun,
   type BrowserStep,
   type BrowserTargetKey,
-} from "@aeon/protocol";
+} from "@browser-use-extension/protocol";
 import { browserErrorDetail, errorCode, targetIdentity } from "./native-browser-common.js";
 import { executeLocalBrowserStep } from "./native-browser-executor.js";
 import { browserSessionOwner } from "./native-browser-session.js";

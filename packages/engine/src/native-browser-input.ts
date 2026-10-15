@@ -6,7 +6,7 @@ import {
   type BrowserStep,
   BrowserExecutorResultSchema,
   type BrowserExecutorResult,
-} from "@aeon/protocol";
+} from "@browser-use-extension/protocol";
 import {
   resolveElement,
   clickAt,

@@ -5,7 +5,7 @@ import {
   type BrowserExecutorRequest,
   type BrowserExecutorResult,
   type BrowserTargetKey,
-} from "@aeon/protocol";
+} from "@browser-use-extension/protocol";
 import {
   booleanProperty,
   textValue,

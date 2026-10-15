@@ -4,13 +4,13 @@
   "type": "module",
   "packageManager": "pnpm@11.4.0",
   "scripts": {
-    "build": "pnpm exec tsc -p packages/engine --noEmit && pnpm exec tsc -p apps/bridge && pnpm --filter @browser-use-extension/extension build",
-    "typecheck": "pnpm exec tsc -p packages/engine --noEmit && pnpm exec tsc -p apps/extension --noEmit && pnpm exec tsc -p apps/bridge --noEmit",
+    "build": "pnpm --filter @browser-use-extension/protocol build && pnpm --filter @browser-use-extension/tools build && pnpm exec tsc -p packages/engine --noEmit && pnpm exec tsc -p apps/bridge && pnpm --filter @browser-use-extension/extension build",
+    "typecheck": "pnpm --filter @browser-use-extension/protocol build && pnpm --filter @browser-use-extension/tools build && pnpm exec tsc -p packages/engine --noEmit && pnpm exec tsc -p apps/extension --noEmit && pnpm exec tsc -p apps/bridge --noEmit",
     "format": "prettier --write \"apps/**/*.{ts,mjs,json,html}\" \"packages/**/*.{ts,mjs,json}\" \"test/*.mjs\" \"*.{json,yaml}\"",
     "format:check": "prettier --check \"apps/**/*.{ts,mjs,json,html}\" \"packages/**/*.{ts,mjs,json}\" \"test/*.mjs\" \"*.{json,yaml}\"",
     "test": "pnpm build && node --test",
     "check": "pnpm format:check && pnpm typecheck && pnpm test",
-    "export:engine": "node scripts/export-engine.mjs"
+    "links": "node scripts/link-repos.mjs"
   },
   "devDependencies": {
     "@types/node": "26.6.3",

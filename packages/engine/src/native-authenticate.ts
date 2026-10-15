@@ -1,4 +1,4 @@
-import { AuthReplySchema } from "@aeon/protocol";
+import { AuthReplySchema } from "@browser-use-extension/protocol";
 export function authenticate(
   socket: WebSocket,
   hello: unknown,

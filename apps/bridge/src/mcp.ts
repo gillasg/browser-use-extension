@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import { BridgeClient } from "./client.js";
 import { browserCodeDescription } from "./guidance.js";
 import { formatResult } from "./format.js";
+import { callWebTool, webTools } from "./web-tools.js";
 
 // A stdio MCP server (JSON-RPC 2.0, one message per line) exposing the browser to any MCP client.
 type Json = Record<string, unknown>;
@@ -71,10 +72,12 @@ async function handle(message: Json, bridge: () => Promise<BridgeClient>): Promi
       serverInfo: { name: "browser-use-extension", version: "0.1.0" },
     };
   if (message.method === "ping") return {};
-  if (message.method === "tools/list") return { tools };
+  if (message.method === "tools/list") return { tools: [...tools, ...webTools] };
   if (message.method !== "tools/call")
     throw new Error(`Unsupported method: ${String(message.method)}`);
   const args = (params.arguments ?? {}) as Json;
+  const web = await callWebTool(params.name, args);
+  if (web) return web;
   const client = await bridge();
   if (params.name === "browser_tabs") {
     const reply = await client.request("tabs");

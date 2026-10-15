@@ -10,8 +10,9 @@
     "dist"
   ],
   "dependencies": {
-    "pi-ai-login": "file:../../vendor/pi-ai-login-0.1.1.tgz",
-    "ws": "8.22.0"
+    "pi-ai-login": "link:../../../pi-ai-login",
+    "ws": "8.22.0",
+    "@browser-use-extension/tools": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "26.6.3",

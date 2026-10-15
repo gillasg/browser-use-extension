@@ -2,6 +2,7 @@ import { copyFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { boostEngineDefine, writeBoostContent } from "@browser-use-extension/engine/boosts-build";
 
 // Builds the unpacked extension into apps/extension/build.
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -15,9 +16,13 @@ const entries = [
   [join(engine, "src/code-offscreen.ts"), "code-offscreen.js"],
   [join(engine, "src/code-sandbox.ts"), "code-sandbox.js"],
 ];
+// The service worker carries the boost engine; its content script is built beside it.
+const boosts = await boostEngineDefine();
+await writeBoostContent(join(output, "boosts-content.js"));
 await Promise.all(
   entries.map(([entry, file]) =>
     build({
+      ...(file === "service-worker.js" ? { define: boosts } : {}),
       entryPoints: [entry],
       outfile: join(output, file),
       bundle: true,

@@ -1,0 +1,69 @@
+name: Release
+
+# A release whenever this repo or a linked one (site-to-api, browser-crawl, site-boosts,
+# pi-ai-login) has changed on main since the last one. Each release is tagged and lists the
+# revision of every linked repo it was built from, so any release can be rebuilt or rolled back to.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.4.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Set up linked repos
+        run: node scripts/link-repos.mjs
+      - name: Decide whether anything changed
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/link-repos.mjs --revisions > build-info.json
+          hash=$(sha256sum build-info.json | cut -c1-10)
+          tag="build-$(date -u +%Y%m%d)-$hash"
+          if gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -q -- "-$hash$"; then
+            echo "Nothing changed since the last release."
+          else
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.build.outputs.tag
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm build
+      - name: Publish
+        if: steps.build.outputs.tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.build.outputs.tag }}
+        run: |
+          cp build-info.json apps/extension/build/
+          (cd apps/extension/build && zip -qr "../../../browser-use-extension-$TAG.zip" .)
+          {
+            echo "The extension, built from these revisions:"
+            echo
+            echo '```json'
+            cat build-info.json
+            echo '```'
+            echo
+            echo "Unzip it and load the folder with Load unpacked in chrome://extensions. The bridge, CLI and MCP server come from the source at this tag (see Setup in the README)."
+          } > notes.md
+          gh release create "$TAG" "browser-use-extension-$TAG.zip" build-info.json \
+            --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md

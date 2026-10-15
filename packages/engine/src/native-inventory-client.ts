@@ -7,7 +7,7 @@ import {
   BrowserInventoryFullSchema,
   BrowserInventoryReplySchema,
   type BrowserInventoryDeltaMessage,
-} from "@aeon/protocol";
+} from "@browser-use-extension/protocol";
 import type { BrowserIdentity } from "./native-worker-identity.js";
 
 export type TabIdentity = { tabIncarnation: string; documentEpoch: number };

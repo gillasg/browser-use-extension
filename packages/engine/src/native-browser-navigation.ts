@@ -1,5 +1,5 @@
 import { noteDeviceEmulation } from "./native-browser-session.js";
-import type { BrowserExecutorRequest } from "@aeon/protocol";
+import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
 import { BrowserActionError } from "./native-browser-common.js";
 
 interface Activity {

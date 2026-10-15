@@ -419,8 +419,13 @@ test(
           const listed = await mcp.call("tools/list", {});
           assert.deepEqual(
             listed.tools.map((tool) => tool.name),
-            ["browser_code", "browser_tabs"],
+            ["browser_code", "browser_tabs", "crawl", "site_api"],
           );
+          const crawled = await mcp.call("tools/call", {
+            name: "crawl",
+            arguments: { action: "scrape", url: siteUrl, render: "static" },
+          });
+          assert.match(crawled.content[0].text, /Shop/, JSON.stringify(crawled));
           const called = await mcp.call("tools/call", {
             name: "browser_code",
             arguments: {
@@ -434,6 +439,29 @@ test(
         } finally {
           mcp.close();
         }
+      });
+
+      await t.test("a saved boost applies on every visit until it is removed", async () => {
+        const repl = (code) =>
+          run(process.execPath, [cli, "repl", "--session", "boosts", code], { env });
+        const color = `(await browser.openTab(${JSON.stringify(siteUrl)}, { new: true })).evaluate(() => getComputedStyle(document.querySelector("h1")).color)`;
+        const saved = await repl(
+          `const boost = await browser.boosts.save({ name: "Red headings", sites: [{ type: "domain", value: "127.0.0.1" }], css: "h1 { color: rgb(200, 0, 0) !important }" });
+          await new Promise((done) => setTimeout(done, 500));
+          console.log("RESULT " + JSON.stringify({ id: boost.id, color: await ${color}, listed: (await browser.boosts.list()).length }))`,
+        );
+        assert.match(saved.stdout, /RESULT /, saved.stdout);
+        const first = JSON.parse(/RESULT (.*)/.exec(saved.stdout)[1]);
+        assert.equal(first.color, "rgb(200, 0, 0)");
+        assert.equal(first.listed, 1);
+        const removed = await repl(
+          `await browser.boosts.remove(${JSON.stringify(first.id)});
+          console.log("RESULT " + JSON.stringify({ color: await ${color}, listed: (await browser.boosts.list()).length }))`,
+        );
+        assert.match(removed.stdout, /RESULT /, removed.stdout);
+        const after = JSON.parse(/RESULT (.*)/.exec(removed.stdout)[1]);
+        assert.notEqual(after.color, "rgb(200, 0, 0)");
+        assert.equal(after.listed, 0);
       });
 
       await t.test("site skills saved by one agent are offered to another", async () => {

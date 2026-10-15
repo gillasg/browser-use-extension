@@ -6,8 +6,8 @@ import {
   BrowserInventoryReplySchema,
   NativeBootstrapRequestSchema,
   NativeBootstrapResponseSchema,
-  SUPPORTED_PROTOCOL_VERSION,
-} from "@aeon/protocol";
+  ENGINE_PROTOCOL_VERSION,
+} from "@browser-use-extension/protocol";
 import {
   authenticate,
   configureEngine,
@@ -15,6 +15,7 @@ import {
   handleBrowserCodeMessage,
   handleBrowserExecutorMessage,
   hostErrorCode,
+  installBoosts,
   installBrowserPopupGuard,
   installNativeStartup,
   releaseBrowserExecutor,
@@ -44,6 +45,8 @@ configureEngine({
   notificationIcon: "icon-128.png",
 });
 void chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+// Saved boosts (browser.boosts) apply in every tab.
+installBoosts();
 installNativeStartup(ensureConnection, () => scheduleExecutorReconnect(ensureConnection));
 // Status for the toolbar popup.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
@@ -71,7 +74,7 @@ async function connect(): Promise<Connection> {
     socket,
     AuthHelloSchema.parse({
       kind: "auth.hello",
-      protocolVersion: SUPPORTED_PROTOCOL_VERSION,
+      protocolVersion: ENGINE_PROTOCOL_VERSION,
       role: "extension-executor",
       ...identity,
       connectionGrant: bootstrap.connectionGrant,
@@ -93,7 +96,7 @@ async function connect(): Promise<Connection> {
 async function sendNativeBootstrap(identity: BrowserIdentity) {
   const request = NativeBootstrapRequestSchema.parse({
     kind: "native.bootstrap",
-    protocolVersion: SUPPORTED_PROTOCOL_VERSION,
+    protocolVersion: ENGINE_PROTOCOL_VERSION,
     ...identity,
   });
   const result = await new Promise<{ response?: unknown; error?: string }>((resolve) => {

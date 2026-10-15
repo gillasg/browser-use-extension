@@ -1,3 +1,5 @@
+import { boostsCall, isBoostsRequest } from "./native-browser-boosts.js";
+
 // The user's history and bookmarks, for questions like "that article I read last week" and for
 // organizing bookmarks. Results are compact records; the code runtime gets them as plain data.
 const MAX_RESULTS = 500;
@@ -10,7 +12,8 @@ export function isLibraryRequest(value: Request | null): boolean {
     (typeof value.history === "string" ||
       typeof value.bookmarks === "string" ||
       typeof value.downloads === "string" ||
-      typeof value.extension === "string"),
+      typeof value.extension === "string" ||
+      isBoostsRequest(value)),
   );
 }
 
@@ -18,10 +21,11 @@ export function libraryCall(value: Request): Promise<unknown> {
   if (typeof value.history === "string") return historyCall(value.history, value);
   if (typeof value.downloads === "string") return downloadsCall(value.downloads, value);
   if (typeof value.extension === "string") return extensionCall(value.extension, value.message);
+  if (isBoostsRequest(value)) return boostsCall(value);
   return bookmarksCall(String(value.bookmarks), value);
 }
 
-/** A message to another installed extension that accepts them (for example Site Boosts). */
+/** A message to another installed extension that accepts them. */
 async function extensionCall(id: string, message: unknown): Promise<unknown> {
   if (!/^[a-p]{32}$/.test(id)) throw new Error("INVALID_EXTENSION_ID: " + id);
   try {

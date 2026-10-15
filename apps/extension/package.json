@@ -7,8 +7,8 @@
     "build": "node scripts/build.mjs"
   },
   "dependencies": {
-    "@aeon/protocol": "file:../../vendor/aeon-protocol-0.10.0.tgz",
-    "@browser-use-extension/engine": "workspace:*"
+    "@browser-use-extension/engine": "workspace:*",
+    "@browser-use-extension/protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "0.3.0",

@@ -1,0 +1,237 @@
+import { z } from "zod";
+import { browserExtraSteps } from "./browser-extra-steps.js";
+import { browserCapabilitySteps } from "./browser-capability-steps.js";
+import { BrowserTabSchema, BrowserTargetKeySchema } from "./browser-inventory.js";
+
+const HttpUrlSchema = z
+  .string()
+  .url()
+  .max(8192)
+  .refine((value) => ["http:", "https:"].includes(new URL(value).protocol));
+
+export { BrowserElementTargetSchema, type BrowserElementTarget } from "./browser-elements.js";
+import { BrowserElementTargetSchema, SemanticTargetSchema } from "./browser-elements.js";
+
+export const BrowserStepSchema = z.discriminatedUnion("op", [
+  ...browserExtraSteps,
+  ...browserCapabilitySteps,
+  z.object({ op: z.literal("listTabs"), query: z.string().max(160).optional() }).strict(),
+  z
+    .object({
+      op: z.literal("openTab"),
+      clientInstanceId: z.string().uuid(),
+      url: HttpUrlSchema,
+      foreground: z.boolean().default(false),
+    })
+    .strict(),
+  z.object({ op: z.literal("attachTab"), target: BrowserTargetKeySchema }).strict(),
+  z
+    .object({
+      op: z.literal("observe"),
+      target: BrowserTargetKeySchema,
+      kind: z.enum(["semantic", "screenshot"]),
+      query: z.string().max(256).optional(),
+      interactive: z.boolean().optional(),
+      selector: z.string().min(1).max(512).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("click"),
+      target: BrowserTargetKeySchema,
+      element: BrowserElementTargetSchema,
+      observe: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("fill"),
+      target: BrowserTargetKeySchema,
+      element: SemanticTargetSchema,
+      value: z.string().max(20000),
+      observe: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("scroll"),
+      target: BrowserTargetKeySchema,
+      element: SemanticTargetSchema.optional(),
+      direction: z.enum(["up", "down", "left", "right"]),
+      amount: z.number().int().min(40).max(1200),
+    })
+    .strict(),
+]);
+export type BrowserStep = z.infer<typeof BrowserStepSchema>;
+
+export const BrowserOperationCallSchema = z
+  .object({ steps: z.array(BrowserStepSchema).min(1).max(8) })
+  .strict();
+export type BrowserOperationCall = z.infer<typeof BrowserOperationCallSchema>;
+
+export const BrowserExecutorRequestSchema = z
+  .object({
+    kind: z.literal("browser.operation"),
+    requestId: z.string().uuid(),
+    operationId: z.string().uuid(),
+    toolCallId: z.string().min(1).max(256),
+    chatId: z.string().uuid(),
+    claimId: z.string().uuid().optional(),
+    claimGeneration: z.number().int().positive().optional(),
+    expectedDocumentEpoch: z.number().int().nonnegative().optional(),
+    step: BrowserStepSchema,
+  })
+  .strict()
+  .superRefine((request, context) => {
+    const targetAction = !["listTabs", "openTab", "attachTab"].includes(request.step.op);
+    const hasClaim =
+      request.claimId !== undefined &&
+      request.claimGeneration !== undefined &&
+      request.expectedDocumentEpoch !== undefined;
+    const hasAnyClaim =
+      request.claimId !== undefined ||
+      request.claimGeneration !== undefined ||
+      request.expectedDocumentEpoch !== undefined;
+    if (targetAction !== hasClaim || (hasAnyClaim && !hasClaim))
+      context.addIssue({
+        code: "custom",
+        message: "Target actions require a complete one-use claim.",
+      });
+  });
+export type BrowserExecutorRequest = z.infer<typeof BrowserExecutorRequestSchema>;
+
+export const BrowserSemanticNodeSchema = z
+  .object({
+    ref: z.string().regex(/^e[0-9]{1,4}$/),
+    role: z.string().max(80),
+    name: z.string().max(512),
+    value: z.string().max(512).optional(),
+    disabled: z.boolean().optional(),
+    checked: z.boolean().optional(),
+    focused: z.boolean().optional(),
+    backendNodeId: z.number().int().positive().optional(),
+    expanded: z.boolean().optional(),
+    selected: z.boolean().optional(),
+    pressed: z.union([z.boolean(), z.literal("mixed")]).optional(),
+    mixed: z.boolean().optional(),
+  })
+  .strict();
+export type BrowserSemanticNode = z.infer<typeof BrowserSemanticNodeSchema>;
+
+const SemanticObservationSchema = z
+  .object({
+    kind: z.literal("semantic"),
+    source: z.literal("website"),
+    trust: z.literal("untrusted"),
+    target: BrowserTargetKeySchema,
+    documentEpoch: z.number().int().nonnegative(),
+    snapshotId: z.string().uuid(),
+    url: z.string().max(8192),
+    nodes: z.array(BrowserSemanticNodeSchema).max(180),
+    truncated: z.boolean(),
+    text: z.string().max(20000).optional(),
+  })
+  .strict();
+
+const ScreenshotObservationSchema = z
+  .object({
+    kind: z.literal("screenshot"),
+    source: z.literal("website"),
+    trust: z.literal("untrusted"),
+    target: BrowserTargetKeySchema,
+    documentEpoch: z.number().int().nonnegative(),
+    screenshotId: z.string().uuid(),
+    url: z.string().max(8192),
+    viewport: z
+      .object({
+        width: z.number().int().positive().max(8192),
+        height: z.number().int().positive().max(8192),
+      })
+      .strict(),
+    capturedAt: z.number().int().nonnegative(),
+    mimeType: z.literal("image/jpeg"),
+    dataBase64: z.string().max(1_500_000),
+  })
+  .strict();
+
+export const BrowserScrollStateSchema = z
+  .object({
+    direction: z.enum(["up", "down", "left", "right"]),
+    position: z.number().finite(),
+    extent: z.number().finite(),
+    viewport: z.number().finite(),
+    moved: z.boolean(),
+    atBoundary: z.boolean(),
+  })
+  .strict();
+export type BrowserScrollState = z.infer<typeof BrowserScrollStateSchema>;
+
+export const BrowserExecutorResultSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("page"),
+      target: BrowserTargetKeySchema,
+      url: z.string().max(8192),
+      documentEpoch: z.number().int().nonnegative(),
+      data: z.unknown(),
+      source: z.literal("website"),
+      trust: z.literal("untrusted"),
+    })
+    .strict(),
+  z.object({ kind: z.literal("tabs"), tabs: z.array(BrowserTabSchema).max(256) }).strict(),
+  z.object({ kind: z.literal("tab"), tab: BrowserTabSchema }).strict(),
+  SemanticObservationSchema,
+  ScreenshotObservationSchema,
+  z
+    .object({
+      kind: z.literal("action"),
+      target: BrowserTargetKeySchema,
+      documentEpoch: z.number().int().nonnegative(),
+      url: z.string().max(8192),
+      observation: SemanticObservationSchema.optional(),
+      scroll: BrowserScrollStateSchema.optional(),
+      outcome: z.enum(["navigated", "changed", "unchanged", "unknown"]).optional(),
+    })
+    .strict(),
+]);
+export type BrowserExecutorResult = z.infer<typeof BrowserExecutorResultSchema>;
+
+export const BrowserOperationResultSchema = z.discriminatedUnion("ok", [
+  z
+    .object({
+      kind: z.literal("browser.operation.result"),
+      requestId: z.string().uuid(),
+      operationId: z.string().uuid(),
+      ok: z.literal(true),
+      result: BrowserExecutorResultSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("browser.operation.result"),
+      requestId: z.string().uuid(),
+      operationId: z.string().uuid(),
+      ok: z.literal(false),
+      detail: z.string().max(2000).optional(),
+      code: z.enum([
+        "TARGET_LOST",
+        "AMBIGUOUS_TARGET",
+        "TARGET_NOT_FOUND",
+        "TARGET_HIDDEN",
+        "TARGET_DISABLED",
+        "TARGET_BLOCKED",
+        "NOT_EDITABLE",
+        "INPUT_FAILED",
+        "STALE_REF",
+        "CLAIM_CONFLICT",
+        "UNSUPPORTED",
+        "INVALID_TARGET",
+        "TIMEOUT",
+        "BROWSER_OFFLINE",
+        "DAEMON_OFFLINE",
+        "OPERATION_FAILED",
+      ]),
+    })
+    .strict(),
+]);
+export type BrowserOperationResult = z.infer<typeof BrowserOperationResultSchema>;

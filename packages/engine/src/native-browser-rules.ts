@@ -151,7 +151,10 @@ function mockRule(url: unknown, body: unknown, contentType: unknown): Omit<Rule,
 
 async function addRules(tabId: number, rules: Omit<Rule, "id">[]): Promise<unknown> {
   const existing = await chrome.declarativeNetRequest.getSessionRules();
-  let next = existing.reduce((max, rule) => Math.max(max, rule.id), 0);
+  // Ids from 500000 up belong to the boost engine and its script requests.
+  let next = existing
+    .filter((rule) => rule.id < 500_000)
+    .reduce((max, rule) => Math.max(max, rule.id), 0);
   const addRules = rules.map((rule) => ({
     ...rule,
     id: ++next,
