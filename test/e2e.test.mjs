@@ -159,7 +159,7 @@ test(
           [
             cli,
             "repl",
-            `const first = page.target.tabId; await browser.openTab(${JSON.stringify(siteUrl + "api/items")}); const opened = page.url; await bu.use(first); [opened.endsWith("/api/items"), page.target.tabId === first]`,
+            `const first = page.target.tabId; await browser.openTab(${JSON.stringify(siteUrl + "api/items")}, {newTab: true}); const opened = page.url; await bu.use(first); [opened.endsWith("/api/items"), page.target.tabId === first]`,
           ],
           { env },
         );
@@ -286,6 +286,18 @@ test(
             await page.evaluate(() => { const d = document.createElement("div"); d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "Enter your origin"); d.style.cssText = "position:fixed;inset:0;background:#fff"; d.innerHTML = '<input aria-label="Where else?">'; document.body.append(d); });
             const blocked = await page.getByRole("button", { name: "Add" }).click().then(() => "clicked", (error) => String(error.message || error));
             await page.evaluate(() => document.querySelector("[role=dialog]").remove());
+            await page.evaluate(() => { const d = document.createElement("div"); d.setAttribute("role", "dialog"); d.style.cssText = "position:fixed;inset:0;background:#fff;padding:40px"; d.onclick = (event) => { if (event.target === d) document.title = "dialog-clicked"; }; d.innerHTML = '<label style="display:block"><input id="inner" type="checkbox" style="pointer-events:none"> Option</label><div id="bare" style="pointer-events:none;width:40px;height:20px"><input id="plain" type="checkbox" style="pointer-events:none"></div>'; document.body.append(d); });
+            const ancestorHit = await page.locator("#inner").click().then(() => "clicked", (error) => String(error.message || error));
+            const innerChecked = await page.evaluate(() => document.querySelector("#inner").checked);
+            const plainHit = await page.locator("#plain").click().then(() => "clicked", (error) => String(error.message || error));
+            const plainChecked = await page.evaluate(() => document.querySelector("#plain").checked);
+            const ancestorTitle = await page.title();
+            await page.evaluate(() => document.querySelector("[role=dialog]").remove());
+            const filtered = await page.locator("li").filter({ hasText: "Beta" }).first().textContent();
+            const orTexts = await page.locator("li").filter({ hasText: "Gamma" }).or(page.locator("li").filter({ hasText: "Alpha" })).allInnerTexts();
+            const andCount = await page.locator("li").and(page.locator("li").filter({ hasText: "Beta" })).count();
+            await page.wait(50);
+            await page.waitForSelector("body", { timeout: 20000 });
             await page.console({ clear: true });
             await page.evaluate(() => console.error("boom from page"));
             const consoleErrors = (await page.console({ errors: true })).map((entry) => entry.text).join(" ");
@@ -300,7 +312,7 @@ test(
             const sample = '<div data-rpos="0"><a href="/url?q=https://example.com/one"><h3>One result</h3></a><span>First snippet</span></div>' +
               '<div data-rpos="1"><a href="https://www.google.com/x"><h3>Google itself</h3></a></div>';
             const parsed = __parseGoogle(sample, 5);
-            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed, regexText, regexClick, viaTab, blocked, consoleErrors, confirmed, pdf, mobile, downloads,
+            console.log("RESULT " + JSON.stringify({ title, url, count, second, texts, heading, items, added, typed, rows, links, parsed, regexText, regexClick, viaTab, blocked, ancestorHit, innerChecked, plainHit, plainChecked, ancestorTitle, filtered, orTexts, andCount, consoleErrors, confirmed, pdf, mobile, downloads,
               tabIds: tabs.map((tab) => tab.target.tabId) }))`,
             ],
             { env },
@@ -327,6 +339,14 @@ test(
             result.blocked,
             /TARGET_BLOCKED: covered by dialog "Enter your origin"; its fields: "Where else."/,
           );
+          assert.equal(result.ancestorHit, "clicked");
+          assert.equal(result.innerChecked, true);
+          assert.equal(result.plainHit, "clicked");
+          assert.equal(result.plainChecked, true);
+          assert.notEqual(result.ancestorTitle, "dialog-clicked");
+          assert.equal(result.filtered, "Beta");
+          assert.deepEqual(result.orTexts, ["Alpha", "Gamma"]);
+          assert.equal(result.andCount, 1);
           assert.equal(result.typed, "phones");
           assert.deepEqual(result.rows, [
             { Model: "iPhone 16", Price: "69,900" },

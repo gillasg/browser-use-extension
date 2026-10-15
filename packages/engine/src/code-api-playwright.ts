@@ -17,8 +17,8 @@ function __callableString(read, call) {
   });
 }
 // Resolves a locator spec to elements inside the page (runs page-side, so it must be self-contained).
-function __resolveInPage(spec) {
-  var roots = spec.scope ? [...document.querySelectorAll(spec.scope)] : [document];
+function __resolveInPage(spec, within) {
+  var roots = within ? [within] : spec.scope ? [...document.querySelectorAll(spec.scope)] : [document];
   var all = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
   var text = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
   var pattern = spec.regex ? new RegExp(spec.regex[0], spec.regex[1]) : null;
@@ -39,12 +39,23 @@ function __resolveInPage(spec) {
     if (pattern) found = found.filter((el) => pattern.test(name(el)));
     else if (spec.name) found = found.filter((el) => spec.exact ? name(el) === spec.name : name(el).toLowerCase().includes(spec.name.toLowerCase()));
   }
-  if (spec.hasText) found = found.filter((el) => text(el).toLowerCase().includes(String(spec.hasText).toLowerCase()));
+  var textMatch = (el, wanted) => Array.isArray(wanted) ? new RegExp(wanted[0], wanted[1]).test(text(el)) : text(el).toLowerCase().includes(String(wanted).toLowerCase());
+  for (var filter of spec.filters || []) {
+    if (filter.hasText !== undefined) found = found.filter((el) => textMatch(el, filter.hasText));
+    if (filter.hasNotText !== undefined) found = found.filter((el) => !textMatch(el, filter.hasNotText));
+    if (filter.has) found = found.filter((el) => __resolveInPage(filter.has, el).length > 0);
+    if (filter.hasNot) found = found.filter((el) => __resolveInPage(filter.hasNot, el).length === 0);
+    if (filter.and) { var both = __resolveInPage(filter.and, within); found = found.filter((el) => both.includes(el)); }
+    if (filter.or) {
+      var either = __resolveInPage(filter.or, within);
+      found = [...new Set([...found, ...either])].sort((a, b) => a === b ? 0 : a.compareDocumentPosition(b) & 4 ? -1 : 1);
+    }
+  }
   return found;
 }
 function __spec(element) {
-  if (element.kind === 'locator') return {role: element.role, name: element.name, exact: element.exact, scope: element.scope, hasText: element.hasText, regex: element.regex};
-  return {by: element.by, value: element.value, exact: element.exact, scope: element.scope, hasText: element.hasText, regex: element.regex};
+  if (element.kind === 'locator') return {role: element.role, name: element.name, exact: element.exact, scope: element.scope, filters: element.filters, regex: element.regex};
+  return {by: element.by, value: element.value, exact: element.exact, scope: element.scope, filters: element.filters, regex: element.regex};
 }
 // Runs a read on the matched elements in the page: op receives (elements, arg). The expression is
 // assembled as source, not eval'd in the page, so strict Content-Security-Policy pages allow it.
@@ -71,13 +82,17 @@ async function __clickIndexed(target, element, index, options) {
 function __extendLocator(target, element, base, index) {
   var self = () => __locator(target, element, index);
   var read = (op, arg) => __locatorRead(target, element, index, op, arg);
-  var indexed = index !== undefined;
+  // Filtered and regex locators resolve in the page, so actions on them click the element at its index (first by default).
+  var indexed = index !== undefined || Boolean(element.filters || element.regex);
+  var at0 = index === undefined ? 0 : index;
   var at = (i) => __locator(target, element, i);
   return Object.assign(base, {
     first: () => at(0), last: () => at(-1), nth: (i) => at(i),
     all: async () => Array.from({length: await read((found) => found.length)}, (_, i) => at(i)),
     count: () => read((found) => found.length),
-    filter: (options = {}) => __locator(target, {...element, ...(options.hasText ? {hasText: options.hasText} : {})}, index),
+    filter: (options = {}) => __locator(target, __withOptions(element, options), index),
+    and: (other) => __locator(target, __withFilter(element, {and: __spec(other.element)}), index),
+    or: (other) => __locator(target, __withFilter(element, {or: __spec(other.element)}), index),
     innerText: () => read((found) => found.length ? found[0].innerText : (() => { throw new Error('TARGET_NOT_FOUND: no element matches'); })()),
     textContent: () => read((found) => found.length ? found[0].textContent : null),
     innerHTML: () => read((found) => found.length ? found[0].innerHTML : ''),
@@ -91,9 +106,9 @@ function __extendLocator(target, element, base, index) {
     evaluateAll: (fn, arg) => read('(found, arg) => (' + fn.toString() + ')(found, arg)', arg),
     waitFor: (options = {}) => __waitUntil(() => read((found) => found.length), options.timeout ?? 10000),
     ...(indexed ? {
-      click: (options) => __clickIndexed(target, element, index, options),
-      dblclick: () => __clickIndexed(target, element, index, {clickCount: 2}),
-      fill: async (value) => { await __clickIndexed(target, element, index); await browser.page(target).keyboard('ControlOrMeta+a'); return browser.page(target).cdp('Input.insertText', {text: String(value)}); },
+      click: (options) => __clickIndexed(target, element, at0, options),
+      dblclick: () => __clickIndexed(target, element, at0, {clickCount: 2}),
+      fill: async (value) => { await __clickIndexed(target, element, at0); await browser.page(target).keyboard('ControlOrMeta+a'); return browser.page(target).cdp('Input.insertText', {text: String(value)}); },
     } : {
       dblclick: async () => __clickIndexed(target, element, 0, {clickCount: 2}),
     }),
@@ -164,21 +179,22 @@ function __extendPage(target, base) {
     type: (text) => base.cdp('Input.insertText', {text: String(text)}),
     insertText: (text) => base.cdp('Input.insertText', {text: String(text)}),
   });
-  var byRole = base.getByRole, byText = base.getByText;
+  var byRole = base.getByRole, byText = base.getByText, coordHover = base.hover;
   // Agents sometimes reach for page.playwright.X: it is the page itself.
   base.playwright = base;
   return __extendPageEvents(target, __extendPageData(target, Object.assign(base, {
     // Playwright accepts a RegExp for names and text. The engine's own targeting matches strings,
     // so a regex locator resolves in the page and acts on its first match.
     getByRole: (role, options = {}) => options.name instanceof RegExp
-      ? __locator(target, {kind: 'locator', role, regex: [options.name.source, options.name.flags]}, 0)
+      ? __locator(target, {kind: 'locator', role, regex: [options.name.source, options.name.flags]})
       : byRole(role, options),
     getByText: (value, options = {}) => value instanceof RegExp
-      ? __locator(target, {kind: 'query', by: 'text', regex: [value.source, value.flags]}, 0)
+      ? __locator(target, {kind: 'query', by: 'text', regex: [value.source, value.flags]})
       : byText(value, options),
     // Playwright-style text snapshot of the page: the same view as bu.state().
     ariaSnapshot: (options = {}) => bu.state({...options, target}),
     goto: (url) => base.navigate(url),
+    hover: (a, b) => typeof a === 'string' ? css(a).first().hover() : coordHover(a, b),
     reload: () => base.cdp('Page.reload', {}),
     goBack: () => base.evaluate(() => history.back()),
     goForward: () => base.evaluate(() => history.forward()),
@@ -193,8 +209,14 @@ function __extendPage(target, base) {
     inputValue: (selector) => css(selector).first().inputValue(),
     isVisible: (selector) => css(selector).isVisible(),
     hoverSelector: (selector) => css(selector).first().hover(),
-    waitForSelector: (selector, options = {}) => base.wait(selector, {timeoutMs: options.timeout ?? 10000}).then(() => css(selector).first()),
-    waitForLoadState: (state, options = {}) => base.waitFor(state === 'domcontentloaded' ? () => document.readyState !== 'loading' : () => document.readyState === 'complete', {timeoutMs: Math.min(options.timeout ?? 8000, 8000)}),
+    waitForSelector: (selector, options = {}) => base.wait(selector, options).then(() => css(selector).first()),
+    bringToFront: async () => undefined,
+    check: (selector) => css(selector).first().check(),
+    uncheck: (selector) => css(selector).first().uncheck(),
+    selectOption: (selector, value) => css(selector).first().selectOption(value),
+    dblclick: (selector) => css(selector).first().dblclick(),
+    type: (selector, value) => css(selector).first().fill(value),
+    waitForLoadState: (state, options = {}) => base.waitFor(state === 'domcontentloaded' ? () => document.readyState !== 'loading' : () => document.readyState === 'complete', {timeoutMs: options.timeout ?? 8000}),
     waitForURL: (pattern, options = {}) => __waitUntil(async () => {
       var url = await base.evaluate(() => location.href);
       return pattern instanceof RegExp ? pattern.test(url) : String(url).includes(String(pattern).replace(/\\*\\*/g, ''));

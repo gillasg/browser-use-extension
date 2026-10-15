@@ -33,6 +33,7 @@ import { scrollWithFeedback } from "./native-browser-scroll.js";
 interface Point {
   x: number;
   y: number;
+  activate?: boolean;
 }
 export async function actionablePoint(
   debuggee: chrome.debugger.Debuggee,
@@ -40,6 +41,7 @@ export async function actionablePoint(
   editable = false,
 ): Promise<Point> {
   await chrome.debugger.sendCommand(debuggee, "DOM.scrollIntoViewIfNeeded", { backendNodeId: id });
+  await onNode(debuggee, id, scrollNearest).catch(() => undefined);
   const state = await onNode<{ visible: boolean; enabled: boolean; editable: boolean }>(
     debuggee,
     id,
@@ -52,7 +54,8 @@ export async function actionablePoint(
   for (let attempt = 0; attempt < 12; attempt++) {
     const current = await onNode<Point & { hit: boolean }>(debuggee, id, hitPoint);
     const stable = prior && Math.abs(current.x - prior.x) < 1 && Math.abs(current.y - prior.y) < 1;
-    if (stable && current.hit) return { x: current.x, y: current.y };
+    if (stable && current.hit)
+      return { x: current.x, y: current.y, ...(current.activate ? { activate: true } : {}) };
     prior = current;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -85,6 +88,15 @@ function coveringElement(this: HTMLElement): string {
   parts.push("act inside it (bu.state() shows its ids) or close it first");
   return parts.join("; ");
 }
+// DOM-level activation for a target that cannot be hit-tested and has no reachable label.
+function activateNode(this: HTMLElement): void {
+  if (typeof this.click === "function") this.click();
+  else this.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+}
+// Brings the target into view inside its nearest scrollable container (dialogs, panels, lists).
+function scrollNearest(this: HTMLElement): void {
+  this.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
 function hitPoint(this: HTMLElement) {
   const box = this.getBoundingClientRect();
   const left = Math.max(0, box.left),
@@ -106,11 +118,38 @@ function hitPoint(this: HTMLElement) {
     offsetY += rect.top + (frame as HTMLElement).clientTop;
     current = current.parent;
   }
-  return {
-    x: x + offsetX,
-    y: y + offsetY,
-    hit: right > left && bottom > top && !!hit && (hit === this || this.contains(hit)),
-  };
+  const covered = right > left && bottom > top && !!hit;
+  const direct = covered && (hit === this || this.contains(hit));
+  if (!covered || direct || !ancestorOf(hit, this))
+    return { x: x + offsetX, y: y + offsetY, hit: direct };
+  // The target sits inside the element that is hit but cannot be hit itself (hidden or
+  // pointer-events:none control): use its label if that is reachable, else activate it in the DOM.
+  const label = labelOf(this);
+  const lbox = label?.getBoundingClientRect();
+  const lx = lbox ? lbox.left + lbox.width / 2 : 0,
+    ly = lbox ? lbox.top + lbox.height / 2 : 0;
+  const lhit =
+    label && lbox && lbox.width > 0 && lbox.height > 0 ? root.elementFromPoint(lx, ly) : null;
+  if (label && lhit && (lhit === label || label.contains(lhit)))
+    return { x: lx + offsetX, y: ly + offsetY, hit: true };
+  return { x: x + offsetX, y: y + offsetY, hit: true, activate: true };
+  function ancestorOf(other: Element | null, target: Element): boolean {
+    let node: Node | null = target;
+    while (node && other) {
+      if (node === other) return true;
+      const parent: Node | null = node.parentNode;
+      node = parent instanceof ShadowRoot ? parent.host : parent;
+    }
+    return false;
+  }
+  function labelOf(target: HTMLElement): HTMLElement | null {
+    const labels = (target as HTMLInputElement).labels;
+    if (labels?.length) return labels[0] as HTMLElement;
+    const wrapping = target.closest("label");
+    if (wrapping) return wrapping;
+    const ref = target.getAttribute("aria-labelledby")?.split(" ")[0];
+    return ref ? (root.getElementById?.(ref) ?? null) : null;
+  }
 }
 export async function fillNode(
   debuggee: chrome.debugger.Debuggee,
@@ -323,7 +362,7 @@ export async function prepareElement(
   element: BrowserElementTarget,
   revalidate: () => Promise<void>,
   editable = false,
-): Promise<{ node: AxRef; point: { x: number; y: number } }> {
+): Promise<{ node: AxRef; point: Point }> {
   if (!("target" in request.step)) throw new Error("INVALID_TARGET");
   for (let attempt = 0; ; attempt++) {
     await revalidate();
@@ -422,26 +461,12 @@ export async function interactFrame(
       await fillNode(debuggee, node.node.backendNodeId, value);
       return { filled: true };
     }
-    const point = await onNode<{ x: number; y: number }>(
+    const point = await onNode<{ x: number; y: number; activated?: boolean }>(
       debuggee,
       node.node.backendNodeId,
-      function (this: HTMLElement) {
-        this.scrollIntoView({ block: "center", inline: "center" });
-        const box = this.getBoundingClientRect();
-        if (!box.width || !box.height || this.matches(':disabled,[aria-disabled="true"]'))
-          throw Error("TARGET_DISABLED");
-        const x = box.left + box.width / 2,
-          y = box.top + box.height / 2;
-        let hit = this.ownerDocument.elementFromPoint(x, y);
-        while (hit?.shadowRoot) {
-          const next = hit.shadowRoot.elementFromPoint(x, y);
-          if (!next || next === hit) break;
-          hit = next;
-        }
-        if (hit !== this && !this.contains(hit)) throw Error("TARGET_BLOCKED");
-        return { x, y };
-      },
+      framePoint,
     );
+    if (point.activated) return { clicked: true, activated: "dom" };
     // Input is sent to this frame's renderer session; same-process frames need the owner offset.
     const offset = await frameOffset(debuggee, frameId);
     await clickAt(debuggee, point.x + offset.x, point.y + offset.y);
@@ -551,7 +576,10 @@ async function dispatchAction(
     () => revalidateTarget(request, request.step.target.tabId),
     request.step.op === "fill",
   );
-  if (request.step.op === "click") await clickAt(debuggee, box.x, box.y);
+  if (request.step.op === "click")
+    await (box.activate
+      ? onNode(debuggee, node.backendNodeId, activateNode)
+      : clickAt(debuggee, box.x, box.y));
   else if (request.step.op === "fill")
     await fillNode(debuggee, node.backendNodeId, request.step.value);
   else await scrollAt(debuggee, box.x, box.y, request.step.direction, request.step.amount);
@@ -564,4 +592,41 @@ async function scrollViewport(
   if (request.step.op !== "scroll" || request.step.element) throw new Error("INVALID_TARGET");
   const center = await getViewportCenter(debuggee);
   await scrollAt(debuggee, center.x, center.y, request.step.direction, request.step.amount);
+}
+
+// Page-side: the point to click for an element in a frame. A target inside the element that is hit
+// (hidden or pointer-events:none control) is clicked through its label, else activated in the DOM.
+function framePoint(this: HTMLElement): { x: number; y: number; activated?: boolean } {
+  this.scrollIntoView({ block: "center", inline: "center" });
+  const box = this.getBoundingClientRect();
+  if (!box.width || !box.height || this.matches(':disabled,[aria-disabled="true"]'))
+    throw Error("TARGET_DISABLED");
+  const at = (x: number, y: number) => {
+    let hit = this.ownerDocument.elementFromPoint(x, y);
+    while (hit?.shadowRoot) {
+      const next = hit.shadowRoot.elementFromPoint(x, y);
+      if (!next || next === hit) break;
+      hit = next;
+    }
+    return hit;
+  };
+  const x = box.left + box.width / 2,
+    y = box.top + box.height / 2;
+  const hit = at(x, y);
+  if (hit === this || (hit && this.contains(hit))) return { x, y };
+  let ancestor = false;
+  for (let node: Node | null = this; node && hit; node = node.parentNode)
+    if (node === hit) ancestor = true;
+  if (!ancestor) throw Error("TARGET_BLOCKED");
+  const label =
+    (this as unknown as HTMLInputElement).labels?.[0] ?? this.closest("label") ?? undefined;
+  const lbox = label?.getBoundingClientRect();
+  if (label && lbox && lbox.width && lbox.height) {
+    const lx = lbox.left + lbox.width / 2,
+      ly = lbox.top + lbox.height / 2;
+    const lhit = at(lx, ly);
+    if (lhit && (lhit === label || label.contains(lhit))) return { x: lx, y: ly };
+  }
+  this.click();
+  return { x, y, activated: true };
 }

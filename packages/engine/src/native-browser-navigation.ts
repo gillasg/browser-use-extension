@@ -220,6 +220,9 @@ function layoutProbe(): string {
   return JSON.stringify([scrollX, scrollY, innerWidth, innerHeight, visualViewport?.scale, boxes]);
 }
 
+const INTERIM_PAGE = /^(chrome-extension|chrome|edge|about|chrome-search|chrome-untrusted):/i;
+
+// Resolves once the tab has committed to the requested page and reached DOMContentLoaded.
 export async function navigateReady(
   tabId: number,
   url: string,
@@ -241,14 +244,16 @@ export async function navigateReady(
       clean();
       resolve({ url: nextUrl, timedOut });
     };
+    // A new-tab, extension or blank page committed on the way is not the requested page.
+    const interim = (eventUrl: string) => INTERIM_PAGE.test(eventUrl) && !INTERIM_PAGE.test(url);
     const commit = (event: chrome.webNavigation.WebNavigationTransitionCallbackDetails) => {
-      if (top(event)) committed = true;
+      if (top(event) && !interim(event.url)) committed = true;
     };
     const ready = (event: chrome.webNavigation.WebNavigationFramedCallbackDetails) => {
-      if (top(event) && committed) finish(event.url);
+      if (top(event) && committed && !interim(event.url)) finish(event.url);
     };
     const sameDocument = (event: chrome.webNavigation.WebNavigationTransitionCallbackDetails) => {
-      if (top(event)) finish(event.url);
+      if (top(event) && !interim(event.url)) finish(event.url);
     };
     const error = (event: chrome.webNavigation.WebNavigationFramedErrorCallbackDetails) => {
       if (top(event) && !event.error.includes("ERR_ABORTED")) {

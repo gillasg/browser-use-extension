@@ -65,7 +65,26 @@ export function bindBrowserSession(tabId: number, chatId: string): void {
   persistBrowserOwners(owners);
 }
 
+const NOT_READY =
+  /different extension|Cannot access a chrome-extension|Cannot access a chrome: ?URL/i;
+
+// A tab that is still on a new-tab or extension page cannot be debugged yet; wait briefly and retry.
 export async function withBrowserDebugger<T>(
+  tabId: number,
+  action: (debuggee: chrome.debugger.Debuggee) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await runWithBrowserDebugger(tabId, action);
+    } catch (error) {
+      if (attempt >= 4 || !NOT_READY.test(String(error instanceof Error ? error.message : error)))
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
+}
+
+async function runWithBrowserDebugger<T>(
   tabId: number,
   action: (debuggee: chrome.debugger.Debuggee) => Promise<T>,
 ): Promise<T> {

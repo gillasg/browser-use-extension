@@ -21,7 +21,9 @@ This guide is for agents using browser-use-extension, and for people writing pro
 
 ```js
 page = await browser.openTab("https://example.com"); // opens in the background and becomes the current page
-await browser.openTab("https://example.org"); // now page and bu point at this tab
+await browser.openTab("https://example.org"); // a different site: now page and bu point at this tab
+await browser.openTab("https://example.org/b"); // same site: navigates that site's tab (like page.goto)
+await browser.openTab("https://example.org/c", { newTab: true }); // a separate tab on the same site
 await bu.use(firstTabId); // switch back by tab id
 const tabs = await browser.tabs("example"); // search open tabs by title or URL
 await browser.attachTab(tabs[0].target.tabId); // take over one of the user's tabs
@@ -30,7 +32,7 @@ page.title; // properties, not functions
 await page.close(); // close a tab you opened
 ```
 
-Several tabs can be driven in one call, in parallel:
+Keep one tab per site and use `page.goto` to move around it. Several tabs can be driven in one call, in parallel:
 
 ```js
 const [a, b] = await Promise.all([browser.openTab(urlA), browser.openTab(urlB)]);
@@ -109,7 +111,11 @@ It runs a real Google search with the user's cookies, region and language, so re
 - **Errors are not a block.** Before leaving a site, try at least two other ways of using it: its own search URL or parameters, the keyboard, the dialog that opened, screenshots, or its JSON APIs. Only a bot wall, an access-denied page or a sign-in wall justifies falling back early.
 - **Do the whole task yourself.** Hand off only for what only the user can do: their password, a 2FA code or a payment.
 - **Clear obstacles first:** pop-ups, cookie banners, and delivery, location or pincode prompts. Use what the page already tells you, and state assumptions in the answer.
-- **Apply the site's own search and filters** before browsing results.
+- **Apply the site's own search and filters** before browsing results: use its filter controls, or reuse its filter URL once you have seen it.
+- **Prefer locators** (`getByRole`, `getByText`, `getByLabel`, `page.locator`) over hand-written `document.querySelector` code; use `evaluate` only when locators fail.
+- **Dismiss cookie and consent banners** first.
+- **The final answer does not need a focused or front tab.**
+- **Checking candidates against criteria:** go from the best-ranked (for example the cheapest) and stop at the first one that satisfies all of them.
 - **Look properly before saying something is missing:** scroll, search the page, or try another URL.
 - **Never repeat a failing action more than twice:** change strategy instead.
 - **Check every part of the request** against what you actually saw before answering. Never invent values, and say which facts came from search and which from the site. If something cannot be done, say what you tried and give the closest facts you did verify, each with its source.

@@ -22,22 +22,55 @@ function __geolocationShim(coords) {
   geo.watchPosition = (ok, fail, options) => real.watch(ok, fallback(ok, fail), options);
   Object.defineProperty(geo, "__aeonShim", { value: true });
 }
+// What the engine's strict step schema accepts of a locator; filters and regexes resolve in the page.
+function __wire(element) {
+  var keys = element.kind === 'locator' ? ['kind','role','name','exact','scope'] : element.kind === 'query' ? ['kind','by','value','exact','scope'] : null;
+  if (!keys) return element;
+  var out = {};
+  for (var key of keys) if (element[key] !== undefined) out[key] = element[key];
+  return out;
+}
+var __pressKeys = ['Enter','Tab','Escape','Backspace','Delete','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','Space'];
+// Named keys go to the engine; any other key or chord is typed after clicking the element.
+async function __press(target, element, key, options, locator) {
+  key = String(key);
+  if (key === 'Esc') key = 'Escape';
+  if (key === ' ') key = 'Space';
+  if (__pressKeys.includes(key) && locator === undefined)
+    return __step({op:'press',target,element:__wire(element),key,...(options && options.focus === false ? {focus:false} : {})});
+  if (locator) await locator.click(); else if (!(options && options.focus === false)) await browser.page(target).click(element);
+  return browser.page(target).keyboard(key);
+}
 function __locator(target, element, index) {
-  return Object.freeze(__extendLocator(target, element, {
+  var loc = Object.freeze(__extendLocator(target, element, {
     element,
-    click: () => __step({op:'click',target,element,observe:false}),
-    fill: (value) => __step({op:'fill',target,element,value,observe:false}),
-    press: (key) => __step({op:'press',target,element,key}),
+    click: () => __step({op:'click',target,element:__wire(element),observe:false}),
+    fill: (value) => __step({op:'fill',target,element:__wire(element),value:String(value),observe:false}),
+    press: (key, options) => __press(target, element, key, options, __pressKeys.includes(String(key)) && index === undefined && !(element.filters || element.regex) ? undefined : loc),
     getByRole: (role, options = {}) => {
       if (element.kind !== 'query' || element.by !== 'css') throw Error('Scope with page.locator(css).getByRole(...)');
-      return __locator(target,{kind:'locator',role,name:options.name || '',exact:options.name !== undefined,...options,scope:element.value});
+      return __locator(target,__withOptions({kind:'locator',role,name:options.name === undefined ? '' : String(options.name),exact:options.name !== undefined,scope:element.value}, options));
     },
     locator: (selector) => {
       if (element.kind !== 'query' || element.by !== 'css') throw Error('Scope with a CSS locator');
       return __locator(target,{kind:'query',by:'css',value:selector,scope:element.value});
     },
   }, index));
+  return loc;
 }
+// Playwright's hasText / hasNotText / has / hasNot options become page-side filters on the locator.
+function __withOptions(element, options = {}) {
+  var encode = (value) => value instanceof RegExp ? [value.source, value.flags] : value;
+  var filter = {};
+  if (options.hasText !== undefined) filter.hasText = encode(options.hasText);
+  if (options.hasNotText !== undefined) filter.hasNotText = encode(options.hasNotText);
+  if (options.has && options.has.element) filter.has = __spec(options.has.element);
+  if (options.hasNot && options.hasNot.element) filter.hasNot = __spec(options.hasNot.element);
+  if (options.exact !== undefined && element.kind === 'query') element = {...element, exact: !!options.exact};
+  return Object.keys(filter).length ? {...element, filters: [...(element.filters || []), filter]} : element;
+}
+function __withFilter(element, filter) { return {...element, filters: [...(element.filters || []), filter]}; }
+function __originOf(url) { try { return new URL(url).origin; } catch { return ''; } }
 var browser = Object.freeze({
   waitFor: (event, options = {}) => __event(options.target || __lastTarget,event,options),
   tabs: Object.assign(async (query) => (await __step({op:'listTabs', ...(query ? {query} : {})})).tabs
@@ -51,13 +84,29 @@ var browser = Object.freeze({
       if (clients.length !== 1) throw Error('Multiple browser profiles are connected; choose clientInstanceId from browser.tabs()');
       clientInstanceId = clients[0];
     }
-    // Reuse the tab this session already opened for the same URL instead of stacking duplicates.
-    const known = options.new === true ? undefined : __opened.get(url);
-    if (known && (await browser.tabs()).some(tab => __key(tab.target) === __key(known)))
-      return bu.use(known);
+    // One working tab per site: a URL on an origin this session already has a tab for navigates that
+    // tab. Pass {newTab: true} for a separate tab.
+    url = String(url);
+    const origin = __originOf(url);
+    var known = options.newTab === true || options.new === true ? undefined : __opened.get(origin || url);
+    // Parallel opens on one site: the first navigates the working tab, the rest get their own tabs.
+    if (known && __busy.has(__key(known))) known = undefined;
+    if (known) {
+      __busy.add(__key(known));
+      try {
+        const live = (await browser.tabs()).find(tab => __key(tab.target) === __key(known));
+        if (live) {
+          const same = String(live.url) === url;
+          const reused = await bu.use(known);
+          if (!same) await reused.navigate(url);
+          console.log('[ok] openTab reused tab ' + known.tabId + ' for ' + (origin || url) + (same ? '' : ' (navigated)') + '; pass {newTab: true} for a separate tab');
+          return reused;
+        }
+      } finally { __busy.delete(__key(known)); }
+    }
     const result = await __step({op:'openTab', clientInstanceId, url,
       foreground: options.foreground === true});
-    __opened.set(url, result.tab.target);
+    __opened.set(origin || url, result.tab.target);
     return bu.use(result.tab.target);
   },
   // Fetch without a tab: from the extension, with the user's cookies (credentials: 'omit' to skip).
@@ -99,7 +148,7 @@ var browser = Object.freeze({
   page: (target) => (__lastTarget = target, Object.freeze(__extendPage(target, {
     target,
     // Both page.url / page.title (properties) and page.url() / await page.title() (Playwright) work.
-    get url() { return __callableString(() => __states.get(__key(target))?.url || __tabs.get(__key(target))?.url); },
+    get url() { return __callableString(() => __tabs.get(__key(target))?.url || __states.get(__key(target))?.url); },
     get title() { return __callableString(() => __tabs.get(__key(target))?.title,
       () => browser.page(target).inspect(() => document.title)); },
     [Symbol.for('nodejs.util.inspect.custom')]() { return {target,url:String(this.url),title:String(this.title)}; },
@@ -128,10 +177,13 @@ var browser = Object.freeze({
     resolveDownload: async (token) => (await __step({op:'downloads',target,action:'resolve',token})).data,
     waitForDownload: async (downloadId, options = {}) => {var deadline=Date.now()+(options.timeoutMs??20000);while(Date.now()<deadline){var result=(await __step({op:'downloads',target,action:'wait',downloadId,timeoutMs:Math.min(1000,deadline-Date.now())})).data;if(result.state==='complete')return result;if(result.state==='interrupted')throw Error('DOWNLOAD_INTERRUPTED: '+result.error);}throw Error('TIMEOUT: download still in progress; do not start it again');},
     cancelDownload: (downloadId) => __step({op:'downloads',target,action:'cancel',downloadId}),
-    read: (selector, options = {}) => __step({op:"read", target, selector, ...options}),
-    wait: (selector, options = {}) => __step({op:"wait", target, selector,
-      ...(typeof options === "number" ? {timeoutMs:options} : options)}),
-    navigate: (url) => __step({op:"navigate", target, url}),
+    read: (selector, options = {}) => __step({op:"read", target, selector: String(selector),
+      ...(options.limit !== undefined ? {limit: __clamp(options.limit, 1, 100)} : {}),
+      ...(options.textLimit !== undefined ? {textLimit: __clamp(options.textLimit, 1, 4000)} : {}),
+      ...(Array.isArray(options.attributes) ? {attributes: options.attributes.filter(a => /^[\\w-]{1,80}$/.test(a)).slice(0, 10)} : {})}),
+    // A number waits that many milliseconds; a selector waits for it (timeouts above the engine cap keep polling).
+    wait: (selector, options = {}) => typeof selector === 'number' ? __sleep(selector) : __waitSelector(target, selector, options),
+    navigate: (url) => __step({op:"navigate", target, url: __absoluteUrl(url, target)}),
     diagnostics: (clear = false) => __step({op:"diagnostics", target, clear}),
     console: async (options = {}) => {
       var entries = (await __step({op:"diagnostics", target, clear: !!options.clear})).data.console || [];
@@ -174,15 +226,15 @@ var browser = Object.freeze({
     popups: () => __step({op:"popups", target}),
     removePreview: (scriptId) => __step({op:"siteScript", target, action:"remove", scriptId}),
     snapshot: (options = {}) => { const {max,target:ignored,...filters}=options; return __step({op:'observe',target,kind:'semantic',...filters}); },
-    locator: (selector, options = {}) => __locator(target,{kind:'query',by:'css',value:selector,...options}),
-    getByRole: (role, options = {}) => __locator(target,{kind:'locator',role,name:options.name || '',exact:options.name !== undefined,...options}),
-    getByText: (value, options = {}) => __locator(target,{kind:'query',by:'text',value,...options}),
-    getByLabel: (value, options = {}) => __locator(target,{kind:'query',by:'label',value,...options}),
-    getByPlaceholder: (value, options = {}) => __locator(target,{kind:'query',by:'placeholder',value,...options}),
-    press: (element, key, options = {}) => __step({op:'press',target,element:__element(target,element),key,...options}),
+    locator: (selector, options = {}) => __locator(target,__withOptions({kind:'query',by:'css',value:String(selector)}, options)),
+    getByRole: (role, options = {}) => __locator(target,__withOptions({kind:'locator',role,name:options.name === undefined ? '' : String(options.name),exact:options.name !== undefined && options.exact !== false}, options)),
+    getByText: (value, options = {}) => __locator(target,__withOptions({kind:'query',by:'text',value:String(value)}, options)),
+    getByLabel: (value, options = {}) => __locator(target,__withOptions({kind:'query',by:'label',value:String(value)}, options)),
+    getByPlaceholder: (value, options = {}) => __locator(target,__withOptions({kind:'query',by:'placeholder',value:String(value)}, options)),
+    press: (element, key, options = {}) => __press(target, __element(target, element), key, options),
     screenshot: (options = {}) => options.labels ? __labeledScreenshot(target) : __step({op:'observe', target, kind:'screenshot'}),
-    click: (element) => __step({op:'click',target,element:__element(target,element),observe:false}),
-    fill: (element, value) => __step({op:'fill',target,element:__element(target,element),value,observe:false}),
+    click: (element) => __step({op:'click',target,element:__wire(__element(target,element)),observe:false}),
+    fill: (element, value) => __step({op:'fill',target,element:__wire(__element(target,element)),value:String(value),observe:false}),
     evaluate: async (fn, arg) => (await __step({op:'evaluate',target,expression:__expression(fn,arg)})).data.value,
     inspect: async (fn, arg) => (await __step({op:'evaluate',target,expression:__expression(fn,arg)},true)).data.value,
     pdfText: (options = {}) => browser.page(target).inspect(__readPdfText,options),
@@ -229,15 +281,21 @@ var browser = Object.freeze({
       return result.data ?? result.text;
     },
     close: async () => { await __step({op:'cdp',target,method:'Page.close',params:{}}).catch(() => {}); __states.delete(__key(target)); __tabs.delete(__key(target)); },
-    waitFor: (fn, options = {}) => __step({op:'waitFor',target,expression:'('+fn.toString()+')()',...options}),
+    waitFor: (fn, options = {}) => __waitCondition(target, typeof fn === 'function' ? '('+fn.toString()+')()' : String(fn), typeof options === 'number' ? options : (options.timeoutMs ?? options.timeout ?? 5000)),
     // Also takes {direction, amount} or a wheel-style {deltaY}.
-    scroll: (direction = 'down', amount = 1200, element) => {
+    scroll: async (direction = 'down', amount = 1200, element) => {
       if (direction && typeof direction === 'object') {
         var o = direction;
         direction = o.direction || ((o.deltaY ?? o.y ?? 1) < 0 ? 'up' : 'down');
         amount = o.amount ?? Math.abs(o.deltaY ?? o.y ?? 1200);
       }
-      return __step({op:'scroll', target, direction, amount, ...(element ? {element} : {})});
+      var remaining = Math.max(40, Math.round(Number(amount) || 1200)), result;
+      do {
+        var chunk = Math.min(1200, Math.max(40, remaining));
+        result = await __step({op:'scroll', target, direction, amount: chunk, ...(element ? {element} : {})});
+        remaining -= chunk;
+      } while (remaining >= 40);
+      return result;
     },
     scrollToEnd: async (options = {}) => {
       const page = browser.page(target);
@@ -320,7 +378,7 @@ async function __saveMedia(target, what, options = {}) {
 }
 `;
 export const browserFastApi = `
-var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __lastTarget;
+var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __busy = new Set(), __lastTarget;
 var __key = target => JSON.stringify(target);
 // A bare tab id from browser.tabs() or a step line stands for that tab's full target.
 async function __tabTarget(target) {
@@ -330,6 +388,33 @@ async function __tabTarget(target) {
   if (!tab) throw Error('TARGET_LOST: no open tab ' + target);
   return tab.target;
 }
+function __clamp(value, min, max) { return Math.min(max, Math.max(min, Math.round(Number(value)) || min)); }
+function __sleep(ms) { return new Promise((done) => setTimeout(done, Math.min(30000, Math.max(0, Number(ms) || 0)))); }
+function __absoluteUrl(url, target) {
+  url = String(url);
+  try { return new URL(url).href; } catch {}
+  var base = __tabs.get(__key(target))?.url;
+  try { return new URL(url, base).href; } catch { return url; }
+}
+// Playwright-style timeouts longer than the engine's cap keep polling in capped steps until the deadline.
+async function __untilDeadline(totalMs, run) {
+  var deadline = Date.now() + Math.min(120000, Math.max(100, Number(totalMs) || 5000)), last;
+  do {
+    var chunk = Math.min(8000, Math.max(100, deadline - Date.now()));
+    try { return await run(chunk); }
+    catch (error) { if (!/TIMEOUT/.test(String(error && error.message))) throw error; last = error; }
+  } while (Date.now() < deadline - 100);
+  throw last;
+}
+function __waitSelector(target, selector, options) {
+  if (typeof options === 'number') options = {timeout: options};
+  else if (typeof options === 'string') options = {state: options};
+  var state = {detached: 'hidden', attached: 'attached', visible: 'visible', hidden: 'hidden', editable: 'editable'}[options.state] || 'visible';
+  return __untilDeadline(options.timeoutMs ?? options.timeout ?? 5000, (timeoutMs) => __step({op:'wait', target, selector: String(selector), state, timeoutMs}));
+}
+function __waitCondition(target, expression, timeout) {
+  return __untilDeadline(timeout, (timeoutMs) => __step({op:'waitFor', target, expression, timeoutMs}));
+}
 function __beginCell() { __dirty.clear(); __hasDelivered=false; __deliveryValue=undefined; }
 async function __step(step, readOnly = false) {
   if (step.target) __lastTarget = step.target;
@@ -337,7 +422,9 @@ async function __step(step, readOnly = false) {
   if(step.op==='frames' && ['click','fill','cdp'].includes(step.action))action=true;
   if (readOnly) action=false;
   if (action) __dirty.set(__key(step.target), step.target);
+  var before = step.target && __tabs.get(__key(step.target))?.url;
   var result = await __call(step);
+  if (result.url && step.target && __tabs.has(__key(step.target))) __tabs.set(__key(step.target), {...__tabs.get(__key(step.target)), url: result.url});
   if (result.kind === 'tab') { __lastTarget = result.tab.target; __tabs.set(__key(__lastTarget),result.tab); }
   if (result.kind === 'tabs') for (var tab of result.tabs) __tabs.set(__key(tab.target),tab);
   var observation = result.kind === 'semantic' ? result : result.observation;
@@ -346,7 +433,8 @@ async function __step(step, readOnly = false) {
     __dirty.delete(__key(step.target));
   }
   if (action) {
-    console.log('[ok] ' + step.op + (result.outcome ? ' ' + result.outcome : '') + (result.url ? ' -> ' + result.url : '') +
+    var moved = before && result.url && before.split('#')[0] !== result.url.split('#')[0] && ['click','fill','press'].includes(step.op);
+    console.log('[ok] ' + step.op + (result.outcome ? ' ' + result.outcome : '') + (result.url ? ' -> ' + result.url : '') + (moved ? ' (page changed from ' + before + ')' : '') +
       (result.data && result.data.settle ? ' (' + result.data.settle.why + ')' : ''));
   }
   return result;
@@ -396,7 +484,17 @@ function __formatState(state, max = 3000) {
   if (text.length > max) text = text.slice(0, Math.floor(max * .8)) + '\\n[... clipped; bu.state({max:30000}) for more]\\n' + text.slice(-Math.floor(max * .2));
   return text;
 }
-Object.defineProperty(globalThis,'page',{value:undefined,writable:true,configurable:true});
+// Until a tab exists, page.goto(url) opens the chat's working tab; other calls explain what to do.
+function __lazyPage() {
+  return new Proxy({}, {get: (_, key) => typeof key === 'symbol' || key === 'then' ? undefined : async (...args) => {
+    if (key === 'goto' || key === 'navigate') {
+      var tab = await browser.openTab(String(args[0]));
+      return {opened: true, url: String(await tab.url())};
+    }
+    throw Error('No page is open yet: start with await page.goto(url) (or browser.openTab(url)).');
+  }});
+}
+Object.defineProperty(globalThis,'page',{value:__lazyPage(),writable:true,configurable:true});
 var bu = Object.freeze({
   use: target => {
     if (typeof target === 'number') return __tabTarget(target).then(bu.use);
@@ -474,7 +572,7 @@ var skills = Object.freeze({
 async function __finishCell() {
   for (var target of [...__dirty.values()]) {
     try { await bu.state({target}); }
-    catch (error) { console.log('Final observation unavailable: ' + error.message); }
+    catch (error) { if (!/UNSUPPORTED/.test(String(error && error.message))) console.log('Final observation unavailable: ' + error.message); }
   }
   __dirty.clear();
 }
