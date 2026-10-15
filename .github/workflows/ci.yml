@@ -40,3 +40,18 @@ jobs:
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
           REQUIRE_E2E: "1"
+
+  # The Browser Use Extension builds this engine in: check it still builds against this commit.
+  dependents:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.4.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Set up this repo and the Browser Use Extension
+        run: node scripts/link-repos.mjs --also browser-use-extension

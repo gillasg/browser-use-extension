@@ -9,6 +9,14 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "exports": {
+    "./embed": {
+      "types": "./src/embed/api.d.ts",
+      "default": "./src/embed/index.ts"
+    },
+    "./embed-build": "./scripts/embed-build.mjs",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json",

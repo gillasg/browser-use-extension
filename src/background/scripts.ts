@@ -1,7 +1,7 @@
 import { chromePatterns, ruleRegexSource } from "../shared/match.js";
 import type { Boost, SiteRule } from "../shared/types.js";
 import { GLOBAL_NAMES } from "../runtime/index.js";
-import { allBoosts, getSettings, getSites, getValues, log } from "./store.js";
+import { allBoosts, getSettings, getSites, getValues, log, storeKey } from "./store.js";
 
 // Boosts with JavaScript (and userscripts) run through chrome.userScripts: each one is registered
 // with its runtime, @require code, a snapshot of its stored values and an exact URL check.
@@ -168,10 +168,11 @@ async function blockedRules(): Promise<(boost: Boost) => SiteRule[]> {
 let secret: Promise<string> | undefined;
 /** The name of the page/bridge channel: stable for this install, unknown to pages. */
 async function nonceFor(id: string): Promise<string> {
-  secret ??= chrome.storage.local.get("secret").then(async (stored) => {
-    if (typeof stored.secret === "string") return stored.secret;
+  const name = storeKey("secret");
+  secret ??= chrome.storage.local.get(name).then(async (stored) => {
+    if (typeof stored[name] === "string") return stored[name];
     const created = crypto.randomUUID().replace(/-/g, "");
-    await chrome.storage.local.set({ secret: created });
+    await chrome.storage.local.set({ [name]: created });
     return created;
   });
   return (await secret) + id.replace(/\W/g, "");

@@ -6,6 +6,13 @@ import { allBoosts, getSettings, getSites, log } from "./store.js";
 
 let chain: Promise<void> = Promise.resolve();
 
+/** The rule ids this engine owns: all of them on its own, a range inside another extension. */
+let range = { first: 1, last: Number.MAX_SAFE_INTEGER };
+export function setRuleRange(first: number, last: number): void {
+  range = { first, last };
+}
+const owned = (id: number): boolean => id >= range.first && id <= range.last;
+
 export function syncNetwork(): Promise<void> {
   chain = chain.catch(() => undefined).then(doSync);
   return chain;
@@ -27,7 +34,7 @@ async function wantedRules(): Promise<chrome.declarativeNetRequest.Rule[]> {
       ...offHosts,
       ...sites.filter(([, state]) => state.boostsOff?.includes(boost.id)).map(([host]) => host),
     ];
-    for (const rule of networkRules(boost, rules.length + 1)) {
+    for (const rule of networkRules(boost, range.first + rules.length)) {
       if (excluded.length) rule.condition.excludedInitiatorDomains = excluded;
       rules.push(rule);
     }
@@ -37,9 +44,9 @@ async function wantedRules(): Promise<chrome.declarativeNetRequest.Rule[]> {
 
 async function doSync(): Promise<void> {
   const rules = await wantedRules();
-  const removeRuleIds = (await chrome.declarativeNetRequest.getDynamicRules()).map(
-    (rule) => rule.id,
-  );
+  const removeRuleIds = (await chrome.declarativeNetRequest.getDynamicRules())
+    .map((rule) => rule.id)
+    .filter(owned);
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: rules });
   } catch (error) {
