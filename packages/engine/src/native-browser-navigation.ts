@@ -284,6 +284,15 @@ export async function navigateReady(
   return { ...navigation, timedOut: navigation.timedOut || !interactive };
 }
 
+// Only commands that can change what the page shows wait for it to settle. Getters, captures,
+// emulation, screencasts and pointer moves return at once, so fine-grained input stays fast.
+const SETTLING_CDP =
+  /^(Input\.(dispatchKeyEvent|insertText|dispatchTouchEvent)|Page\.(navigate|reload|navigateToHistoryEntry)|Runtime\.(evaluate|callFunctionOn)|DOM\.(set|remove|focus))/;
+function cdpChangesPage(method: string, params: unknown): boolean {
+  if (method === "Input.dispatchMouseEvent")
+    return (params as { type?: string } | undefined)?.type === "mouseReleased";
+  return SETTLING_CDP.test(method);
+}
 type Request = BrowserExecutorRequest & {
   step: Extract<BrowserExecutorRequest["step"], { op: "evaluate" | "cdp" | "waitFor" }>;
 };
@@ -310,8 +319,7 @@ export async function executePageCode(
       "Page condition did not become true. Inspect the current state before proceeding.",
     );
   }
-  const readOnly =
-    step.op === "cdp" && /\.(get|describe|resolve|query|requestNode)/.test(step.method);
+  const readOnly = step.op === "cdp" && !cdpChangesPage(step.method, step.params);
   if (!readOnly) await primeBrowserSettle(debuggee);
   let value: unknown;
   if (step.op === "evaluate") value = await evaluatePage(debuggee, step.expression, 8000);

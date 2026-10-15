@@ -45,6 +45,12 @@ function __extendPageEvents(target, base) {
   var recording = async () => { try { await __call({network: 'list', target, match: ''}); } catch { await __call({network: 'start', target}); } };
   var deadlineOf = (options) => Date.now() + Math.min(options.timeoutMs ?? 50000, 55000);
   return Object.assign(base, {
+    // Every matching DevTools event (e.g. 'Network.webSocketFrameReceived') goes to handler(params, at)
+    // until stop(); enable the domain's feature with page.cdp first if it needs one.
+    onCdp: (event, handler, options = {}) => __cdpStream(target, event, handler, options),
+    // Saves the tab's frames (JPEG) and frames.json to the workspace: {seconds} records and returns,
+    // otherwise it returns {stop} to call later. Needs a visible window: openTab(url, {window: {...}}).
+    recordTab: (options = {}) => __recordTab(target, options),
     // Resolves when the text of the matching elements changes (or a condition function returns a
     // truthy value); null on timeout. For listening routines: one event per check.
     waitForChange: async (selectorOrFn, options = {}) => {

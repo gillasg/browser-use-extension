@@ -41,8 +41,24 @@ async function __press(target, element, key, options, locator) {
   if (locator) await locator.click(); else if (!(options && options.focus === false)) await browser.page(target).click(element);
   return browser.page(target).keyboard(key);
 }
+// Actions on a locator report what they touched and when: {box, tStart, tEnd} (box in CSS pixels of
+// the viewport just before the action; times in epoch ms, the clock screencast frames use).
+var __TIMED = ['click', 'dblclick', 'fill', 'hover', 'check', 'uncheck', 'press', 'selectOption'];
+function __timeActions(locator) {
+  for (var name of __TIMED) {
+    var action = locator[name];
+    if (typeof action !== 'function') continue;
+    locator[name] = ((run) => async (...args) => {
+      var box = await locator.boundingBox().catch(() => null), tStart = Date.now();
+      var result = await run(...args);
+      var timing = {box, tStart, tEnd: Date.now()};
+      return result && typeof result === 'object' && !Array.isArray(result) ? {...result, ...timing} : {value: result, ...timing};
+    })(action);
+  }
+  return locator;
+}
 function __locator(target, element, index) {
-  var loc = Object.freeze(__extendLocator(target, element, {
+  var loc = Object.freeze(__timeActions(__extendLocator(target, element, {
     element,
     click: () => __step({op:'click',target,element:__wire(element),observe:false}),
     fill: (value) => __step({op:'fill',target,element:__wire(element),value:String(value),observe:false}),
@@ -55,7 +71,7 @@ function __locator(target, element, index) {
       if (element.kind !== 'query' || element.by !== 'css') throw Error('Scope with a CSS locator');
       return __locator(target,{kind:'query',by:'css',value:selector,scope:element.value});
     },
-  }, index));
+  }, index)));
   return loc;
 }
 // Playwright's hasText / hasNotText / has / hasNot options become page-side filters on the locator.
@@ -88,7 +104,7 @@ var browser = Object.freeze({
     // tab. Pass {newTab: true} for a separate tab.
     url = String(url);
     const origin = __originOf(url);
-    var known = options.newTab === true || options.new === true ? undefined : __opened.get(origin || url);
+    var known = options.newTab === true || options.new === true || options.window ? undefined : __opened.get(origin || url);
     // Parallel opens on one site: the first navigates the working tab, the rest get their own tabs.
     if (known && __busy.has(__key(known))) known = undefined;
     if (known) {
@@ -105,8 +121,9 @@ var browser = Object.freeze({
       } finally { __busy.delete(__key(known)); }
     }
     const result = await __step({op:'openTab', clientInstanceId, url,
-      foreground: options.foreground === true});
-    __opened.set(origin || url, result.tab.target);
+      foreground: options.foreground === true,
+      ...(options.window ? {window: {width: Math.round(options.window.width ?? 1920), height: Math.round(options.window.height ?? 1080)}} : {})});
+    if (!options.window) __opened.set(origin || url, result.tab.target);
     return bu.use(result.tab.target);
   },
   // Fetch without a tab: from the extension, with the user's cookies (credentials: 'omit' to skip).

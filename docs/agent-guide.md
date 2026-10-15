@@ -288,6 +288,26 @@ await page.recordMedia("video", { seconds: 30 }); // a playing video or audio el
 await page.network.start({ types: "all", dryRun: true });
 ```
 
+## Recording a tab and DevTools events
+
+```js
+// Chrome only paints visible windows, so record in a window of its own.
+const p = await browser.openTab(url, { window: { width: 1920, height: 1080 } });
+const rec = await p.recordTab({ fps: 30, name: "demo" }); // or { seconds: 20 } to record and return
+const click = await p.getByRole("button", { name: "Sign up" }).click();
+// click.box (viewport CSS px), click.tStart / click.tEnd (epoch ms, the clock frames use)
+await p.mouse.move(400, 300, { steps: 25 }); // a smooth path; mouse.down() / mouse.up() too
+const box = await p.locator("#email").boundingBox();
+const summary = await rec.stop(); // demo/frame-000001.jpg ... and demo/frames.json (t per frame)
+// Any DevTools event, streamed until stop():
+const ws = p.onCdp("Network.webSocketFrameReceived", (params, at) => console.log(at, params));
+await ws.stop();
+```
+
+Encode the frames with ffmpeg using the times in `frames.json`. A call that only moves the mouse,
+reads, captures or emulates returns at once; clicks, typing and navigation wait for the page to
+settle.
+
 Recipes:
 
 - Several accounts on one site: save each one's `page.session()`, then switch with

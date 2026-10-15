@@ -22,6 +22,14 @@ export const BrowserStepSchema = z.discriminatedUnion("op", [
       clientInstanceId: z.string().uuid(),
       url: HttpUrlSchema,
       foreground: z.boolean().default(false),
+      // A separate, visible window of this size (e.g. for recording); otherwise a tab in the current window.
+      window: z
+        .object({
+          width: z.number().int().min(200).max(7680),
+          height: z.number().int().min(200).max(4320),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
   z.object({ op: z.literal("attachTab"), target: BrowserTargetKeySchema }).strict(),

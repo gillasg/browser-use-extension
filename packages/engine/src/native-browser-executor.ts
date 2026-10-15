@@ -324,6 +324,14 @@ export function handleBrowserExecutorMessage(
   const request = BrowserExecutorRequestSchema.safeParse(candidate);
   if (!request.success) return false;
   registerBrowserRequest(request.data);
+  if (isEventDrain(request.data.step)) {
+    void drainEvents(request.data).then(
+      (result) => sendResult(socket, request.data, result),
+      (error: unknown) =>
+        sendFailure(socket, request.data, errorCode(error), browserErrorDetail(error)),
+    );
+    return true;
+  }
   if (needsClaim(request.data.step) && !claimIsFresh(request.data))
     return respondFailure(socket, request.data, "CLAIM_CONFLICT");
   const work = isTargetStep(request.data.step)
@@ -335,6 +343,27 @@ export function handleBrowserExecutorMessage(
       sendFailure(socket, request.data, errorCode(error), browserErrorDetail(error)),
   );
   return true;
+}
+
+// Polling or disposing an event subscription only reads its buffer (checked against the chat that
+// made it), so it skips the tab's queue and claim: a long poll never blocks or cancels actions.
+function isEventDrain(step: BrowserStep): boolean {
+  return step.op === "event" && step.action !== "subscribe";
+}
+async function drainEvents(request: BrowserExecutorRequest): Promise<BrowserExecutorResult> {
+  const step = request.step as Extract<BrowserStep, { op: "event" }>;
+  const data = await executeBrowserEvent({ ...request, step }, { tabId: step.target.tabId });
+  const tab = await refreshInventoryTab(step.target.tabId);
+  if (!tab) throw new Error("TARGET_LOST");
+  return {
+    kind: "page",
+    source: "website",
+    trust: "untrusted",
+    target: tab.target,
+    documentEpoch: tab.documentEpoch,
+    url: tab.url,
+    data,
+  };
 }
 
 function needsClaim(step: BrowserStep): boolean {
@@ -399,7 +428,7 @@ async function openTab(
   request: BrowserExecutorRequest,
 ): Promise<BrowserExecutorResult> {
   const step = validOpenTab(request, identity);
-  const created = await chrome.tabs.create({ url: "about:blank", active: step.foreground });
+  const created = await createTab(step);
   if (created.id === undefined) throw new Error("TARGET_LOST");
   bindBrowserSession(created.id, request.chatId);
   await groupAgentTab(created.id, created.windowId, request.chatId);
@@ -409,6 +438,22 @@ async function openTab(
   if (!tab || !sameIdentity(tab.target, identity)) throw new Error("TARGET_LOST");
   bindBrowserSession(created.id, request.chatId);
   return BrowserExecutorResultSchema.parse({ kind: "tab", tab });
+}
+
+// A window of its own is focused and normal-sized, so Chrome keeps painting it (screencasts and
+// screenshots of a minimized or hidden window stall).
+async function createTab(step: Extract<BrowserStep, { op: "openTab" }>): Promise<chrome.tabs.Tab> {
+  if (!step.window) return chrome.tabs.create({ url: "about:blank", active: step.foreground });
+  const window = await chrome.windows.create({
+    url: "about:blank",
+    focused: true,
+    type: "normal",
+    width: step.window.width,
+    height: step.window.height,
+  });
+  const tab = window?.tabs?.[0];
+  if (!tab) throw new Error("TARGET_LOST");
+  return tab;
 }
 
 function validOpenTab(
@@ -629,6 +674,7 @@ export async function executeLocalBrowserStep(
   });
   registerBrowserRequest(request);
   try {
+    if (isEventDrain(step)) return await drainEvents(request);
     return target
       ? await enqueueTarget(target, () => executeStep(identity, request))
       : await executeStep(identity, request);

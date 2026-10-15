@@ -33,20 +33,36 @@ export function publishBrowserEvent(
     }
     if (entry.target.tabId !== tabId || entry.event !== method || entry.sessionId !== sessionId)
       continue;
+    const limits = eventLimits(method);
     const encoded = JSON.stringify(params);
-    if (encoded.length > 16000) {
+    if (encoded.length > limits.bytes) {
       entry.dropped++;
       continue;
     }
     entry.queue.push({ method, params, at: Date.now(), tabId });
-    if (entry.queue.length > 16) {
+    if (entry.queue.length > limits.queue) {
       entry.queue.shift();
       entry.dropped++;
     }
     entry.wake?.();
   }
 }
+// Screencast frames are images: they get room to pass through, and are acknowledged here so Chrome
+// keeps sending them however fast the consumer drains.
+function eventLimits(method: string): { bytes: number; queue: number } {
+  return method === "Page.screencastFrame"
+    ? { bytes: 900_000, queue: 240 }
+    : { bytes: 16000, queue: 16 };
+}
+function acknowledgeFrame(source: chrome.debugger.Debuggee, params: unknown): void {
+  const sessionId = (params as { sessionId?: number } | undefined)?.sessionId;
+  if (sessionId !== undefined)
+    void chrome.debugger
+      .sendCommand(source, "Page.screencastFrameAck", { sessionId })
+      .catch(() => undefined);
+}
 chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (method === "Page.screencastFrame") acknowledgeFrame(source, params);
   if (source.tabId !== undefined)
     publishBrowserEvent(
       source.tabId,
@@ -185,7 +201,8 @@ function assertSubscription(
 function drainEvents(entry: Subscription): EventItem[] {
   const result: EventItem[] = [];
   let size = 0;
-  while (entry.queue.length && size < 100000) {
+  const cap = entry.event === "Page.screencastFrame" ? 700_000 : 100000;
+  while (entry.queue.length && size < cap) {
     const item = entry.queue.shift();
     if (!item) break;
     size += JSON.stringify(item).length;

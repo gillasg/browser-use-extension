@@ -65,7 +65,6 @@ function __locatorRead(target, element, index, op, arg) {
     ' return (' + op.toString() + ')(found, ' + (arg === undefined ? 'undefined' : JSON.stringify(arg)) + '); })()';
   return browser.page(target).inspect(expression);
 }
-function __single(found) { if (!found.length) throw new Error('TARGET_NOT_FOUND: no element matches'); return found[0]; }
 // An indexed locator (nth/first/last) cannot use the engine's unique-match targeting, so it is
 // clicked at the element's centre after scrolling it into view.
 async function __clickIndexed(target, element, index, options) {
@@ -79,6 +78,7 @@ async function __clickIndexed(target, element, index, options) {
   var page = browser.page(target);
   return options && options.clickCount === 2 ? page.doubleClickAt(box.x, box.y) : page.clickAt(box.x, box.y);
 }
+var __mouseAt = new Map();
 function __extendLocator(target, element, base, index) {
   var self = () => __locator(target, element, index);
   var read = (op, arg) => __locatorRead(target, element, index, op, arg);
@@ -117,7 +117,9 @@ function __extendLocator(target, element, base, index) {
     selectOption: (value) => self().fill(Array.isArray(value) ? value[0] : (value && value.label) || (value && value.value) || value),
     check: async () => { if (!(await self().isChecked())) await self().click(); },
     uncheck: async () => { if (await self().isChecked()) await self().click(); },
-    hover: async () => { var b = await read((found) => { var r = __single(found).getBoundingClientRect(); return {x: r.left + r.width / 2, y: r.top + r.height / 2}; }); return browser.page(target).hover(b.x, b.y); },
+    // Page-side reads only see what is inside the op, so the not-found check is inline.
+    hover: async () => { var b = await read((found) => { if (!found.length) throw new Error('TARGET_NOT_FOUND: no element matches'); found[0].scrollIntoView({block: 'center', inline: 'center'}); var r = found[0].getBoundingClientRect(); return {x: r.left + r.width / 2, y: r.top + r.height / 2}; }); await browser.page(target).hover(b.x, b.y); return b; },
+    boundingBox: () => read((found) => { if (!found.length) return null; var r = found[0].getBoundingClientRect(); return {x: r.left, y: r.top, width: r.width, height: r.height}; }),
     scrollIntoViewIfNeeded: () => read((found) => { if (found[0]) found[0].scrollIntoView({block: 'center'}); return true; }),
   });
 }
@@ -229,7 +231,16 @@ function __extendPage(target, base) {
     mouse: Object.freeze({
       click: (x, y, options = {}) => options.clickCount === 2 ? base.doubleClickAt(x, y) : base.clickAt(x, y),
       dblclick: (x, y) => base.doubleClickAt(x, y),
-      move: (x, y) => base.hover(x, y),
+      // {steps} moves in that many small mouse events from the last position, as a person would.
+      move: async (x, y, options = {}) => {
+        var steps = Math.max(1, Math.min(200, Math.round(options.steps ?? 1))), from = __mouseAt.get(__key(target)) || {x, y};
+        for (var i = 1; i <= steps; i++)
+          await base.cdp('Input.dispatchMouseEvent', {type: 'mouseMoved', x: from.x + (x - from.x) * i / steps, y: from.y + (y - from.y) * i / steps});
+        __mouseAt.set(__key(target), {x, y});
+        return {x, y, t: Date.now()};
+      },
+      down: (options = {}) => { var at = __mouseAt.get(__key(target)) || {x: 0, y: 0}; return base.cdp('Input.dispatchMouseEvent', {type: 'mousePressed', x: at.x, y: at.y, button: options.button || 'left', clickCount: 1}); },
+      up: (options = {}) => { var at = __mouseAt.get(__key(target)) || {x: 0, y: 0}; return base.cdp('Input.dispatchMouseEvent', {type: 'mouseReleased', x: at.x, y: at.y, button: options.button || 'left', clickCount: 1}); },
       wheel: (_dx, dy) => base.scroll(dy >= 0 ? 'down' : 'up', Math.abs(dy) || 600),
     }),
   })));

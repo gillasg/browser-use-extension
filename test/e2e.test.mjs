@@ -254,6 +254,58 @@ test(
       });
 
       await t.test(
+        "recording: own window, timed actions, hover, mouse steps, onCdp, recordTab",
+        async () => {
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "record",
+              `const p = await browser.openTab(${JSON.stringify(siteUrl)}, { window: { width: 900, height: 700 } });
+            const recording = await p.recordTab({ fps: 30, name: "demo" });
+            const hovered = await p.getByRole("button", { name: "Buy" }).hover();
+            const clicked = await p.getByRole("button", { name: "Buy" }).click();
+            const box = await p.getByRole("button", { name: "Buy" }).boundingBox();
+            const moves = [];
+            const stream = p.onCdp("Runtime.consoleAPICalled", (params) => moves.push(params.type));
+            await stream.ready;
+            await p.cdp("Runtime.enable", {});
+            await p.evaluate(() => { console.log("one"); console.warn("two"); });
+            const before = Date.now();
+            await p.mouse.move(10, 10);
+            await p.mouse.move(300, 200, { steps: 20 });
+            const moveMs = Date.now() - before;
+            await new Promise((done) => setTimeout(done, 1500));
+            await stream.stop();
+            const summary = await recording.stop();
+            console.log("RESULT " + JSON.stringify({
+              hovered: Boolean(hovered.box && hovered.box.width > 0 && hovered.tStart <= hovered.tEnd),
+              clicked: Boolean(clicked.box && clicked.tEnd >= clicked.tStart),
+              box: box.width > 0 && box.height > 0,
+              logs: moves.includes("log") && moves.includes("warning"),
+              fastMoves: moveMs < 4000,
+              frames: summary.frames > 0,
+              folder: summary.folder,
+            }))`,
+            ],
+            { env },
+          );
+          assert.match(stdout, /RESULT /, stdout);
+          assert.deepEqual(JSON.parse(/RESULT (.*)/.exec(stdout)[1]), {
+            hovered: true,
+            clicked: true,
+            box: true,
+            logs: true,
+            fastMoves: true,
+            frames: true,
+            folder: "demo",
+          });
+        },
+      );
+
+      await t.test(
         "Playwright-style calls, extraction, one group for parallel tabs, Google parsing",
         async () => {
           const catalog = siteUrl + "catalog";
