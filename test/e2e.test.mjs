@@ -18,6 +18,9 @@ const extension = resolve("apps/extension/build");
 const cli = resolve("apps/bridge/dist/cli.js");
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const run = promisify(execFile);
+// A 1x1 PNG.
+const PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
 
 test(
   "agents drive real Chrome through the bridge, the CLI and MCP",
@@ -30,7 +33,12 @@ test(
     const home = await mkdtemp(join(tmpdir(), "bue-home-"));
     // A throwaway Pi folder: model sign-in tests never touch real logins.
     const piHome = await mkdtemp(join(tmpdir(), "bue-pi-"));
-    const env = { ...process.env, BROWSER_USE_EXTENSION_HOME: home, PI_CODING_AGENT_DIR: piHome };
+    const env = {
+      ...process.env,
+      BROWSER_USE_EXTENSION_HOME: home,
+      PI_CODING_AGENT_DIR: piHome,
+      SITE_TO_API_HOME: join(home, "site-to-api"),
+    };
     const site = createServer((request, response) => {
       if (request.url?.startsWith("/catalog")) {
         response.setHeader("content-type", "text/html");
@@ -40,6 +48,19 @@ test(
           <button onclick="document.getElementById('out').textContent='added'">Add</button><p id="out"></p>
           <table><tr><th>Model</th><th>Price</th></tr><tr><td>iPhone 16</td><td>69,900</td></tr><tr><td>iPhone 16 Plus</td><td>79,900</td></tr></table>
           <a href="/catalog?page=2">Next page</a>`,
+        );
+        return;
+      }
+      if (request.url?.startsWith("/media/photo.png")) {
+        response.setHeader("content-type", "image/png");
+        response.end(Buffer.from(PNG, "base64"));
+        return;
+      }
+      if (request.url?.startsWith("/media")) {
+        response.setHeader("content-type", "text/html");
+        response.end(
+          `<title>Media</title><img id="photo" src="/media/photo.png">
+          <div id="drop" style="border:1px dashed">Drop photos here<input type="file" accept="image/*" multiple style="display:none"></div>`,
         );
         return;
       }
@@ -439,6 +460,55 @@ test(
         } finally {
           mcp.close();
         }
+      });
+
+      await t.test(
+        "media: images are saved to the workspace and uploaded through a drop zone",
+        async () => {
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "media",
+              `const p = await browser.openTab(${JSON.stringify(siteUrl + "media")});
+            const saved = await p.saveMedia("#photo");
+            const fromUrl = await p.saveMedia(${JSON.stringify(siteUrl + "media/photo.png")}, { name: "again.png" });
+            await p.upload("#drop", [saved[0].saved, ${JSON.stringify(siteUrl + "media/photo.png")}]);
+            const picked = await p.evaluate(() => [...document.querySelector("input[type=file]").files].map((f) => f.size));
+            console.log("RESULT " + JSON.stringify({ saved: saved[0].saved, mime: saved[0].mime, again: fromUrl[0].saved, picked }))`,
+            ],
+            { env },
+          );
+          assert.match(stdout, /RESULT /, stdout);
+          const result = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+          assert.equal(result.saved, "media/photo.png");
+          assert.equal(result.mime, "image/png");
+          assert.equal(result.again, "media/again.png");
+          const size = Buffer.from(PNG, "base64").length;
+          assert.deepEqual(result.picked, [size, size]);
+        },
+      );
+
+      await t.test("browser code reaches mapped site APIs through siteApi", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "site-api",
+            `const sites = await siteApi.sites();
+            const missing = await siteApi.call("nope.example", "x").then(() => "called", (e) => String(e.message));
+            console.log("RESULT " + JSON.stringify({ sites, missing }))`,
+          ],
+          { env },
+        );
+        assert.match(stdout, /RESULT /, stdout);
+        const result = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+        assert.deepEqual(result.sites, []);
+        assert.match(result.missing, /not mapped/);
       });
 
       await t.test("a saved boost applies on every visit until it is removed", async () => {

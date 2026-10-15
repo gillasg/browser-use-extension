@@ -143,6 +143,25 @@ function appendFrameTree(
 type Upload = BrowserExecutorRequest & {
   step: Extract<BrowserExecutorRequest["step"], { op: "upload" }>;
 };
+/**
+ * The file input for a selector: the input itself, or (for an upload button or drop zone, whose
+ * real input is usually hidden) the input inside it, in its form, or the page's only one.
+ */
+function fileInputExpression(selector: string): string {
+  return `(()=>{
+const deep=(sel)=>{const roots=[document],found=[];while(roots.length){const root=roots.pop();found.push(...root.querySelectorAll(sel));for(const el of root.querySelectorAll('*'))if(el.shadowRoot)roots.push(el.shadowRoot);}return found;};
+const isFile=(el)=>el instanceof HTMLInputElement&&el.type==='file'&&!el.disabled;
+const matches=deep(${JSON.stringify(selector)});
+if(!matches.length)throw Error('Nothing matches '+${JSON.stringify(selector)});
+const direct=matches.find(isFile);if(direct)return direct;
+const el=matches[0];
+const inside=[...el.querySelectorAll('input[type=file]')].find(isFile);if(inside)return inside;
+const form=el.closest('form');const inForm=form&&[...form.querySelectorAll('input[type=file]')].find(isFile);if(inForm)return inForm;
+const all=deep('input[type=file]').filter(isFile);if(all.length===1)return all[0];
+throw Error(all.length?'Several file inputs on the page: pass a selector for the right one':'No file input on the page for that element');
+})()`;
+}
+
 export async function uploadFiles(
   debuggee: chrome.debugger.Debuggee,
   request: Upload,
@@ -152,13 +171,19 @@ export async function uploadFiles(
   if (!backendNodeId) {
     if (!step.selector)
       throw new Error("Choose an observed file input or file chooser backendNodeId");
-    const expression = `(()=>{const roots=[document],found=[];while(roots.length){const root=roots.pop();found.push(...root.querySelectorAll(${JSON.stringify(step.selector)}));for(const el of root.querySelectorAll('*'))if(el.shadowRoot)roots.push(el.shadowRoot);}if(found.length!==1)throw Error('Expected exactly one file input');return found[0];})()`;
     const result = (await chrome.debugger.sendCommand(debuggee, "Runtime.evaluate", {
-      expression,
+      expression: fileInputExpression(step.selector),
       ...(step.frameId ? { contextId: await frameContext(debuggee, step.frameId) } : {}),
-    })) as { result?: { objectId?: string }; exceptionDetails?: unknown };
+    })) as {
+      result?: { objectId?: string };
+      exceptionDetails?: { exception?: { description?: string } };
+    };
     const objectId = result.result?.objectId;
-    if (!objectId || result.exceptionDetails) throw new Error("TARGET_NOT_FOUND");
+    if (!objectId || result.exceptionDetails)
+      throw new Error(
+        "TARGET_NOT_FOUND: " +
+          (result.exceptionDetails?.exception?.description?.split("\n")[0] ?? "no file input"),
+      );
     try {
       const node = (await chrome.debugger.sendCommand(debuggee, "DOM.describeNode", {
         objectId,

@@ -106,7 +106,17 @@ var browser = Object.freeze({
     waitForEvent: (event, options = {}) => __event(target,event,options),
     expect: async (event, action, options = {}) => {var wait=__event(target,event,options);await wait.ready;try {await action();return await wait;}catch(error){await wait.dispose().catch(()=>{});throw error;}},
     frames: async () => (await __step({op:'frames',target,action:'list'})).data.map(info=>__framePage(target,info)),
-    upload: (selector, files) => __step({op:'upload',target,selector,files}),
+    // Files from the workspace, or image/file URLs (saved to the workspace first). The selector can be
+    // the file input, or the upload button or drop zone it belongs to; leave it out for the page's only one.
+    upload: async (selector, files) => {
+      if (files === undefined) { files = selector; selector = 'input[type=file]'; }
+      var local = [];
+      for (var file of [].concat(files)) local.push(__isMediaUrl(file) ? (await __saveMedia(target, file, {folder:'uploads'}))[0].saved : file);
+      return __step({op:'upload',target,selector,files:local});
+    },
+    // Saves images, videos or files into the workspace: a URL, or a selector (img, video, a, canvas,
+    // or any element with a background image); {all:true} saves every match. Uses the user's cookies.
+    saveMedia: (what, options = {}) => __saveMedia(target, what, options),
     setFileInputFiles: (backendNodeId, files) => __step({op:'upload',target,backendNodeId,files}),
     clickAt: (x,y) => __step({op:'pointer',target,action:'click',x,y}),
     doubleClickAt: (x,y) => __step({op:'pointer',target,action:'doubleClick',x,y}),
@@ -244,6 +254,70 @@ var browser = Object.freeze({
     },
   }))),
 });
+function __isMediaUrl(value) {
+  var text = String(value);
+  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:') || text.startsWith('blob:');
+}
+// What an element shows: its source, link, canvas pixels or background image (blob: and data: as data).
+async function __mediaSources(args) {
+  var roots = [document], found = [];
+  while (roots.length) { var root = roots.pop(); found.push(...root.querySelectorAll(args.selector)); for (var el of root.querySelectorAll('*')) if (el.shadowRoot) roots.push(el.shadowRoot); }
+  var picked = args.all ? found : found.slice(0, 1), out = [];
+  var asData = async (url) => { var blob = await (await fetch(url)).blob(); return await new Promise((done) => { var reader = new FileReader(); reader.onload = () => done(reader.result); reader.readAsDataURL(blob); }); };
+  for (var item of picked) {
+    var url = '';
+    if (item instanceof HTMLCanvasElement) url = item.toDataURL('image/png');
+    else url = item.currentSrc || item.src || item.poster || item.href || '';
+    if (!url) {
+      var bg = getComputedStyle(item).backgroundImage || '', start = bg.indexOf('url(');
+      if (start >= 0) url = bg.slice(start + 4, bg.indexOf(')', start)).split('"').join('').split("'").join('');
+    }
+    if (!url) continue;
+    url = new URL(url, location.href).href;
+    out.push(url.startsWith('blob:') ? {url, data: await asData(url)} : {url});
+  }
+  return out;
+}
+function __mediaName(url, mime, index, options) {
+  var base = 'file';
+  try { base = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || 'file'); } catch {}
+  base = base.split('?')[0].replace(/[^A-Za-z0-9._-]+/g, '-').slice(-80) || 'file';
+  var ext = (String(mime || '').split('/')[1] || '').split(';')[0].split('+')[0];
+  if (ext === 'jpeg') ext = 'jpg';
+  if (ext && !base.toLowerCase().endsWith('.' + ext) && base.indexOf('.') < 0) base += '.' + ext;
+  if (options.name) {
+    var dot = options.name.lastIndexOf('.');
+    base = !index ? options.name : dot > 0 ? options.name.slice(0, dot) + '-' + index + options.name.slice(dot) : options.name + '-' + index;
+  }
+  return (options.folder || 'media') + '/' + base;
+}
+async function __saveMedia(target, what, options = {}) {
+  var page = browser.page(target);
+  var sources = __isMediaUrl(what) ? [{url: String(what)}] : await page.evaluate(__mediaSources, {selector: String(what), all: !!options.all});
+  if (!sources.length) throw Error('NOT_FOUND: nothing to save for ' + what);
+  var saved = [];
+  for (var [index, source] of sources.entries()) {
+    var data = source.data || (source.url.startsWith('data:') ? source.url : '');
+    var mime, base64, bytes;
+    if (data) {
+      var comma = data.indexOf(',');
+      mime = data.slice(5, comma).split(';')[0];
+      base64 = data.slice(5, comma).includes(';base64') ? data.slice(comma + 1) : btoa(decodeURIComponent(data.slice(comma + 1)));
+      bytes = Math.floor(base64.length * 3 / 4);
+    } else {
+      var response = await browser.fetch(source.url, {as: 'base64'});
+      if (!response.ok) throw Error('DOWNLOAD_FAILED: ' + response.status + ' ' + source.url);
+      if (response.truncated) throw Error('TOO_LARGE: ' + response.bytes + ' bytes at ' + source.url);
+      mime = response.headers['content-type'];
+      base64 = response.base64;
+      bytes = response.bytes;
+    }
+    var name = __mediaName(source.url, mime, index, options);
+    await __call({workspace:'artifact', name, value: base64, base64: true});
+    saved.push({saved: name, url: source.url.startsWith('data:') ? 'data:' : source.url, mime, bytes});
+  }
+  return saved;
+}
 `;
 export const browserFastApi = `
 var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __lastTarget;
@@ -444,6 +518,13 @@ function __framePage(target, info) {
 function __expression(fn,arg) {return typeof fn==='function' ? '('+fn.toString()+')('+(JSON.stringify(arg) ?? '')+')' : fn;}
 var artifact=(name,data)=>__call({workspace:'artifact',name,value:typeof data==='string'?data:__encodeBytes(data),base64:typeof data!=='string'});
 var checkpoint=(name,value)=>__call({workspace:'checkpoint',name,value});
+// Mapped site APIs (site-to-api): call an operation, or watch it for items new or changed since the last watch.
+var siteApi=Object.freeze({
+  sites:()=>__call({siteApi:'sites'}),
+  operations:site=>__call({siteApi:'operations',site}),
+  call:(site,operation,params={})=>__call({siteApi:'call',site,operation,params}),
+  watch:(site,operation,params={},options={})=>__call({siteApi:'watch',site,operation,params,...options}),
+});
 var loadCheckpoint=name=>__call({workspace:'load',name});
 var saveHelper=(name,fn)=>__call({workspace:'helper',name,value:typeof fn==='function'?'('+fn.toString()+')':fn});
 var loadHelper=async name=>eval(await __call({workspace:'loadHelper',name}));

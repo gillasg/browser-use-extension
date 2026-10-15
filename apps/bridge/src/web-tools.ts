@@ -8,12 +8,14 @@ import {
   type Format,
 } from "@browser-use-extension/tools/browser-crawl";
 import {
+  explore,
   importCaptures,
   listSites,
   loadModel,
   rebuild,
   siteApi,
   siteName,
+  watch,
 } from "@browser-use-extension/tools/site-to-api";
 import { dataDirectory } from "./paths.js";
 
@@ -55,12 +57,18 @@ export const webTools = [
   },
   {
     name: "site_api",
-    description: `Call the APIs of sites mapped from this browser's own traffic: one call replaces many page actions and returns JSON, with the user's logins. sites lists mapped sites; operations lists what a site can do; call runs one. To map a site: in browser_code open it, await tab.network.start({ types: 'all' }), do something that loads new data, then await tab.network.save('<site>.har'); then learn with files ['<site>.har']. ${HOW_TO_CALL}`,
+    description: `Call the APIs of sites mapped from this browser's own traffic: one call replaces many page actions and returns JSON, with the user's logins. sites lists mapped sites; operations lists what a site can do; call runs one; watch runs one and returns only items new or changed since the last watch of it. explore maps sites by name (an agent uses each in a background tab, looking only) and needs a connected model. To map a site yourself: in browser_code open it, await tab.network.start({ types: 'all' }), do something that loads new data, then await tab.network.save('<site>.har'); then learn with files ['<site>.har']. ${HOW_TO_CALL}`,
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["sites", "operations", "call", "learn"] },
+        action: {
+          type: "string",
+          enum: ["sites", "operations", "call", "watch", "learn", "explore"],
+        },
         site: { type: "string" },
+        sites: { ...strings, description: "For explore: site names or URLs to map." },
+        goal: { type: "string", description: "For explore: extra things to do on each site." },
+        key: { type: "string", description: "For watch: the field that identifies an item." },
         operation: { type: "string" },
         params: { type: "object" },
         files: { ...strings, description: "Captures saved by browser_code (session 'mcp')." },
@@ -138,6 +146,10 @@ async function learn(site: string, files: unknown): Promise<unknown> {
 
 async function runSiteApi(args: Json): Promise<unknown> {
   if (args.action === "sites") return { sites: await listSites() };
+  if (args.action === "explore") {
+    const sites = Array.isArray(args.sites) ? (args.sites as string[]) : [args.site as string];
+    return explore(sites.filter(Boolean), typeof args.goal === "string" ? { goal: args.goal } : {});
+  }
   const site = siteName(requireString(args.site, "site, for example shop.example.com"));
   if (args.action === "learn") return learn(site, args.files);
   if (args.action === "operations") {
@@ -145,8 +157,12 @@ async function runSiteApi(args: Json): Promise<unknown> {
     if (!model) throw new Error(`${site} is not mapped yet: capture its traffic and use learn`);
     return { site, howToCall: HOW_TO_CALL, operations: model.operations.map(describe) };
   }
+  const operation = requireString(args.operation, "operation id");
+  const params = (args.params ?? {}) as Json;
+  if (args.action === "watch")
+    return watch(site, operation, params, typeof args.key === "string" ? { key: args.key } : {});
   const api = await siteApi(site);
-  return api.call(requireString(args.operation, "operation id"), (args.params ?? {}) as never);
+  return api.call(operation, params as never);
 }
 
 /** Runs crawl or site_api; undefined when the tool is neither. */

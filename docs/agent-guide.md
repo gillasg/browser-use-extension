@@ -129,6 +129,9 @@ await page.cdp("Emulation.setGeolocationOverride", {
 await page.screenshot(); // for visual questions
 await page.screenshot({ labels: true }); // draws bu ids on elements
 await page.clickAt(400, 300); // viewport coordinates
+await page.saveMedia("img.product"); // [{saved: "media/photo.jpg", mime, bytes}]; {all: true} for every match
+await page.saveMedia("https://example.com/a.png", { name: "a.png" }); // URLs, data: and blob: too
+await page.upload("#photo-dropzone", ["media/photo.jpg", "https://example.com/b.png"]); // finds the hidden file input
 await page.upload("input[type=file]", ["C:/path/file.pdf"]);
 await page.download(url);
 ```
@@ -252,6 +255,17 @@ await browser.boosts.remove(boost.id);
 ```
 
 Saving with an existing `id` replaces that boost. Scripts (`js`) need **Allow User Scripts** switched on for the extension in `chrome://extensions`.
+
+## Mapped site APIs in code
+
+Sites mapped with `site_api` (site-to-api) can be called from browser code too:
+
+```js
+await siteApi.sites();
+await siteApi.call("shop.example", "searchProducts", { q: "lamp" });
+// Only what is new or changed since the last watch of the same call:
+const { new: fresh } = await siteApi.watch("shop.example", "searchProducts", { q: "lamp" });
+```
 
 ## Other extensions
 

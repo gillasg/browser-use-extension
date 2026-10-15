@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { handleSiteApiRequest, isSiteApiRequest } from "@browser-use-extension/tools/site-to-api";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
@@ -272,6 +273,7 @@ function serveRequest(request: unknown, session: string): Promise<unknown> {
   if (isSiteSkillRequest(request))
     return siteSkillCall(join(dataDirectory(), "site-skills"), request);
   if (isWorkspaceRequest(request)) return workspaceCall(workspace, request);
+  if (isSiteApiRequest(request)) return handleSiteApiRequest(request);
   const upload = request as { validateUpload?: unknown } | null;
   if (Array.isArray(upload?.validateUpload))
     return validateUploadFiles(upload.validateUpload as string[], workspace);
