@@ -398,7 +398,7 @@ async function executeStep(
   assertRequestActive(request);
   if (step.op === "listTabs") return listTabs(step.query);
   if (step.op === "openTab") return openTab(identity, request);
-  if (step.op === "attachTab") throw new Error("UNSUPPORTED");
+  if (step.op === "attachTab") return attachTab(step.target);
   activateClaim(request);
   const tab = await assertTarget(request);
   bindBrowserSession(step.target.tabId, request.chatId);
@@ -424,6 +424,14 @@ function listTabs(query: string | undefined): BrowserExecutorResult {
     ? tabs.filter((tab) => `${tab.title} ${tab.url}`.toLowerCase().includes(query.toLowerCase()))
     : tabs;
   return BrowserExecutorResultSchema.parse({ kind: "tabs", tabs: filtered.slice(0, 256) });
+}
+
+// A tab the user already has open, picked from browser.tabs(): the runtime host checked the
+// target is listed; it is borrowed, not owned, so it is not grouped or bound to the session.
+function attachTab(target: BrowserTargetKey): BrowserExecutorResult {
+  const tab = currentInventoryTabs().find((known) => sameTarget(known.target, target));
+  if (!tab || !safePage(tab.url)) throw new Error("TARGET_LOST");
+  return BrowserExecutorResultSchema.parse({ kind: "tab", tab });
 }
 
 async function openTab(

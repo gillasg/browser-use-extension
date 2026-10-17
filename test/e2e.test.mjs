@@ -299,6 +299,21 @@ test(
             listed: true,
             bytes: 2500002,
           });
+          // A tab picked from browser.tabs() is attached by its listed entry.
+          const attached = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "quiet",
+              `const [listed] = await browser.tabs(${JSON.stringify(siteUrl + "?a")});
+            const borrowed = await browser.attachTab(listed);
+            console.log("ATTACHED " + JSON.stringify(await borrowed.evaluate(() => location.search)))`,
+            ],
+            { env },
+          );
+          assert.match(attached.stdout, /ATTACHED "\?a"/, attached.stdout + attached.stderr);
         },
       );
 

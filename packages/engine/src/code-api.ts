@@ -413,6 +413,8 @@ var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new 
 var __key = target => JSON.stringify(target);
 // A bare tab id from browser.tabs() or a step line stands for that tab's full target.
 async function __tabTarget(target) {
+  // A tab id, a tab from browser.tabs(), a page, or a target itself.
+  if (target && typeof target === 'object' && target.target) return target.target;
   if (typeof target !== 'number') return target;
   var find = () => [...__tabs.values()].find(tab => tab.target.tabId === target);
   var tab = find() || (await browser.tabs(), find());
