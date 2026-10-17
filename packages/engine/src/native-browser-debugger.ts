@@ -1,4 +1,5 @@
 import { noteActionTiming } from "./native-browser-action-timing.js";
+import { hiddenTargetError } from "./native-browser-reveal.js";
 import { showAgentCursor } from "./native-browser-cursor.js";
 import {
   BrowserActionError,
@@ -130,7 +131,8 @@ async function resolveQuery(
   const visible = await visibleNodes(debuggee, ids);
   if (visible.length > 1) throw new Error("AMBIGUOUS_TARGET");
   const id = visible[0];
-  if (id === undefined) throw new Error(ids.length ? "TARGET_HIDDEN" : "TARGET_NOT_FOUND");
+  if (id === undefined && ids[0] !== undefined) throw await hiddenTargetError(debuggee, ids[0]);
+  if (id === undefined) throw new Error("TARGET_NOT_FOUND");
   const node = nodes.find((node) => node.backendDOMNodeId === id);
   return {
     backendNodeId: id,

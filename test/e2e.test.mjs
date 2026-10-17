@@ -51,6 +51,16 @@ test(
         );
         return;
       }
+      if (request.url?.startsWith("/collapsed")) {
+        // A narrow-layout search box folded behind a toggle, like Wikipedia in Split View.
+        response.setHeader("content-type", "text/html");
+        response.end(
+          `<title>Collapsed</title><header><button class="search-toggle" aria-label="Search"
+          onclick="document.getElementById('box').hidden=false">S</button>
+          <div id="box" hidden><input name="search" placeholder="Search"></div></header>`,
+        );
+        return;
+      }
       if (request.url?.startsWith("/media/photo.png")) {
         response.setHeader("content-type", "image/png");
         response.end(Buffer.from(PNG, "base64"));
@@ -309,11 +319,32 @@ test(
               "quiet",
               `const [listed] = await browser.tabs(${JSON.stringify(siteUrl + "?a")});
             const borrowed = await browser.attachTab(listed);
-            console.log("ATTACHED " + JSON.stringify(await borrowed.evaluate(() => location.search)))`,
+            const active = await browser.activeTab().catch((error) => error.message);
+            console.log("ATTACHED " + JSON.stringify(await borrowed.evaluate(() => location.search)));
+            console.log("GUESSES " + JSON.stringify({
+              id: listed.id === listed.tabId,
+              listedTitle: await listed.evaluate(() => document.title),
+              active: typeof active.tabId === "number" || /not a web page/.test(active),
+              snapshot: typeof (await borrowed.domSnapshot()) === "string",
+            }));
+            await borrowed.goto(${JSON.stringify(siteUrl + "collapsed")});
+            const hidden = await borrowed.locator("input[name=search]").fill("x").catch((error) => String(error.message));
+            console.log("HIDDEN " + JSON.stringify(hidden))`,
             ],
             { env },
           );
           assert.match(attached.stdout, /ATTACHED "\?a"/, attached.stdout + attached.stderr);
+          assert.deepEqual(JSON.parse(/GUESSES (.*)/.exec(attached.stdout)[1]), {
+            id: true,
+            listedTitle: "Shop",
+            active: true,
+            snapshot: true,
+          });
+          assert.match(
+            attached.stdout,
+            /HIDDEN .*TARGET_HIDDEN.*button\.search-toggle/,
+            attached.stdout,
+          );
         },
       );
 

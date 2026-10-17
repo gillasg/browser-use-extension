@@ -195,6 +195,8 @@ function __extendPage(target, base) {
       : byText(value, options),
     // Playwright-style text snapshot of the page: the same view as bu.state().
     ariaSnapshot: (options = {}) => bu.state({...options, target}),
+    // A common guess for the same view.
+    domSnapshot: (options = {}) => bu.state({...options, target}),
     goto: (url) => base.navigate(url),
     hover: (a, b) => typeof a === 'string' ? css(a).first().hover() : coordHover(a, b),
     reload: () => base.cdp('Page.reload', {}),

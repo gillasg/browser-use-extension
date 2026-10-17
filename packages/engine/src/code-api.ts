@@ -89,9 +89,18 @@ function __withFilter(element, filter) { return {...element, filters: [...(eleme
 function __originOf(url) { try { return new URL(url).origin; } catch { return ''; } }
 var browser = Object.freeze({
   waitFor: (event, options = {}) => __event(options.target || __lastTarget,event,options),
+  // Listed tabs work as pages too (agents call tab.locator(...) or use tab.id); acting on one
+  // the session did not open still needs browser.attachTab(tab) first.
   tabs: Object.assign(async (query) => (await __step({op:'listTabs', ...(query ? {query} : {})})).tabs
-      .map(tab => ({tabId: tab.target.tabId, url: tab.url, title: tab.title, active: tab.active, ...tab})),
+      .map(tab => __listedTab({tabId: tab.target.tabId, id: tab.target.tabId, url: tab.url, title: tab.title, active: tab.active, ...tab})),
     {list: async (query) => browser.tabs(query)}),
+  // The tab the user is looking at: the active tab of the focused window, as a page.
+  activeTab: async () => {
+    var tab = (await browser.tabs()).find(listed => listed.active);
+    if (!tab) throw Error('TARGET_LOST: the active tab is not a web page (a new tab or browser page)');
+    return tab;
+  },
+  getActiveTab: async () => browser.activeTab(),
   // Reorder tabs (the user's too): browser.moveTab(tabIdOrPage | [..], {index, windowId}); index -1 = end.
   moveTab: (tabs, options = {}) => {
     var ids = (Array.isArray(tabs) ? tabs : [tabs]).map(tab => typeof tab === 'number' ? tab : tab && (tab.tabId ?? tab.target?.tabId));
@@ -412,6 +421,21 @@ export const browserFastApi = `
 var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __busy = new Set(), __lastTarget;
 var __key = target => JSON.stringify(target);
 // A bare tab id from browser.tabs() or a step line stands for that tab's full target.
+function __listedTab(entry) {
+  var page;
+  // Built on first use without changing the current page (browser.page sets __lastTarget).
+  var asPage = () => {
+    if (page) return page;
+    var current = __lastTarget;
+    page = browser.page(entry.target);
+    __lastTarget = current;
+    return page;
+  };
+  var plain = new Set(['then', 'toJSON', 'constructor', 'inspect']);
+  return new Proxy(entry, {
+    get: (object, key) => key in object || typeof key === 'symbol' || plain.has(key) ? object[key] : asPage()[key],
+  });
+}
 async function __tabTarget(target) {
   // A tab id, a tab from browser.tabs(), a page, or a target itself.
   if (target && typeof target === 'object' && target.target) return target.target;

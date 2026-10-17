@@ -30,6 +30,7 @@ import {
 import { frameContext } from "./native-browser-frames.js";
 import { refreshInventoryTab } from "./native-inventory-client.js";
 import { scrollWithFeedback } from "./native-browser-scroll.js";
+import { hiddenTargetError } from "./native-browser-reveal.js";
 
 interface Point {
   x: number;
@@ -48,7 +49,7 @@ export async function actionablePoint(
     id,
     nodeState,
   );
-  if (!state.visible) throw new Error("TARGET_HIDDEN");
+  if (!state.visible) throw await hiddenTargetError(debuggee, id);
   if (!state.enabled) throw new Error("TARGET_DISABLED");
   if (editable && !state.editable) throw new Error("NOT_EDITABLE");
   let prior: Point | undefined;
