@@ -1,3 +1,4 @@
+import { useHostSiteApi } from "../background/integrations.js";
 import { normalizeBoost } from "../shared/bundle.js";
 import { errorText, type Reply } from "../shared/messages.js";
 import { boostMatches } from "../shared/match.js";
@@ -28,6 +29,11 @@ const PAGE_PARTS = ["css", "sections", "zaps", "look", "actions", "html"] as con
 export interface BoostEngineOptions {
   /** The content script the host built with site-boosts/embed-build (writeContent). */
   contentScript: string;
+  /**
+   * Answers boosts' site API calls (sb.api) itself, e.g. through the host's own site-to-api.
+   * Without it they go to a site-to-api server set in the settings, or to a companion extension.
+   */
+  siteApi?: (site: string, operation: string, params: Record<string, unknown>) => Promise<unknown>;
 }
 
 export interface BoostSummary {
@@ -139,6 +145,7 @@ export function startBoostEngine(options: BoostEngineOptions): BoostEngine {
   };
 
   listenToScripts();
+  if (options.siteApi) useHostSiteApi(options.siteApi);
   chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender, reply) => {
     const kind = typeof message?.kind === "string" ? message.kind : "";
     if (!kind.startsWith(MESSAGE_PREFIX) || sender.id !== chrome.runtime.id || !sender.tab)

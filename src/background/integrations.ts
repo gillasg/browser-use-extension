@@ -94,11 +94,30 @@ async function siteApi(): Promise<{ url: string; token: string }> {
   return { ...settings.siteApi, url: settings.siteApi.url.replace(/\/+$/, "") };
 }
 
+type SiteApiHandler = (
+  site: string,
+  operation: string,
+  params: Record<string, unknown>,
+) => Promise<unknown>;
+let hostSiteApi: SiteApiHandler | undefined;
+/** A host extension that embeds the engine answers site API calls itself. */
+export function useHostSiteApi(handler: SiteApiHandler): void {
+  hostSiteApi = handler;
+}
+
+/** A mapped site's operation: through the host, else the site-to-api server in the settings,
+ * else a companion extension that has site APIs (Aeon does). */
 export async function callSiteApi(
   site: string,
   operation: string,
   params: Record<string, unknown>,
 ): Promise<unknown> {
+  if (hostSiteApi) return hostSiteApi(site, operation, params);
+  if (!(await getSettings()).siteApi?.url) {
+    const companion = await findCompanion();
+    if (companion?.features.includes("siteApi"))
+      return ask(companion.id, "siteApi", { site, operation, params });
+  }
   const { url, token } = await siteApi();
   const response = await fetch(
     `${url}/sites/${encodeURIComponent(site)}/ops/${encodeURIComponent(operation)}`,

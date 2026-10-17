@@ -51,7 +51,7 @@ A model is only needed to write and repair boosts. Use your own key with Anthrop
 
 ## Site APIs
 
-Connect a [site-to-api](https://github.com/gillasg/site-to-api) server (`site-to-api serve`) and boosts can call the APIs of the sites you mapped, with your logins: price history next to a product, the same item on another shop, your own data on a dashboard. The model sees which operations exist when it writes a boost.
+Connect a [site-to-api](https://github.com/gillasg/site-to-api) server (`site-to-api serve`) and boosts can call the APIs of the sites you mapped, with your logins: price history next to a product, the same item on another shop, your own data on a dashboard. The model sees which operations exist when it writes a boost. Without a server, a companion extension that has site APIs answers these calls instead, and an extension that embeds the engine can answer them itself.
 
 ## Install
 
