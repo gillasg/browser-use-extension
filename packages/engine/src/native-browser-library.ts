@@ -13,6 +13,7 @@ export function isLibraryRequest(value: Request | null): boolean {
       typeof value.bookmarks === "string" ||
       typeof value.downloads === "string" ||
       typeof value.extension === "string" ||
+      value.tabs === "move" ||
       isBoostsRequest(value)),
   );
 }
@@ -21,8 +22,28 @@ export function libraryCall(value: Request): Promise<unknown> {
   if (typeof value.history === "string") return historyCall(value.history, value);
   if (typeof value.downloads === "string") return downloadsCall(value.downloads, value);
   if (typeof value.extension === "string") return extensionCall(value.extension, value.message);
+  if (value.tabs === "move") return moveTabs(value);
   if (isBoostsRequest(value)) return boostsCall(value);
   return bookmarksCall(String(value.bookmarks), value);
+}
+
+/** Reorder tabs: move them, in the order given, to an index (-1 = the end) and optionally another
+ * window. Pinned tabs stay among pinned tabs, as Chrome requires. */
+async function moveTabs(value: Request): Promise<unknown> {
+  const ids = Array.isArray(value.tabIds) ? value.tabIds : [];
+  if (!ids.length || !ids.every((id) => Number.isSafeInteger(id)))
+    throw new Error("INVALID_TARGET: pass one or more tab ids");
+  const index = Number.isSafeInteger(value.index) ? (value.index as number) : -1;
+  const windowId = Number.isSafeInteger(value.windowId) ? (value.windowId as number) : undefined;
+  const moved = await chrome.tabs.move(ids as number[], {
+    index,
+    ...(windowId !== undefined ? { windowId } : {}),
+  });
+  return (Array.isArray(moved) ? moved : [moved]).map((tab) => ({
+    tabId: tab.id,
+    index: tab.index,
+    windowId: tab.windowId,
+  }));
 }
 
 /** A message to another installed extension that accepts them. */

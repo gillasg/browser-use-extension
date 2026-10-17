@@ -1,3 +1,4 @@
+import { noteActionTiming } from "./native-browser-action-timing.js";
 import type {
   BrowserScrollState,
   BrowserExecutorRequest,
@@ -75,6 +76,7 @@ export async function scrollWithFeedback(
   try {
     const before = await measureScroll(debuggee, objectId, horizontal);
     showAgentCursor(debuggee, point.x, point.y, false, { caption: "Scrolling " + step.direction });
+    const tAct = Date.now();
     await scrollAt(debuggee, point.x, point.y, step.direction, step.amount);
     let after = before;
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -85,6 +87,16 @@ export async function scrollWithFeedback(
       after = next;
       if (settled) break;
     }
+    noteActionTiming(debuggee.tabId, {
+      tAct,
+      point,
+      scroll: {
+        direction: step.direction,
+        amount: step.amount,
+        before: before.position,
+        after: after.position,
+      },
+    });
     const forward = step.direction === "down" || step.direction === "right";
     return {
       ...after,

@@ -17,11 +17,14 @@ export async function presentBrowserTask(
   force = false,
 ): Promise<void> {
   const tabs = chrome.tabs as SplitTabs;
+  // Working in front: whichever tab the agent works in becomes the visible one.
+  if (await engineConfig.agentInFront().catch(() => false))
+    await chrome.tabs.update(tabId, { active: true }).catch(() => undefined);
   if (!tabs.createSplit || !tabs.unsplit) return;
   if (!force && (await engineConfig.agentView().catch(() => "split")) === "thumbnails") return;
   const prior = pending.get(chatId) ?? Promise.resolve();
   const work = prior
-    .then(() => pairChat(tabs, chatId, tabId))
+    .then(() => pairChat(tabs, chatId, tabId, force))
     .catch((error) => {
       // A layout failure must not turn a completed browser action into a failed action.
       console.warn("Could not open browser Split View:", String(error));
@@ -30,7 +33,12 @@ export async function presentBrowserTask(
   await work;
   if (pending.get(chatId) === work) pending.delete(chatId);
 }
-async function pairChat(tabs: SplitTabs, chatId: string, tabId: number): Promise<void> {
+async function pairChat(
+  tabs: SplitTabs,
+  chatId: string,
+  tabId: number,
+  force: boolean,
+): Promise<void> {
   const target = (await tabs.get(tabId)) as SplitTab;
   const prior = pairs.get(chatId);
   if (prior && prior.targetId === target.id && prior.splitId === target.splitViewId) return;
@@ -38,10 +46,18 @@ async function pairChat(tabs: SplitTabs, chatId: string, tabId: number): Promise
   const chat = selectChat(candidates, target.windowId);
   if (!chat?.id || !target.id || chat.id === target.id) return;
   if (hasSplit(chat) && chat.splitViewId === target.splitViewId) return;
+  // Pairing must not pull the user away from another tab. Bring the pair forward only when they
+  // were already looking at this chat or its tab, when they must act (hand-off), or when the
+  // agent works in front.
+  const [previous] = (await tabs.query({ active: true, windowId: chat.windowId })) as SplitTab[];
+  const front =
+    force || chat.active || target.active || (await engineConfig.agentInFront().catch(() => false));
   await alignTabs(tabs, chat, target);
   const splitId = await tabs.createSplit?.([chat.id, target.id]);
   if (splitId !== undefined) pairs.set(chatId, { targetId: target.id, splitId });
-  await tabs.update(chat.id, { active: true });
+  if (front) await tabs.update(chat.id, { active: true });
+  else if (previous?.id !== undefined && previous.id !== chat.id && previous.id !== target.id)
+    await tabs.update(previous.id, { active: true }).catch(() => undefined);
 }
 async function alignTabs(tabs: SplitTabs, chat: SplitTab, target: SplitTab): Promise<void> {
   if (chat.id === undefined || target.id === undefined) return;

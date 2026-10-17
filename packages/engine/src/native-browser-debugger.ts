@@ -1,3 +1,4 @@
+import { noteActionTiming } from "./native-browser-action-timing.js";
 import { showAgentCursor } from "./native-browser-cursor.js";
 import {
   BrowserActionError,
@@ -229,6 +230,7 @@ export async function clickAt(
   y: number,
 ): Promise<void> {
   showAgentCursor(debuggee, x, y, true);
+  noteActionTiming(debuggee.tabId, { tAct: Date.now(), point: { x, y } });
   await chrome.debugger.sendCommand(debuggee, "Input.dispatchMouseEvent", {
     type: "mousePressed",
     x,

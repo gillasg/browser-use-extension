@@ -254,6 +254,55 @@ test(
       });
 
       await t.test(
+        "quiet reads, moving tabs, network list without start, large artifacts in pieces",
+        async () => {
+          await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "quiet",
+              `await browser.openTab(${JSON.stringify(siteUrl)})`,
+            ],
+            { env },
+          );
+          const read = await run(
+            process.execPath,
+            [cli, "repl", "--session", "quiet", "await page.evaluate(() => document.title)"],
+            { env },
+          );
+          assert.doesNotMatch(read.stdout, /\[ok\] evaluate/, read.stdout);
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "quiet",
+              `const first = await browser.openTab(${JSON.stringify(siteUrl + "?a")}, { newTab: true });
+            const second = await browser.openTab(${JSON.stringify(siteUrl + "?b")}, { newTab: true });
+            const [moved] = await browser.moveTab(second, { index: 0 });
+            const listed = await second.network.list();
+            const saved = await artifact("big.txt", "x".repeat(2500000) + "é");
+            console.log("RESULT " + JSON.stringify({
+              movedFirst: moved.index === 0 && moved.tabId === second.target.tabId,
+              listed: Array.isArray(listed),
+              bytes: saved.bytes,
+            }))`,
+            ],
+            { env },
+          );
+          assert.match(stdout, /RESULT /, stdout);
+          assert.deepEqual(JSON.parse(/RESULT (.*)/.exec(stdout)[1]), {
+            movedFirst: true,
+            listed: true,
+            bytes: 2500002,
+          });
+        },
+      );
+
+      await t.test(
         "recording: own window, timed actions, hover, mouse steps, onCdp, recordTab",
         async () => {
           const { stdout } = await run(

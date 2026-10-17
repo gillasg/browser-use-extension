@@ -1,3 +1,4 @@
+import { measureBox, noteActionTiming } from "./native-browser-action-timing.js";
 import { showAgentCursor, type CursorUpdate } from "./native-browser-cursor.js";
 import { onNode, nodeState, fillTextNode } from "./native-browser-dom.js";
 import {
@@ -576,6 +577,11 @@ async function dispatchAction(
     () => revalidateTarget(request, request.step.target.tabId),
     request.step.op === "fill",
   );
+  noteActionTiming(debuggee.tabId, {
+    box: await measureBox(debuggee, node.backendNodeId),
+    point: { x: box.x, y: box.y },
+    tAct: Date.now(),
+  });
   if (request.step.op === "click")
     await (box.activate
       ? onNode(debuggee, node.backendNodeId, activateNode)

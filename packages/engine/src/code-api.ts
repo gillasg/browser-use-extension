@@ -92,6 +92,12 @@ var browser = Object.freeze({
   tabs: Object.assign(async (query) => (await __step({op:'listTabs', ...(query ? {query} : {})})).tabs
       .map(tab => ({tabId: tab.target.tabId, url: tab.url, title: tab.title, active: tab.active, ...tab})),
     {list: async (query) => browser.tabs(query)}),
+  // Reorder tabs (the user's too): browser.moveTab(tabIdOrPage | [..], {index, windowId}); index -1 = end.
+  moveTab: (tabs, options = {}) => {
+    var ids = (Array.isArray(tabs) ? tabs : [tabs]).map(tab => typeof tab === 'number' ? tab : tab && (tab.tabId ?? tab.target?.tabId));
+    if (typeof options === 'number') options = {index: options};
+    return __call({tabs:'move', tabIds: ids, index: options.index ?? -1, ...(options.windowId !== undefined ? {windowId: options.windowId} : {})});
+  },
   openTab: async (url, options = {}) => {
     let clientInstanceId = options.clientInstanceId || __lastTarget?.clientInstanceId;
     if (!clientInstanceId) {
@@ -138,7 +144,7 @@ var browser = Object.freeze({
   boosts: Object.freeze({
     list: (url) => __call({boosts:"list", ...(url ? {url: String(url)} : {})}),
     get: (id) => __call({boosts:"get", id}),
-    save: (boost) => __call({boosts:"save", boost}),
+    save: async (boost) => { var saved = await __call({boosts:"save", boost}); if (saved && saved.warning) console.log(saved.warning); return saved; },
     remove: (id) => __call({boosts:"remove", id}),
     enable: (id, enabled = true) => __call({boosts:"enable", id, enabled}),
   }),
@@ -280,7 +286,15 @@ var browser = Object.freeze({
     }),
     network: Object.freeze({
       start: (options = {}) => __call({network:'start', target, ...options}),
-      list: (options = {}) => __call({network:'list', target, ...(typeof options === 'string' ? {match: options} : options)}),
+      list: async (options = {}) => {
+        try { return await __call({network:'list', target, ...(typeof options === 'string' ? {match: options} : options)}); }
+        catch (error) {
+          if (!/Not recording/.test(String(error && error.message))) throw error;
+          await __call({network:'start', target});
+          console.log('[ok] network capture started now (it was off, so nothing earlier was recorded); repeat the action or reload, then list again');
+          return [];
+        }
+      },
       get: (id) => __call({network:'get', target, id}),
       body: (id) => __call({network:'body', target, id}),
       har: () => __call({network:'har', target}),
@@ -438,9 +452,15 @@ async function __step(step, readOnly = false) {
   var action = ['click','fill','press','scroll','navigate','evaluate','cdp','upload','pointer','keys','reconnect'].includes(step.op);
   if(step.op==='frames' && ['click','fill','cdp'].includes(step.action))action=true;
   if (readOnly) action=false;
+  var wasDirty = step.target && __dirty.has(__key(step.target));
   if (action) __dirty.set(__key(step.target), step.target);
   var before = step.target && __tabs.get(__key(step.target))?.url;
   var result = await __call(step);
+  // An evaluate that only read the page leaves it clean: no final observation, no log line.
+  if (step.op === 'evaluate' && result.data && result.data.changed === false) {
+    if (!wasDirty) __dirty.delete(__key(step.target));
+    action = false;
+  }
   if (result.url && step.target && __tabs.has(__key(step.target))) __tabs.set(__key(step.target), {...__tabs.get(__key(step.target)), url: result.url});
   if (result.kind === 'tab') { __lastTarget = result.tab.target; __tabs.set(__key(__lastTarget),result.tab); }
   if (result.kind === 'tabs') for (var tab of result.tabs) __tabs.set(__key(tab.target),tab);
@@ -631,7 +651,19 @@ function __framePage(target, info) {
   });
 }
 function __expression(fn,arg) {return typeof fn==='function' ? '('+fn.toString()+')('+(JSON.stringify(arg) ?? '')+')' : fn;}
-var artifact=(name,data)=>__call({workspace:'artifact',name,value:typeof data==='string'?data:__encodeBytes(data),base64:typeof data!=='string'});
+// Written in 1M-character pieces (whole base64 quads, whole surrogate pairs), so a large file
+// never becomes one oversized message.
+async function artifact(name,data) {
+  var base64=typeof data!=='string', value=base64?__encodeBytes(data):data, size=1000000, at=0, result;
+  do {
+    var end=Math.min(value.length,at+size);
+    var last=value.charCodeAt(end-1);
+    if(!base64 && end<value.length && last>=0xD800 && last<=0xDBFF) end--;
+    result=await __call({workspace:at?'append':'artifact',name,value:value.slice(at,end),base64});
+    at=end;
+  } while(at<value.length);
+  return {...result,bytes:base64?Math.floor(value.length*3/4)-(value.endsWith('==')?2:value.endsWith('=')?1:0):new TextEncoder().encode(value).length};
+}
 var checkpoint=(name,value)=>__call({workspace:'checkpoint',name,value});
 // Mapped site APIs (site-to-api): call an operation, or watch it for items new or changed since the last watch.
 var siteApi=Object.freeze({

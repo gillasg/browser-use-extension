@@ -1,3 +1,4 @@
+import { removeAgentCursor } from "./native-browser-cursor.js";
 import {
   enableDiagnostics,
   forgetDiagnostics,
@@ -55,6 +56,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   cancelled.delete(tabId);
 });
 
+/** Tabs held by a chat's session, or by any session. */
+export function browserSessionTabs(chatId?: string): number[] {
+  return [...owners].filter(([, owner]) => !chatId || owner === chatId).map(([tabId]) => tabId);
+}
 export function browserSessionOwner(tabId: number): string | undefined {
   return owners.get(tabId);
 }
@@ -137,6 +142,7 @@ export async function releaseBrowserSessions(chatId?: string, reset = false): Pr
       if (!chatId || owner === chatId) cancelled.delete(tabId);
   const tabs = [...owners].filter(([, owner]) => !chatId || owner === chatId);
   for (const [tabId] of tabs) {
+    void removeAgentCursor(tabId);
     owners.delete(tabId);
     if (reset || !chatId) cancelled.delete(tabId);
     await detach(tabId);

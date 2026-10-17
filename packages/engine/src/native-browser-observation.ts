@@ -105,12 +105,50 @@ function priority(node: AxNode): number {
   if (role === "button") return 2;
   return interactiveRoles.has(role) ? 3 : 4;
 }
+// Where a node sits: main content first, then the rest, then header, navigation and sidebars,
+// then the footer. Snapshots list (and keep) main content before page chrome.
+const REGIONS: Record<string, number> = {
+  main: 0,
+  banner: 2,
+  navigation: 2,
+  complementary: 2,
+  contentinfo: 3,
+};
+function regionsOf(nodes: AxNode[]): Map<AxNode, number> {
+  const byId = new Map(
+    nodes.flatMap((node) => (node.nodeId ? [[node.nodeId, node] as const] : [])),
+  );
+  const memo = new Map<string, number>();
+  const region = (node: AxNode | undefined, depth: number): number => {
+    if (!node || depth > 200) return 1;
+    if (node.nodeId && memo.has(node.nodeId)) return memo.get(node.nodeId) ?? 1;
+    const own = REGIONS[textValue(node.role?.value).toLowerCase()];
+    const value = own ?? region(node.parentId ? byId.get(node.parentId) : undefined, depth + 1);
+    if (node.nodeId) memo.set(node.nodeId, value);
+    return value;
+  };
+  return new Map(nodes.map((node) => [node, region(node, 0)]));
+}
+function selectionKey(node: AxNode, region: number): number {
+  const rank = priority(node);
+  return rank <= 1 ? rank : region * 5 + rank;
+}
 export function createSemanticNodes(
   nodes: AxNode[],
   options: Options = {},
 ): { refs: Map<string, AxRef>; nodes: BrowserSemanticNode[]; truncated: boolean } {
-  const candidates = nodes.filter((node) => relevant(node, options));
-  const selected = new Set([...candidates].sort((a, b) => priority(a) - priority(b)).slice(0, 180));
+  const regions = regionsOf(nodes);
+  const regionOf = (node: AxNode) => regions.get(node) ?? 1;
+  const candidates = nodes
+    .filter((node) => relevant(node, options))
+    .map((node, index) => ({ node, index }))
+    .sort((a, b) => regionOf(a.node) - regionOf(b.node) || a.index - b.index)
+    .map(({ node }) => node);
+  const selected = new Set(
+    [...candidates]
+      .sort((a, b) => selectionKey(a, regionOf(a)) - selectionKey(b, regionOf(b)))
+      .slice(0, 180),
+  );
   const refs = new Map<string, AxRef>();
   const compact: BrowserSemanticNode[] = [];
   for (const node of candidates) {
@@ -153,7 +191,7 @@ export async function visiblePageText(debuggee: chrome.debugger.Debuggee): Promi
 }
 function collectVisibleText() {
   const roots: (Document | ShadowRoot)[] = [document];
-  const lines: string[] = [];
+  const lines: { text: string; region: number }[] = [];
   const visible = new WeakMap<Element, boolean>();
   let length = 0;
   for (let i = 0; i < roots.length && length < 20000; i++) {
@@ -170,12 +208,25 @@ function collectVisibleText() {
       }
       const text = visibleLine(node);
       if (text) {
-        lines.push(text);
+        lines.push({ text, region: regionOf(node.parentElement) });
         length += text.length + 1;
       }
     }
   }
-  return lines.join("\n").slice(0, 20000);
+  // Main content first, page chrome (header, navigation, footer) last; order kept within each.
+  return lines
+    .map((line, index) => ({ ...line, index }))
+    .sort((a, b) => a.region - b.region || a.index - b.index)
+    .map((line) => line.text)
+    .join("\n")
+    .slice(0, 20000);
+  function regionOf(element: Element | null) {
+    if (element?.closest("main,[role=main]")) return 0;
+    if (element?.closest("footer,[role=contentinfo]")) return 3;
+    if (element?.closest("header,nav,aside,[role=banner],[role=navigation],[role=complementary]"))
+      return 2;
+    return 1;
+  }
   function visibleLine(node: Node) {
     let element = node.parentElement;
     const text = node.textContent?.replace(/\s+/g, " ").trim();

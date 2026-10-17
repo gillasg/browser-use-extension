@@ -2,6 +2,8 @@ import type { BrowserTargetKey } from "@browser-use-extension/protocol";
 import type { BrowserIdentity } from "./native-worker-identity.js";
 
 export interface AxNode {
+  nodeId?: string;
+  parentId?: string;
   backendDOMNodeId?: number;
   ignored?: boolean;
   role?: { value?: unknown };

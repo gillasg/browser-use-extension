@@ -6,6 +6,7 @@ import {
   restoreBrowserSessionOwners,
 } from "./native-browser-session.js";
 import { publishBrowserEvent } from "./native-browser-events.js";
+import { engineConfig } from "./engine-config.js";
 const children = new Map<number, Set<number>>();
 const active = new Map<number, number>(),
   previous = new Map<number, number>();
@@ -86,6 +87,8 @@ async function restoreForeground(
   tabId: number,
   openerId: number,
 ): Promise<void> {
+  // With the agent working in front (a setting), its popups stay in front too.
+  if (await engineConfig.agentInFront().catch(() => false)) return;
   const foreground = active.get(tab.windowId);
   const userTab = foreground === tabId ? previous.get(tab.windowId) : foreground;
   if (tab.active && userTab !== undefined && userTab !== openerId) {

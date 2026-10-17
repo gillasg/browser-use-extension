@@ -1,4 +1,13 @@
-import { mkdir, readFile, writeFile, rename, realpath, stat, unlink } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  writeFile,
+  rename,
+  realpath,
+  stat,
+  unlink,
+} from "node:fs/promises";
 import { resolve, relative, dirname, isAbsolute, extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 interface Request {
@@ -37,7 +46,16 @@ export async function workspaceCall(root: string, request: Request): Promise<unk
   await mkdir(dirname(path), { recursive: true });
   // Revalidate after creating parents; do not write through a workspace symlink.
   await workspacePath(root, request.name);
-  if (request.workspace !== "checkpoint") {
+  await writeWorkspaceFile(path, request.workspace, bytes);
+  return { path, bytes: bytes.length, checkpoint: request.workspace === "checkpoint" };
+}
+async function writeWorkspaceFile(path: string, action: string, bytes: Buffer): Promise<void> {
+  // Large artifacts arrive in pieces: the first creates the file, the rest append to it.
+  if (action === "append") {
+    if ((await stat(path)).size + bytes.length > 64_000_000)
+      throw new Error("Artifact exceeded 64 MB; split it into files");
+    await appendFile(path, bytes);
+  } else if (action !== "checkpoint") {
     await writeFile(path, bytes, { flag: "wx" });
   } else {
     const temp = join(dirname(path), ".checkpoint-" + randomUUID());
@@ -48,7 +66,6 @@ export async function workspaceCall(root: string, request: Request): Promise<unk
       await unlink(temp).catch(() => undefined);
     }
   }
-  return { path, bytes: bytes.length, checkpoint: request.workspace === "checkpoint" };
 }
 async function boundedRead(path: string, text = false): Promise<string> {
   if ((await stat(path)).size > (text ? 16_000_000 : 4_000_000))

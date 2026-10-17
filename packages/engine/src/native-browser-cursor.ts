@@ -2,6 +2,8 @@
 // cosmetic: every update is sent without awaiting, never fails or delays an action, ignores
 // pointer input and stays out of the accessibility tree. Animation runs inside the page, so the
 // agent moves on while the cursor is still gliding.
+import { engineConfig } from "./engine-config.js";
+import { browserSessionTabs } from "./native-browser-session.js";
 export interface CursorUpdate {
   x?: number;
   y?: number;
@@ -125,10 +127,37 @@ export function showAgentCaption(debuggee: chrome.debugger.Debuggee, caption: st
 }
 
 function updateAgentCursor(debuggee: chrome.debugger.Debuggee, update: CursorUpdate): void {
-  void chrome.debugger
-    .sendCommand(debuggee, "Runtime.evaluate", {
-      expression: `(${OVERLAY})(${JSON.stringify(update)})`,
-      silent: true,
-    })
+  void engineConfig
+    .hideAgentCursor()
+    .catch(() => false)
+    .then((hidden) =>
+      hidden
+        ? undefined
+        : chrome.debugger.sendCommand(debuggee, "Runtime.evaluate", {
+            expression: `(${OVERLAY})(${JSON.stringify(update)})`,
+            silent: true,
+          }),
+    )
     .catch(() => undefined);
+}
+
+/** Fade out and remove the cursor in a session's tabs (all tabs without a session), e.g. once
+ * the agent's turn is over. */
+export async function clearAgentCursors(chatId?: string): Promise<void> {
+  await Promise.all(browserSessionTabs(chatId).map(removeAgentCursor));
+}
+export async function removeAgentCursor(tabId: number): Promise<void> {
+  // Cosmetic: never fails, also where scripting is unavailable.
+  await Promise.resolve()
+    .then(() =>
+      chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: removeCursor }),
+    )
+    .catch(() => undefined);
+}
+function removeCursor(): void {
+  const host = document.getElementById("aeon-agent-cursor");
+  if (!host) return;
+  host.style.transition = "opacity 300ms ease";
+  host.style.opacity = "0";
+  setTimeout(() => host.remove(), 320);
 }

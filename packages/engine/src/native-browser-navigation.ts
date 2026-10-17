@@ -322,8 +322,14 @@ export async function executePageCode(
   const readOnly = step.op === "cdp" && !cdpChangesPage(step.method, step.params);
   if (!readOnly) await primeBrowserSettle(debuggee);
   let value: unknown;
-  if (step.op === "evaluate") value = await evaluatePage(debuggee, step.expression, 8000);
-  else {
+  if (step.op === "evaluate") {
+    const before = await pageFingerprint(debuggee);
+    value = await evaluatePage(debuggee, step.expression, 8000);
+    const settle = await settleBrowserPage(debuggee, 800, Date.now(), 0);
+    // A read that left the page as it was needs no fresh observation afterwards.
+    const changed = before === undefined || before !== (await pageFingerprint(debuggee));
+    return { value, settle, changed };
+  } else {
     // This command operates on the claimed page session, never on a browser-wide or another target session.
     if (["Target", "Browser"].includes(step.method.split(".")[0] ?? ""))
       throw new BrowserActionError(
@@ -337,6 +343,18 @@ export async function executePageCode(
     value,
     ...(!readOnly ? { settle: await settleBrowserPage(debuggee, 800, Date.now(), 0) } : {}),
   };
+}
+// URL, element count and text length: cheap, and enough to tell a read from a change.
+async function pageFingerprint(debuggee: chrome.debugger.Debuggee): Promise<string | undefined> {
+  const result = (await chrome.debugger
+    .sendCommand(debuggee, "Runtime.evaluate", {
+      expression:
+        "location.href+'|'+document.getElementsByTagName('*').length+'|'+(document.body?document.body.textContent.length:0)",
+      returnByValue: true,
+    })
+    .catch(() => undefined)) as { result?: { value?: unknown } } | undefined;
+  const value = result?.result?.value;
+  return typeof value === "string" ? value : undefined;
 }
 async function evaluatePage(
   debuggee: chrome.debugger.Debuggee,

@@ -1,3 +1,4 @@
+import { stepTrace, takeActionTiming } from "./native-browser-action-timing.js";
 import {
   BrowserCodeCancelSchema,
   BrowserCodeReplySchema,
@@ -199,9 +200,13 @@ async function serve(cell: Cell, request: unknown): Promise<unknown> {
     index: cell.steps.length,
     action: step,
     disposition: "running",
+    tStart: Date.now(),
   };
   cell.steps.push(entry);
   progress(cell);
+  const stepTab = "target" in step ? step.target.tabId : undefined;
+  if (stepTab !== undefined) takeActionTiming(stepTab);
+  let resultTab: number | undefined;
   try {
     const result = await executeLocalBrowserStep(
       cell.identity,
@@ -216,12 +221,12 @@ async function serve(cell: Cell, request: unknown): Promise<unknown> {
       cell.opened.set(key, result.tab.target);
     }
     Object.assign(entry, { disposition: "completed", result });
-    const tabId =
+    const tabId = (resultTab =
       result.kind === "tab"
         ? result.tab.target.tabId
         : "target" in step
           ? step.target.tabId
-          : undefined;
+          : undefined);
     if (tabId !== undefined) {
       void notePreviewActivity(cell.run.chatId, tabId);
       // Whatever the step (reading, navigating, opening), the tab being worked on joins its chat in
@@ -234,9 +239,24 @@ async function serve(cell: Cell, request: unknown): Promise<unknown> {
     Object.assign(entry, { disposition: "failed", code: describe(error) });
     throw error;
   } finally {
+    entry.tEnd = Date.now();
+    const tabId = resultTab ?? stepTab;
+    if (tabId !== undefined)
+      Object.assign(entry, await stepTrace(tabId, INPUT_OPS.has(step.op)).catch(() => ({})));
     progress(cell);
   }
 }
+// Steps whose trace entries carry input timing, pixel ratio included.
+const INPUT_OPS = new Set([
+  "click",
+  "fill",
+  "press",
+  "scroll",
+  "navigate",
+  "openTab",
+  "pointer",
+  "keys",
+]);
 
 async function handoff(cell: Cell, request: object): Promise<"done" | "cancelled"> {
   const { message } = request as { message?: unknown };
@@ -337,7 +357,13 @@ function callCore(cell: Cell, request: unknown): Promise<unknown> {
       !send(cell.socket, { kind: "browser.code.call", cellId: cell.run.cellId, callId, request })
     ) {
       cell.calls.delete(callId);
-      reject(new Error("BROWSER_OFFLINE"));
+      reject(
+        new Error(
+          cell.socket.readyState === WebSocket.OPEN
+            ? "TOO_LARGE: this call carries over 3.5 MB; split the data into smaller pieces"
+            : "BROWSER_OFFLINE",
+        ),
+      );
     }
   });
 }
@@ -385,9 +411,25 @@ async function toOffscreen(message: Record<string, unknown>): Promise<unknown> {
   return chrome.runtime.sendMessage(message);
 }
 
+// The receiving socket closes on frames over 4 MB, which would end every running cell. Larger
+// messages are refused here instead: a call fails on its own, a result drops its value.
+const MAX_MESSAGE_CHARS = 3_500_000;
 function send(socket: WebSocket, message: unknown): boolean {
   if (socket.readyState !== WebSocket.OPEN) return false;
-  socket.send(JSON.stringify(message));
+  let text = JSON.stringify(message);
+  if (text.length > MAX_MESSAGE_CHARS) {
+    const result = message as { kind?: string; value?: unknown; steps?: unknown[] };
+    if (result.kind !== "browser.code.result") return false;
+    const size = (text.length / 1_000_000).toFixed(1);
+    text = JSON.stringify({
+      ...result,
+      value: undefined,
+      steps: [],
+      output: "",
+      error: `RESULT_TOO_LARGE: the result was ${size} MB. Return less, or write it with artifact(name, data) and return a summary.`,
+    });
+  }
+  socket.send(text);
   return true;
 }
 

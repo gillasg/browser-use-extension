@@ -1,3 +1,5 @@
+import { noteActionTiming } from "./native-browser-action-timing.js";
+import { engineConfig } from "./engine-config.js";
 import {
   type BrowserExecutorRequest,
   type BrowserExecutorResult,
@@ -294,6 +296,7 @@ async function pressElement(
   revalidate: () => Promise<void>,
 ) {
   if (request.step.op !== "press") throw new Error("INVALID_TARGET");
+  noteActionTiming(debuggee.tabId, { tAct: Date.now() });
   if (request.step.focus === false) {
     const element = request.step.element;
     if (element.kind === "backend" && element.documentEpoch !== request.expectedDocumentEpoch)
@@ -443,7 +446,10 @@ async function openTab(
 // A window of its own is focused and normal-sized, so Chrome keeps painting it (screencasts and
 // screenshots of a minimized or hidden window stall).
 async function createTab(step: Extract<BrowserStep, { op: "openTab" }>): Promise<chrome.tabs.Tab> {
-  if (!step.window) return chrome.tabs.create({ url: "about:blank", active: step.foreground });
+  if (!step.window) {
+    const front = step.foreground || (await engineConfig.agentInFront().catch(() => false));
+    return chrome.tabs.create({ url: "about:blank", active: front });
+  }
   const window = await chrome.windows.create({
     url: "about:blank",
     focused: true,

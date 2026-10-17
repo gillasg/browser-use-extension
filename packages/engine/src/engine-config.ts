@@ -12,6 +12,16 @@ export interface EngineConfig {
   tabGroupTitle: (owner: string) => string;
   /** How a chat page shows its agent's tabs: Split View beside the chat, or live thumbnails. */
   agentView: () => Promise<"split" | "thumbnails">;
+  /**
+   * Whether the agent works in the foreground: its tabs open active and switching activates them.
+   * Off by default. Screen recorders (Aperture) rely on it to film the agent's work; keep it.
+   */
+  agentInFront: () => Promise<boolean>;
+  /**
+   * Whether to hide the agent cursor and its caption. Off by default. Screen recorders (Aperture)
+   * draw their own cursor and rely on this; keep it.
+   */
+  hideAgentCursor: () => Promise<boolean>;
 }
 
 export const engineConfig: EngineConfig = {
@@ -21,6 +31,8 @@ export const engineConfig: EngineConfig = {
   tabGroups: true,
   tabGroupTitle: () => "Agent",
   agentView: () => Promise.resolve("split"),
+  agentInFront: () => Promise.resolve(false),
+  hideAgentCursor: () => Promise.resolve(false),
 };
 
 export function configureEngine(patch: Partial<EngineConfig>): void {
