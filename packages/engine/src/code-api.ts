@@ -182,7 +182,7 @@ var browser = Object.freeze({
     // Both page.url / page.title (properties) and page.url() / await page.title() (Playwright) work.
     get url() { return __callableString(() => __tabs.get(__key(target))?.url || __states.get(__key(target))?.url); },
     get title() { return __callableString(() => __tabs.get(__key(target))?.title,
-      () => browser.page(target).inspect(() => document.title)); },
+      () => __withTimeout(browser.page(target).inspect(() => document.title), 5000, 'PAGE_READ_TIMEOUT')); },
     [Symbol.for('nodejs.util.inspect.custom')]() { return {target,url:String(this.url),title:String(this.title)}; },
     waitForEvent: (event, options = {}) => __event(target,event,options),
     expect: async (event, action, options = {}) => {var wait=__event(target,event,options);await wait.ready;try {await action();return await wait;}catch(error){await wait.dispose().catch(()=>{});throw error;}},

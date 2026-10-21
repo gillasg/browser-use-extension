@@ -16,6 +16,14 @@ function __callableString(read, call) {
     },
   });
 }
+// A page read must not hang a model turn when the execution context is gone.
+function __withTimeout(promise, ms, code) {
+  var timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(code || 'PAGE_READ_TIMEOUT')), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
 // Resolves a locator spec to elements inside the page (runs page-side, so it must be self-contained).
 function __resolveInPage(spec, within) {
   var roots = within ? [within] : spec.scope ? [...document.querySelectorAll(spec.scope)] : [document];
