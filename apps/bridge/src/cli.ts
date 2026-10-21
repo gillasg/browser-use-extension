@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { BridgeClient } from "./client.js";
 import { startBridge } from "./bridge-server.js";
+import { runDoctor } from "./doctor.js";
 import { formatResult } from "./format.js";
 import { runMcpServer } from "./mcp.js";
 import { runNativeHost } from "./native-host.js";
@@ -12,6 +13,8 @@ const usage = `browser-use-extension: let agents use your real Chrome.
   repl "<code>"         run a browser_code cell  [--session name] [--timeout ms]
   tabs                  list the browser's open tabs
   status                show whether a browser is connected
+  doctor                check the install, bridge and browser connection
+  journal <session>     show the last execute entries for a session
   login                 sign in to an AI model in the browser (shared with Pi and its apps)
   logout <provider>     sign out of an AI model provider
   mcp                   run the stdio MCP server for coding agents and MCP clients
@@ -39,7 +42,8 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (command === "login" || command === "logout") return modelCommand(command, rest);
-  if (command === "repl" || command === "tabs" || command === "status")
+  if (command === "doctor") return runDoctor();
+  if (command === "repl" || command === "tabs" || command === "status" || command === "journal")
     return client(command, rest);
   process.stdout.write(usage + "\n");
   return command ? 1 : 0;
@@ -85,6 +89,18 @@ async function client(command: string, rest: string[]): Promise<number> {
       for (const tab of (reply.tabs as Record<string, unknown>[] | undefined) ?? [])
         process.stdout.write(
           `${String((tab.target as { tabId?: number })?.tabId)}\t${String(tab.title ?? "")}\t${String(tab.url ?? "")}\n`,
+        );
+      return 0;
+    }
+    if (command === "journal") {
+      const session = rest.filter((_, index) => !isOption(rest, index))[0] ?? "cli";
+      const limit = Number(option(rest, "--limit") ?? 50);
+      const reply = await bridge.request("journal", { session, limit });
+      const entries = (reply.entries as Record<string, unknown>[] | undefined) ?? [];
+      if (!entries.length) process.stdout.write("No journal entries.\n");
+      for (const entry of entries)
+        process.stdout.write(
+          `${String(entry.ts ?? "")} ${entry.isError ? "ERR" : "ok "} ${String(entry.durationMs ?? 0)}ms ${String(entry.resultPreview ?? "").slice(0, 120)}\n`,
         );
       return 0;
     }

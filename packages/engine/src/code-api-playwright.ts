@@ -24,6 +24,72 @@ function __withTimeout(promise, ms, code) {
     new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(code || 'PAGE_READ_TIMEOUT')), ms); }),
   ]).finally(() => clearTimeout(timer));
 }
+// Compare two screenshots in the page (canvas, no native dependencies) and optionally return a
+// red-marked PNG. Used by page.diffScreenshot for watchers and replay verification.
+function __diffImages(options) {
+  function load(source) {
+    return new Promise(function (resolve, reject) {
+      var image = new Image();
+      image.onload = function () { resolve(image); };
+      image.onerror = function () { reject(new Error('SCREENSHOT_DECODE_FAILED')); };
+      image.src = source;
+    });
+  }
+  return (async function () {
+    var before = await load(options.before), after = await load(options.after);
+    if (before.width !== after.width || before.height !== after.height)
+      throw new Error('SCREENSHOT_SIZE_MISMATCH: ' + before.width + 'x' + before.height + ' vs ' + after.width + 'x' + after.height);
+    var width = before.width, height = before.height;
+    var canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    var context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(before, 0, 0);
+    var first = context.getImageData(0, 0, width, height).data;
+    context.clearRect(0, 0, width, height);
+    context.drawImage(after, 0, 0);
+    var second = context.getImageData(0, 0, width, height).data;
+    var diff = context.createImageData(width, height), changed = 0, limit = options.threshold * 255;
+    for (var i = 0; i < first.length; i += 4) {
+      var delta = Math.max(Math.abs(first[i] - second[i]), Math.abs(first[i + 1] - second[i + 1]), Math.abs(first[i + 2] - second[i + 2]));
+      if (delta > limit) {
+        changed++;
+        diff.data[i] = 255; diff.data[i + 1] = 0; diff.data[i + 2] = 0; diff.data[i + 3] = 255;
+      } else {
+        diff.data[i] = first[i]; diff.data[i + 1] = first[i + 1]; diff.data[i + 2] = first[i + 2]; diff.data[i + 3] = 80;
+      }
+    }
+    var image = '';
+    if (options.wantImage) {
+      context.putImageData(diff, 0, 0);
+      image = canvas.toDataURL('image/png');
+    }
+    return { matches: changed === 0, width: width, height: height, changedPixels: changed, totalPixels: width * height, changedRatio: changed / (width * height), threshold: options.threshold, image: image };
+  })();
+}
+async function __diffScreenshot(target, baseline, options) {
+  options = options || {};
+  var threshold = options.threshold === undefined ? 0.1 : Number(options.threshold);
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new Error('SCREENSHOT_DIFF_THRESHOLD: use a number from 0 to 1');
+  var before = typeof baseline === 'string' ? baseline : baseline && (baseline.dataBase64 || (baseline.data && baseline.data.dataBase64));
+  if (!before) throw new Error('SCREENSHOT_BASELINE_REQUIRED: pass page.screenshot() or a base64 image');
+  if (before.indexOf('data:') !== 0) before = 'data:image/png;base64,' + before;
+  var current = await __step({ op: 'observe', target: target, kind: 'screenshot' });
+  var shot = current && (current.data || current);
+  if (!shot || !shot.dataBase64) throw new Error('SCREENSHOT_CAPTURE_FAILED');
+  var after = 'data:' + (shot.mimeType || 'image/jpeg') + ';base64,' + shot.dataBase64;
+  var result = await browser.page(target).inspect(__diffImages, { before: before, after: after, threshold: threshold, wantImage: Boolean(options.path) });
+  if (options.path) {
+    var name = String(options.path);
+    if (!/\\.png$/i.test(name)) throw new Error('SCREENSHOT_DIFF_PATH: the diff output must end in .png');
+    var base64 = String(result.image || '').replace(/^data:image\\/png;base64,/, '');
+    if (!base64) throw new Error('SCREENSHOT_DIFF_IMAGE: the diff image was empty');
+    await __call({ workspace: 'artifact', name: name, value: base64, base64: true });
+    delete result.image;
+    result.path = name;
+  }
+  return result;
+}
 // Resolves a locator spec to elements inside the page (runs page-side, so it must be self-contained).
 function __resolveInPage(spec, within) {
   var roots = within ? [within] : spec.scope ? [...document.querySelectorAll(spec.scope)] : [document];

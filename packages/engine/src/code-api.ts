@@ -265,6 +265,8 @@ var browser = Object.freeze({
     getByPlaceholder: (value, options = {}) => __locator(target,__withOptions({kind:'query',by:'placeholder',value:String(value)}, options)),
     press: (element, key, options = {}) => __press(target, __element(target, element), key, options),
     screenshot: (options = {}) => options.labels ? __labeledScreenshot(target) : __step({op:'observe', target, kind:'screenshot'}),
+    diffScreenshot: (baseline, options = {}) => __diffScreenshot(target, baseline, options),
+    recordDemonstration: (options = {}) => __recordDemonstration(target, options),
     click: (element) => __step({op:'click',target,element:__wire(__element(target,element)),observe:false}),
     fill: (element, value) => __step({op:'fill',target,element:__wire(__element(target,element)),value:String(value),observe:false}),
     evaluate: async (fn, arg) => (await __step({op:'evaluate',target,expression:__expression(fn,arg)})).data.value,

@@ -10,6 +10,7 @@ import {
 import { browserPlaywrightApi } from "./code-api-playwright.js";
 import { browserDataApi } from "./code-api-data.js";
 import { browserEventsApi } from "./code-api-events.js";
+import { browserDemonstrationApi } from "./code-api-demonstration.js";
 import { browserRecordingApi } from "./code-api-recording.js";
 
 type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
@@ -70,6 +71,7 @@ evaluate(
     browserDataApi,
     browserEventsApi,
     browserRecordingApi,
+    browserDemonstrationApi,
   ].join("\n"),
 );
 

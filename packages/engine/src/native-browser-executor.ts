@@ -31,6 +31,7 @@ import {
 } from "./native-browser-events.js";
 import { executeDownload } from "./native-browser-downloads.js";
 import { groupAgentTab } from "./native-browser-groups.js";
+import { markAgentTabGrouped, trackAgentTab } from "./native-browser-tab-cleanup.js";
 import { showAgentCaption } from "./native-browser-cursor.js";
 
 function hostOf(url: string): string {
@@ -441,8 +442,10 @@ async function openTab(
   const step = validOpenTab(request, identity);
   const created = await createTab(step);
   if (created.id === undefined) throw new Error("TARGET_LOST");
+  trackAgentTab(created.id);
   bindBrowserSession(created.id, request.chatId);
   await groupAgentTab(created.id, created.windowId, request.chatId);
+  markAgentTabGrouped(created.id);
   await withBrowserDebugger(created.id, () => navigateReady(created.id as number, step.url));
   assertRequestActive(request);
   const tab = await refreshInventoryTab(created.id);

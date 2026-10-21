@@ -61,3 +61,8 @@ function hash(text: string): number {
   for (const char of text) value = (value * 31 + char.charCodeAt(0)) >>> 0;
   return value;
 }
+
+/** Whether a Chrome tab group belongs to an agent session. */
+export function isAgentGroupId(groupId: number): boolean {
+  return [...groups.values()].includes(groupId);
+}

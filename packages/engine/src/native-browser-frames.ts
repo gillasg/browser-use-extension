@@ -127,6 +127,9 @@ function appendFrameTree(
   while (pending.length && result.length < 64) {
     const node = pending.pop();
     if (!node) continue;
+    // Extension and browser-internal frames (password managers, devtools) can block the tab's
+    // debugger and leave a phantom frame after they navigate away. They are not page content.
+    if (/^(chrome|edge|devtools|chrome-extension|moz-extension):/i.test(node.frame.url)) continue;
     const info = {
       frameId: node.frame.id,
       url: node.frame.url,

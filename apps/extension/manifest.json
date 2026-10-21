@@ -24,6 +24,7 @@
     "downloads",
     "offscreen",
     "tabGroups",
+    "alarms",
     "history",
     "bookmarks",
     "declarativeNetRequest",

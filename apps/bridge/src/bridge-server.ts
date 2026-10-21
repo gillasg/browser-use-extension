@@ -5,6 +5,14 @@ import { join } from "node:path";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { dataDirectory, statePath, type BridgeState } from "./paths.js";
 import { isSiteSkillRequest, siteSkillCall } from "./site-skills.js";
+import {
+  appendJournalEntry,
+  loadSessionTargets,
+  readJournalEntries,
+  saveSessionTargets,
+  truncateForJournal,
+  type JournalTarget,
+} from "./session-journal.js";
 import { isWorkspaceRequest, validateUploadFiles, workspaceCall } from "./workspace.js";
 
 // The bridge sits between the browser (extension executors) and agents (CLI and MCP clients).
@@ -26,6 +34,8 @@ interface Cell {
   executor: Executor;
   session: string;
   timeoutMs: number;
+  startedAt: number;
+  code: string;
   timer: ReturnType<typeof setTimeout> | undefined;
   progress: (message: Json) => void;
   finish: (result: Json) => void;
@@ -39,6 +49,8 @@ export class Bridge {
   private readonly cells = new Map<string, Cell>();
   /** Tabs each session opened, passed back as its targets on later cells. */
   private readonly sessionTargets = new Map<string, Map<string, Target>>();
+  private restoredSessions = false;
+  private saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly token: string) {}
 
@@ -65,14 +77,20 @@ export class Bridge {
     const session = sessionId(String(request.session ?? "default"));
     const timeoutMs = Math.min(Math.max(Number(request.timeoutMs ?? 60000), 1000), 600000);
     const cellId = randomUUID();
+    await this.restoreSessions();
+    const known = executor.tabs.size > 0 ? executor.tabs : undefined;
     const targets = [...(this.sessionTargets.get(session)?.values() ?? [])].filter(
-      (target) => target.clientInstanceId === executor.clientInstanceId,
+      (target) =>
+        target.clientInstanceId === executor.clientInstanceId &&
+        (!known || known.has(target.tabId)),
     );
     return new Promise((resolve) => {
       this.cells.set(cellId, {
         executor,
         session,
         timeoutMs,
+        startedAt: Date.now(),
+        code: String(request.code ?? "").slice(0, 2000),
         timer: undefined,
         progress: (message) =>
           onEvent({
@@ -211,9 +229,13 @@ export class Bridge {
       const request = parse(raw);
       if (!request) return;
       const respond = (body: Json) => send(socket, { id: request.id, ...body });
-      if (request.kind === "status") respond({ browsers: this.executors.size });
+      if (request.kind === "status") respond({ browsers: this.executors.size, protocol: PROTOCOL });
       else if (request.kind === "tabs") respond({ tabs: this.tabs() });
-      else if (request.kind === "model.login")
+      else if (request.kind === "journal") {
+        const session = sessionId(String(request.session ?? "default"));
+        const limit = Number(request.limit ?? 50);
+        void readJournalEntries(session, limit).then((entries) => respond({ entries }));
+      } else if (request.kind === "model.login")
         // Loaded on first use: the model providers are only needed for signing in.
         void import("./model-login.js")
           .then(({ openModelLogin }) => openModelLogin())
@@ -245,13 +267,54 @@ export class Bridge {
     if (!cell) return;
     this.cells.delete(cellId);
     if (cell.timer) clearTimeout(cell.timer);
+    try {
+      const isError = typeof result.error === "string";
+      const preview = truncateForJournal(
+        JSON.stringify(result.value ?? result.error ?? result),
+        400,
+      );
+      void appendJournalEntry({
+        ts: new Date().toISOString(),
+        sessionId: cell.session,
+        code: truncateForJournal(cell.code, 2000),
+        isError,
+        durationMs: Date.now() - cell.startedAt,
+        resultPreview: preview,
+        opened: Array.isArray(result.opened) ? result.opened.length : 0,
+      }).catch(() => undefined);
+    } catch {
+      // A journal entry is never allowed to fail the cell it describes.
+    }
     cell.finish(result);
+  }
+
+  private async restoreSessions(): Promise<void> {
+    if (this.restoredSessions) return;
+    this.restoredSessions = true;
+    const stored = await loadSessionTargets();
+    for (const [session, targets] of Object.entries(stored)) {
+      const map = this.sessionTargets.get(session) ?? new Map<string, Target>();
+      for (const target of targets)
+        map.set(`${target.clientInstanceId}:${target.tabId}:${target.tabIncarnation}`, target);
+      this.sessionTargets.set(session, map);
+    }
+  }
+
+  private persistSessions(): void {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      const records: Record<string, JournalTarget[]> = {};
+      for (const [session, targets] of this.sessionTargets)
+        records[session] = [...targets.values()];
+      void saveSessionTargets(records).catch(() => undefined);
+    }, 300);
   }
 
   private remember(session: string, target: Target): void {
     const targets = this.sessionTargets.get(session) ?? new Map<string, Target>();
     targets.set(`${target.clientInstanceId}:${target.tabId}:${target.tabIncarnation}`, target);
     this.sessionTargets.set(session, targets);
+    this.persistSessions();
   }
 
   /** A freshly started bridge gives the extension a few seconds to (re)connect. */

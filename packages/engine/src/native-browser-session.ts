@@ -8,6 +8,7 @@ import { trackBrowserActivity, forgetBrowserActivity } from "./native-browser-na
 import { presentBrowserTask } from "./native-browser-layout.js";
 import { engineConfig } from "./engine-config.js";
 import { currentInventoryTabs } from "./native-inventory-client.js";
+import { touchAgentTab } from "./native-browser-tab-cleanup.js";
 import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
 
 interface Attachment {
@@ -104,6 +105,7 @@ async function runWithBrowserDebugger<T>(
   }
   try {
     await entry.attached;
+    touchAgentTab(tabId);
     await presentBrowserTask(chatId, tabId);
     await ensureBrowserViewport(tabId);
     if (attachments.get(tabId) !== entry) throw new Error("OPERATION_FAILED");
