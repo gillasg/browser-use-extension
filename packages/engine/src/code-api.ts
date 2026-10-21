@@ -624,8 +624,8 @@ async function __fastProbe(target, url) {
         var value = data.sources[name] || {};
         return value.items != null ? name + ' ' + value.items + ' items' : name;
       });
-      text = 'fast: ' + parts.join(', ');
-      if (data.urlParams && data.urlParams.length) text += ' · url params: ' + data.urlParams.slice(0, 8).join(', ');
+      text = 'fast: page.data() ' + parts.join(' · ');
+      if (data.urlParams && data.urlParams.length) text += ' · url ' + data.urlParams.slice(0, 8).join(',');
     }
   } catch {}
   __probeCache.set(key, {at: Date.now(), text: text});
