@@ -71,8 +71,18 @@ async function __diffScreenshot(target, baseline, options) {
   options = options || {};
   var threshold = options.threshold === undefined ? 0.1 : Number(options.threshold);
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new Error('SCREENSHOT_DIFF_THRESHOLD: use a number from 0 to 1');
-  var before = typeof baseline === 'string' ? baseline : baseline && (baseline.dataBase64 || (baseline.data && baseline.data.dataBase64));
-  if (!before) throw new Error('SCREENSHOT_BASELINE_REQUIRED: pass page.screenshot() or a base64 image');
+  var before;
+  if (
+    typeof baseline === 'string' &&
+    baseline.indexOf('data:') !== 0 &&
+    /\\.(png|jpe?g|webp)$/i.test(baseline)
+  ) {
+    var stored = await __call({ workspace: 'image', name: baseline });
+    before = 'data:' + (stored.mimeType || 'image/png') + ';base64,' + stored.dataBase64;
+  } else {
+    before = typeof baseline === 'string' ? baseline : baseline && (baseline.dataBase64 || (baseline.data && baseline.data.dataBase64));
+  }
+  if (!before) throw new Error('SCREENSHOT_BASELINE_REQUIRED: pass page.screenshot(), a workspace image path, or a base64 image');
   if (before.indexOf('data:') !== 0) before = 'data:image/png;base64,' + before;
   var current = await __step({ op: 'observe', target: target, kind: 'screenshot' });
   var shot = current && (current.data || current);
