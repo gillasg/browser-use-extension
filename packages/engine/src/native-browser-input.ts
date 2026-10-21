@@ -1,5 +1,5 @@
 import { measureBox, noteActionTiming } from "./native-browser-action-timing.js";
-import { showAgentCursor, type CursorUpdate } from "./native-browser-cursor.js";
+import { showAgentCursor, showAgentKeys, type CursorUpdate } from "./native-browser-cursor.js";
 import { onNode, nodeState, fillTextNode } from "./native-browser-dom.js";
 import { humanMouse, paceKey } from "./native-browser-human-input.js";
 import {
@@ -222,6 +222,7 @@ export async function pressKey(debuggee: chrome.debugger.Debuggee, key: string):
   if (!entry) throw new Error("INVALID_TARGET");
   const [code, windowsVirtualKeyCode, text] = entry;
   const event = { key: key === "Space" ? " " : key, code, windowsVirtualKeyCode };
+  showAgentKeys(debuggee, [key]);
   await paceKey(debuggee);
   await chrome.debugger.sendCommand(debuggee, "Input.dispatchKeyEvent", {
     type: text ? "keyDown" : "rawKeyDown",
@@ -330,6 +331,7 @@ async function keyboard(debuggee: chrome.debugger.Debuggee, combo: string): Prom
   const params = { key: key === "Space" ? " " : key, modifiers, windowsVirtualKeyCode };
   // macOS runs Cmd shortcuts as editing commands, which synthetic key events do not trigger alone.
   const command = IS_MAC && modifiers === 4 ? MAC_COMMANDS[key.toLowerCase()] : undefined;
+  showAgentKeys(debuggee, [combo]);
   await paceKey(debuggee);
   await chrome.debugger.sendCommand(debuggee, "Input.dispatchKeyEvent", {
     type: "keyDown",
