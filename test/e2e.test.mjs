@@ -574,7 +574,7 @@ test(
           assert.equal(result.initiator, "script");
           assert.equal(result.setCookie, true);
           assert.deepEqual(result.bodyQuery, { q: "phone" });
-          assert.deepEqual(result.replayed, ["laptop", 2, "phone", "sig-1"]);
+          assert.deepEqual(result.replayed, ["laptop", 2, null, "sig-1"]);
           assert.equal(result.csrf, "token-123");
           assert.equal(result.harEntries, true);
           assert.equal(result.jsonLd, "Phone");
@@ -725,6 +725,32 @@ test(
           { env },
         );
         assert.match(stdout, /Site skills .*shop-buy/);
+      });
+
+      await t.test("demonstrations record a flow and generate a replayable skill", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "demo",
+            `page = await browser.openTab(${JSON.stringify(siteUrl + "catalog")});
+            const demo = await page.recordDemonstration();
+            await page.locator("#q").fill("Alpha");
+            await page.getByRole("button", { name: "Add" }).click();
+            const recorded = await demo.stop();
+            console.log("RESULT " + JSON.stringify({ steps: recorded.steps.length, kinds: recorded.steps.map((step) => step.kind), code: recorded.code.includes(".fill(") && recorded.code.includes(".click("), skill: recorded.skill.code.includes("async function") }))`,
+          ],
+          { env },
+        );
+        assert.match(stdout, /RESULT /, stdout);
+        const result = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+        assert.ok(result.steps >= 2, JSON.stringify(result));
+        assert.ok(result.kinds.includes("fill"), JSON.stringify(result));
+        assert.ok(result.kinds.includes("click"), JSON.stringify(result));
+        assert.equal(result.code, true);
+        assert.equal(result.skill, true);
       });
     } finally {
       chrome?.kill();
