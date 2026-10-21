@@ -1,4 +1,5 @@
 import { BrowserActionError } from "./native-browser-common.js";
+import { humanType, paceKey } from "./native-browser-human-input.js";
 
 export async function onNode<T>(
   debuggee: chrome.debugger.Debuggee,
@@ -239,7 +240,7 @@ export async function fillTextNode(
       objectId: selected.result.objectId,
     })) as { node?: { backendNodeId?: number } };
     if (!node.node?.backendNodeId) throw new Error("STALE_REF");
-    if (value) await chrome.debugger.sendCommand(debuggee, "Input.insertText", { text: value });
+    if (value) await humanType(debuggee, value);
     else await clearSelection(debuggee);
     const actual = await onNode<string>(debuggee, node.node.backendNodeId, inputValue);
     if (actual !== value)
@@ -283,6 +284,7 @@ function inputValue(this: HTMLInputElement | HTMLTextAreaElement) {
 }
 async function clearSelection(debuggee: chrome.debugger.Debuggee) {
   const event = { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 };
+  await paceKey(debuggee);
   await chrome.debugger.sendCommand(debuggee, "Input.dispatchKeyEvent", {
     ...event,
     type: "rawKeyDown",

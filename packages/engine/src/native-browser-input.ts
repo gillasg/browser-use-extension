@@ -1,6 +1,7 @@
 import { measureBox, noteActionTiming } from "./native-browser-action-timing.js";
 import { showAgentCursor, type CursorUpdate } from "./native-browser-cursor.js";
 import { onNode, nodeState, fillTextNode } from "./native-browser-dom.js";
+import { humanMouse, paceKey } from "./native-browser-human-input.js";
 import {
   type BrowserExecutorRequest,
   type BrowserElementTarget,
@@ -221,6 +222,7 @@ export async function pressKey(debuggee: chrome.debugger.Debuggee, key: string):
   if (!entry) throw new Error("INVALID_TARGET");
   const [code, windowsVirtualKeyCode, text] = entry;
   const event = { key: key === "Space" ? " " : key, code, windowsVirtualKeyCode };
+  await paceKey(debuggee);
   await chrome.debugger.sendCommand(debuggee, "Input.dispatchKeyEvent", {
     type: text ? "keyDown" : "rawKeyDown",
     ...event,
@@ -238,8 +240,10 @@ export async function executeInteraction(
   step: Step,
 ): Promise<unknown> {
   if (step.op === "keys") return keyboard(debuggee, step.keys);
-  const send = (type: string, x: number, y: number, extra: Record<string, unknown> = {}) =>
-    chrome.debugger.sendCommand(debuggee, "Input.dispatchMouseEvent", { type, x, y, ...extra });
+  const send = async (type: string, x: number, y: number, extra: Record<string, unknown> = {}) => {
+    const params = await humanMouse(debuggee, type, { x, y, ...extra });
+    return chrome.debugger.sendCommand(debuggee, "Input.dispatchMouseEvent", { type, ...params });
+  };
   if (step.action === "drag" && step.toX !== undefined && step.toY !== undefined)
     showAgentCursor(debuggee, step.toX, step.toY, false, {
       from: { x: step.x, y: step.y },
@@ -326,6 +330,7 @@ async function keyboard(debuggee: chrome.debugger.Debuggee, combo: string): Prom
   const params = { key: key === "Space" ? " " : key, modifiers, windowsVirtualKeyCode };
   // macOS runs Cmd shortcuts as editing commands, which synthetic key events do not trigger alone.
   const command = IS_MAC && modifiers === 4 ? MAC_COMMANDS[key.toLowerCase()] : undefined;
+  await paceKey(debuggee);
   await chrome.debugger.sendCommand(debuggee, "Input.dispatchKeyEvent", {
     type: "keyDown",
     ...params,
