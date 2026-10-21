@@ -25,8 +25,15 @@ function __withTimeout(promise, ms, code) {
   ]).finally(() => clearTimeout(timer));
 }
 // Compare two screenshots in the page (canvas, no native dependencies) and optionally return a
-// red-marked PNG. Used by page.diffScreenshot for watchers and replay verification.
-function __diffImages(options) {
+// red-marked PNG. Images arrive in chunks because a single evaluate expression is capped at
+// 20k characters and a screenshot is much larger. Used by page.diffScreenshot.
+function __diffImageParts(options) {
+  var store = window.__aeonDiffParts || {};
+  var beforeSource = (store[options.id + ':before'] || []).join('');
+  var afterSource = (store[options.id + ':after'] || []).join('');
+  delete store[options.id + ':before'];
+  delete store[options.id + ':after'];
+  if (!Object.keys(store).length) delete window.__aeonDiffParts;
   function load(source) {
     return new Promise(function (resolve, reject) {
       var image = new Image();
@@ -36,7 +43,7 @@ function __diffImages(options) {
     });
   }
   return (async function () {
-    var before = await load(options.before), after = await load(options.after);
+    var before = await load(beforeSource), after = await load(afterSource);
     if (before.width !== after.width || before.height !== after.height)
       throw new Error('SCREENSHOT_SIZE_MISMATCH: ' + before.width + 'x' + before.height + ' vs ' + after.width + 'x' + after.height);
     var width = before.width, height = before.height;
@@ -67,11 +74,21 @@ function __diffImages(options) {
     return { matches: changed === 0, width: width, height: height, changedPixels: changed, totalPixels: width * height, changedRatio: changed / (width * height), threshold: options.threshold, image: image };
   })();
 }
+async function __diffPush(target, id, side, data) {
+  var size = 12000;
+  for (var i = 0; i < data.length; i += size) {
+    await browser.page(target).inspect(function (part) {
+      var store = window.__aeonDiffParts || (window.__aeonDiffParts = {});
+      (store[part.key] || (store[part.key] = [])).push(part.chunk);
+    }, { key: id + ':' + side, chunk: data.slice(i, i + size) });
+  }
+}
 async function __diffScreenshot(target, baseline, options) {
   options = options || {};
   var threshold = options.threshold === undefined ? 0.1 : Number(options.threshold);
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new Error('SCREENSHOT_DIFF_THRESHOLD: use a number from 0 to 1');
   var before;
+  var baselineMime = baseline && baseline.mimeType ? baseline.mimeType : 'image/jpeg';
   if (
     typeof baseline === 'string' &&
     baseline.indexOf('data:') !== 0 &&
@@ -83,12 +100,26 @@ async function __diffScreenshot(target, baseline, options) {
     before = typeof baseline === 'string' ? baseline : baseline && (baseline.dataBase64 || (baseline.data && baseline.data.dataBase64));
   }
   if (!before) throw new Error('SCREENSHOT_BASELINE_REQUIRED: pass page.screenshot(), a workspace image path, or a base64 image');
-  if (before.indexOf('data:') !== 0) before = 'data:image/png;base64,' + before;
+  if (before.indexOf('data:') !== 0) before = 'data:' + baselineMime + ';base64,' + before;
   var current = await __step({ op: 'observe', target: target, kind: 'screenshot' });
   var shot = current && (current.data || current);
   if (!shot || !shot.dataBase64) throw new Error('SCREENSHOT_CAPTURE_FAILED');
   var after = 'data:' + (shot.mimeType || 'image/jpeg') + ';base64,' + shot.dataBase64;
-  var result = await browser.page(target).inspect(__diffImages, { before: before, after: after, threshold: threshold, wantImage: Boolean(options.path) });
+  var id = 'diff-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  await __diffPush(target, id, 'before', before);
+  await __diffPush(target, id, 'after', after);
+  var result;
+  try {
+    result = await browser.page(target).inspect(__diffImageParts, { id: id, threshold: threshold, wantImage: Boolean(options.path) });
+  } finally {
+    await browser.page(target).inspect(function (key) {
+      var store = window.__aeonDiffParts;
+      if (!store) return;
+      delete store[key + ':before'];
+      delete store[key + ':after'];
+      if (!Object.keys(store).length) delete window.__aeonDiffParts;
+    }, id).catch(function () {});
+  }
   if (options.path) {
     var name = String(options.path);
     if (!/\\.png$/i.test(name)) throw new Error('SCREENSHOT_DIFF_PATH: the diff output must end in .png');

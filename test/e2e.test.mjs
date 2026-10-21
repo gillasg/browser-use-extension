@@ -752,6 +752,38 @@ test(
         assert.equal(result.code, true);
         assert.equal(result.skill, true);
       });
+
+      await t.test("screenshot diff finds a visual change and writes a diff PNG", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "diff",
+            `page = await browser.openTab(${JSON.stringify(siteUrl + "catalog")});
+            await page.waitForSelector("#q");
+            await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+            await page.evaluate(() => { document.getElementById("aeon-agent-cursor")?.remove(); document.documentElement.style.background = "#fff"; document.body.style.background = "#fff"; });
+            await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
+            const before = await page.screenshot();
+            const same = await page.diffScreenshot(before);
+            await page.evaluate(() => { document.body.style.background = "#123456"; });
+            const changed = await page.diffScreenshot(before, { path: "diff.png" });
+            console.log("RESULT " + JSON.stringify({ sameRatio: same.changedRatio, changed: changed.matches, pixels: changed.changedPixels, path: changed.path }))`,
+          ],
+          { env },
+        ).catch((error) => {
+          console.log(error.stdout);
+          throw error;
+        });
+        assert.match(stdout, /RESULT /, stdout);
+        const result = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+        assert.ok(result.sameRatio < 0.01, JSON.stringify(result));
+        assert.equal(result.changed, false, JSON.stringify(result));
+        assert.ok(result.pixels > 100000, JSON.stringify(result));
+        assert.equal(result.path, "diff.png");
+      });
     } finally {
       chrome?.kill();
       bridge.kill();
