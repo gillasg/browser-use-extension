@@ -9,20 +9,20 @@ export const DRY_RUN_HEADER = "x-dry-run";
 type Params = Record<string, unknown>;
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-// When unsure, block: a blocked read only leaves a gap in the map, a passed write really happens.
-const READ_SEGMENT = /^(search|query|autocomplete|suggest|suggestions|typeahead|lookup)$/i;
-const READ_OPERATION = /^(get|list|search|fetch|load|find|query|read|view|lookup|browse)|Query$/;
+// Default to write. A GET/HEAD is a read only when its path does not change state; a GraphQL
+// query is a read. Anything uncertain is blocked in a dry run: a missed read leaves a gap in
+// the map, a passed write really happens.
+const STATE_CHANGING_PATH =
+  /(^|\/)(logout|signout|sign-out|unsubscribe|delete|remove|destroy|archive|block|mute|like|unlike|follow|unfollow|vote|report|send|submit|create|update|edit|save|add|checkout|order|buy|pay|purchase|book|reserve|cancel|refund|invite|accept|reject|approve|join|leave|upload|post|comment|reply|message|share|subscribe)(\/|$)/i;
 
 /** True when a request only reads: reads go through even during a dry run. */
 export function looksLikeRead(method: string, url: string, body?: string): boolean {
-  if (READ_METHODS.has(method.toUpperCase())) return true;
-  if (body && /"query"/.test(body) && /\bmutation\b/.test(body)) return false;
+  if (body && /\bmutation\b/.test(body)) return false;
   if (body && /"query"\s*:\s*"\s*(query\b|\{)/.test(body)) return true;
   if (body && /"query"\s*:/.test(body)) return false;
-  const operation = body && /"operationName"\s*:\s*"([^"]*)"/.exec(body)?.[1];
-  if (operation) return READ_OPERATION.test(operation);
+  if (!READ_METHODS.has(method.toUpperCase())) return false;
   try {
-    return new URL(url).pathname.split("/").some((segment) => READ_SEGMENT.test(segment));
+    return !STATE_CHANGING_PATH.test(new URL(url).pathname);
   } catch {
     return false;
   }

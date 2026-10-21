@@ -570,6 +570,8 @@ var bu = Object.freeze({
     var text = __formatState(state, options.max);
     var known = await __siteSkills(state.url);
     if (known.length) text = 'Site skills (skills.load(name)): ' + known.map(k => k.name + ' - ' + k.description.slice(0, 80)).join('; ') + '\\n' + text;
+    var probe = await __fastProbe(target, state.url);
+    if (probe) text = probe + String.fromCharCode(10) + text;
     console.log(text);
     return text;
   },
@@ -607,6 +609,27 @@ async function __labeledScreenshot(target) {
   await __call({op:'evaluate',target,expression:draw});
   try { return await __step({op:'observe', target, kind:'screenshot'}); }
   finally { await __call({op:'evaluate',target,expression:'document.getElementById("aeon-labels")?.remove()'}).catch(()=>{}); }
+}
+var __probeCache = new Map();
+async function __fastProbe(target, url) {
+  var key = __key(target) + '|' + String(url);
+  var cached = __probeCache.get(key);
+  if (cached && Date.now() - cached.at < 30000) return cached.text;
+  var text = '';
+  try {
+    var data = await browser.page(target).data({summary: true});
+    var sources = data && data.sources ? Object.keys(data.sources) : [];
+    if (sources.length) {
+      var parts = sources.slice(0, 4).map(function (name) {
+        var value = data.sources[name] || {};
+        return value.items != null ? name + ' ' + value.items + ' items' : name;
+      });
+      text = 'fast: ' + parts.join(', ');
+      if (data.urlParams && data.urlParams.length) text += ' · url params: ' + data.urlParams.slice(0, 8).join(', ');
+    }
+  } catch {}
+  __probeCache.set(key, {at: Date.now(), text: text});
+  return text;
 }
 var __skillCache = new Map();
 async function __siteSkills(url) {

@@ -44,7 +44,7 @@ function __readMetadata() {
 }
 
 // Runs in the page, so the metadata reader is passed in rather than referenced.
-function __readPageData(readMetadata) {
+function __readPageData(readMetadata, options) {
   var parse = (text) => { try { return JSON.parse(text); } catch { return undefined; } };
   var plain = (value) => { try { return JSON.parse(JSON.stringify(value)); } catch { return undefined; } };
   var data = {};
@@ -62,6 +62,21 @@ function __readPageData(readMetadata) {
     .filter((tag) => tag.id !== '__NEXT_DATA__' && tag.textContent.length < 3000000)
     .map((tag) => ({id: tag.id || undefined, data: parse(tag.textContent)})).filter((item) => item.data !== undefined);
   if (scripts.length) data.jsonScripts = scripts;
+  if (options && options.summary) {
+    var sources = {};
+    for (var source of Object.keys(data)) {
+      var item = data[source];
+      if (Array.isArray(item)) sources[source] = {items: item.length};
+      else if (item && typeof item === 'object') {
+        var arrays = {};
+        for (var field of Object.keys(item)) if (Array.isArray(item[field])) arrays[field] = item[field].length;
+        sources[source] = {keys: Object.keys(item).slice(0, 10), arrays: arrays};
+      } else sources[source] = {};
+    }
+    var params = [];
+    try { params = [...new URL(location.href).searchParams.keys()]; } catch {}
+    return {sources: sources, urlParams: params};
+  }
   data.metadata = readMetadata();
   return data;
 }
@@ -143,13 +158,12 @@ function __extendPageData(target, base) {
       for (var [key, value] of Object.entries(changes.query || {})) url.searchParams.set(key, String(value));
       var request = {url: url.href, method: changes.method || entry.method, headers: {...headers, ...(changes.headers || {})}};
       if (changes.json !== undefined) {
-        var recorded = {};
-        try { recorded = JSON.parse(entry.requestBody || '{}'); } catch {}
-        request.json = recorded && typeof recorded === 'object' && !Array.isArray(recorded) && typeof changes.json === 'object' && !Array.isArray(changes.json) ? {...recorded, ...changes.json} : changes.json;
-      } else if (changes.body !== undefined || entry.requestBody !== undefined) request.body = changes.body ?? entry.requestBody;
+        // No merge with the recording: an omitted field must not be silently replayed.
+        request.json = changes.json;
+      } else if (changes.body !== undefined) request.body = changes.body;
       return inspect(__pageRequest, request);
     },
-    data: () => base.inspect('(' + __readPageData.toString() + ')(' + __readMetadata.toString() + ')'),
+    data: (options = {}) => base.inspect('(' + __readPageData.toString() + ')(' + __readMetadata.toString() + ', ' + JSON.stringify(options) + ')'),
     metadata: () => base.inspect('(' + __readMetadata.toString() + ')()'),
     markdown: (options = {}) => inspect(__readMarkdown, options),
     status: async () => {
