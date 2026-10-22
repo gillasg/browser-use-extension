@@ -14,6 +14,7 @@ import { browserDemonstrationApi } from "./code-api-demonstration.js";
 import { browserRecordingApi } from "./code-api-recording.js";
 import { browserSitesApi } from "./code-api-sites.js";
 import { browserHelpApi } from "./code-api-help.js";
+import { browserControlsApi } from "./code-api-controls.js";
 
 type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 const scope = globalThis as unknown as Record<string, unknown>;
@@ -90,6 +91,7 @@ evaluate(
     browserEventsApi,
     browserRecordingApi,
     browserDemonstrationApi,
+    browserControlsApi,
   ].join("\n"),
 );
 

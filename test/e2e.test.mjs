@@ -51,6 +51,33 @@ test(
         );
         return;
       }
+      if (request.url?.startsWith("/form")) {
+        response.setHeader("content-type", "text/html");
+        response.end(
+          `<title>Signup</title>
+          <div id="consent" style="position:fixed;bottom:0;left:0;right:0;height:120px;background:#eee">We use cookies to improve your experience.
+          <button onclick="document.getElementById('consent').remove();document.title+=' rejected'">Reject all</button>
+          <button onclick="document.getElementById('consent').remove();document.title+=' accepted'">Accept all</button></div>
+          <form onsubmit="event.preventDefault();var f=this;setTimeout(function(){document.getElementById('done').textContent='Thanks, '+f.email.value+' from '+f.country.value+(f.terms.checked?' (agreed)':'')+' '+document.querySelector('[aria-label=Notes]').innerText},300)">
+          <label>Email <input name="email" type="email" required></label>
+          <label for="country">Country</label><select id="country" name="country"><option value="">Choose</option><option value="in">India</option><option value="fr">France</option></select>
+          <fieldset><legend>Plan</legend><label><input type="radio" name="plan" value="free" checked> Free</label><label><input type="radio" name="plan" value="pro"> Pro</label></fieldset>
+          <label><input type="checkbox" name="terms" style="display:none"> I agree to the terms</label>
+          <input type="range" aria-label="Seats" min="1" max="10" step="1" value="3">
+          <div contenteditable="true" aria-label="Notes" style="min-height:20px;border:1px solid"></div>
+          <div contenteditable="true" aria-label="Message" style="min-height:20px;border:1px solid" onbeforeinput="event.preventDefault()" onpaste="event.preventDefault();this.textContent=event.clipboardData.getData('text/plain')"></div>
+          <button>Continue</button></form><p id="done"></p>
+          <video width="160" height="90" muted></video>`,
+        );
+        return;
+      }
+      if (request.url?.startsWith("/challenge")) {
+        response.setHeader("content-type", "text/html");
+        response.end(
+          `<title>Just a moment...</title><div id="challenge-stage">Verify you are human</div>`,
+        );
+        return;
+      }
       if (request.url?.startsWith("/collapsed")) {
         // A narrow-layout search box folded behind a toggle, like Wikipedia in Split View.
         response.setHeader("content-type", "text/html");
@@ -517,6 +544,71 @@ test(
           assert.notEqual(groups.result.result.value[0], -1);
         },
       );
+
+      await t.test("form controls, one-call batches, overlays, media and challenges", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "controls",
+            `page = await browser.openTab(${JSON.stringify(siteUrl + "form")});
+            const overlay = await page.overlays.dismiss();
+            const titleAfter = await page.title();
+            const fields = await page.controls.inspect();
+            const directory = (await page.controls.directory({ query: "continue" })).map((row) => row.role + " " + row.label);
+            const unchecked = await page.batch([{ action: "click", target: { role: "button", name: "Continue" } }]).then(() => "ran", (error) => error.message);
+            const ambiguous = await page.batch([{ action: "read", target: { role: "radio" } }]).then(() => "ran", (error) => error.message);
+            const batch = await page.batch([
+              { action: "fill", target: { label: "Email" }, value: "a@b.co" },
+              { action: "select", target: { label: "Country" }, value: "France" },
+              { action: "check", target: { label: "I agree to the terms" } },
+              { action: "fill", target: { label: "Notes" }, value: "Ring twice" },
+              { action: "fill", target: { label: "Message" }, value: "Pasted in" },
+              { action: "click", target: { role: "button", name: "Continue" } },
+              { action: "read", target: { css: "#done" }, expect: "Thanks, a@b.co" },
+            ]);
+            const done = await page.textContent("#done");
+            const message = await page.textContent("[aria-label=Message]");
+            const media = await page.media.inspect();
+            const blocked = await browser.openTab(${JSON.stringify(siteUrl + "challenge")});
+            const challenges = await blocked.challenges();
+            const state = await bu.state();
+            console.log("RESULT " + JSON.stringify({ overlay, titleAfter, fields, directory, unchecked, ambiguous, steps: batch.steps.map((step) => step.id), done, message,
+              media: media.summary, challenges: challenges.map((c) => c.kind + " " + c.provider), noted: /challenge: bot-check/.test(state) }))`,
+          ],
+          { env },
+        );
+        assert.match(stdout, /RESULT /, stdout);
+        const result = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+        assert.deepEqual(result.overlay, {
+          dismissed: [{ kind: "cookie", clicked: "Reject all" }],
+        });
+        assert.equal(result.titleAfter, "Signup rejected");
+        const field = (label) => result.fields.find((row) => row.label === label);
+        assert.equal(field("Email").required, true);
+        assert.equal(field("Country").value, "Choose");
+        assert.ok(field("Country").options.includes("France [fr]"));
+        assert.equal(field("Free").checked, true);
+        assert.equal(field("Pro").group, "Plan");
+        assert.equal(field("I agree to the terms").checked, false);
+        assert.equal(field("I agree to the terms").hidden, undefined);
+        assert.deepEqual(
+          [field("Seats").value, field("Seats").min, field("Seats").max],
+          ["3", "1", "10"],
+        );
+        assert.equal(field("Notes").role, "textbox");
+        assert.deepEqual(result.directory, ["button Continue"]);
+        assert.match(result.unchecked, /ends with a check/);
+        assert.match(result.ambiguous, /AMBIGUOUS: 2 elements match/);
+        assert.deepEqual(result.steps, ["1", "2", "3", "4", "5", "6", "7"]);
+        assert.equal(result.message, "Pasted in");
+        assert.equal(result.done, "Thanks, a@b.co from fr (agreed) Ring twice");
+        assert.match(result.media, /nothing playing \(video paused/);
+        assert.deepEqual(result.challenges, ["bot-check Cloudflare"]);
+        assert.equal(result.noted, true);
+      });
 
       await t.test(
         "network capture, page requests, page data, Markdown, fetch and the tab pool",

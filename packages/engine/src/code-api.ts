@@ -625,6 +625,8 @@ var bu = Object.freeze({
     if (loaded) text = loaded + '\\n' + text;
     var here = await __here(target, state.url);
     if (here) text = here + String.fromCharCode(10) + text;
+    var challenge = await __challengeNote(target, state.url);
+    if (challenge) text = challenge + String.fromCharCode(10) + text;
     console.log(text);
     return text;
   },

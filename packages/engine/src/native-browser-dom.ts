@@ -242,12 +242,19 @@ export async function fillTextNode(
     if (!node.node?.backendNodeId) throw new Error("STALE_REF");
     if (value) await humanType(debuggee, value);
     else await clearSelection(debuggee);
-    const actual = await onNode<string>(debuggee, node.node.backendNodeId, inputValue);
-    if (actual !== value)
-      throw new BrowserActionError(
-        "INPUT_FAILED",
-        "The focused input did not retain the requested value. Inspect it before continuing.",
-      );
+    const field = node.node.backendNodeId;
+    if (await retained(debuggee, field, value)) return;
+    // Rich-text editors (Draft.js, ProseMirror, Lexical, Slate, Quill) can drop or reorder typed
+    // characters; the editing command and a paste are what they reliably accept.
+    for (const replace of [insertTextCommand, pasteText]) {
+      if (!value || !(await onNode<boolean>(debuggee, field, isRichText))) break;
+      await onNode(debuggee, field, replace, [value]);
+      if (await retained(debuggee, field, value)) return;
+    }
+    throw new BrowserActionError(
+      "INPUT_FAILED",
+      "The focused input did not retain the requested value. Inspect it before continuing.",
+    );
   } finally {
     await chrome.debugger
       .sendCommand(debuggee, "Runtime.releaseObjectGroup", { objectGroup: group })
@@ -281,6 +288,45 @@ function selectTextInput(this: HTMLInputElement | HTMLTextAreaElement) {
 }
 function inputValue(this: HTMLInputElement | HTMLTextAreaElement) {
   return this.isContentEditable ? this.innerText : this.value;
+}
+/** Editors render spaces as nbsp and add a trailing line break; inputs must match exactly. */
+async function retained(
+  debuggee: chrome.debugger.Debuggee,
+  id: number,
+  value: string,
+): Promise<boolean> {
+  const actual = await onNode<string>(debuggee, id, inputValue);
+  if (actual === value) return true;
+  if (!(await onNode<boolean>(debuggee, id, isRichText))) return false;
+  const norm = (text: string) =>
+    text.replace(/ /g, " ").replace(/\r/g, "").replace(/\n+/g, "\n").trim();
+  return norm(actual) === norm(value);
+}
+function isRichText(this: HTMLElement) {
+  return this.isContentEditable;
+}
+// Both run in the page through onNode, so each selects the editor's contents itself.
+function insertTextCommand(this: HTMLElement, text: string) {
+  const selection = this.ownerDocument.getSelection(),
+    range = this.ownerDocument.createRange();
+  this.focus();
+  range.selectNodeContents(this);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  this.ownerDocument.execCommand("insertText", false, text);
+}
+function pasteText(this: HTMLElement, text: string) {
+  const selection = this.ownerDocument.getSelection(),
+    range = this.ownerDocument.createRange();
+  this.focus();
+  range.selectNodeContents(this);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  const data = new DataTransfer();
+  data.setData("text/plain", text);
+  this.dispatchEvent(
+    new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+  );
 }
 async function clearSelection(debuggee: chrome.debugger.Debuggee) {
   const event = { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 };
