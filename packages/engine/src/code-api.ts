@@ -484,6 +484,7 @@ async function __step(step, readOnly = false) {
   if (readOnly) action=false;
   var wasDirty = step.target && __dirty.has(__key(step.target));
   if (action) __dirty.set(__key(step.target), step.target);
+  if (step.target) await __learnOn(step.target, action ? step : undefined);
   var before = step.target && __tabs.get(__key(step.target))?.url;
   var result = await __call(step);
   // An evaluate that only read the page leaves it clean: no final observation, no log line.
@@ -492,7 +493,7 @@ async function __step(step, readOnly = false) {
     action = false;
   }
   if (result.url && step.target && __tabs.has(__key(step.target))) __tabs.set(__key(step.target), {...__tabs.get(__key(step.target)), url: result.url});
-  if (result.kind === 'tab') { __lastTarget = result.tab.target; __tabs.set(__key(__lastTarget),result.tab); }
+  if (result.kind === 'tab') { __lastTarget = result.tab.target; __tabs.set(__key(__lastTarget),result.tab); await __learnOn(__lastTarget); }
   if (result.kind === 'tabs') for (var tab of result.tabs) __tabs.set(__key(tab.target),tab);
   var observation = result.kind === 'semantic' ? result : result.observation;
   if (observation) {
@@ -627,6 +628,7 @@ var bu = Object.freeze({
   handoff: async (message, options = {}) => {
     var target = options.target || __lastTarget;
     if (!target) throw Error('Use bu.use(attachedTarget) or browser.page(target) first');
+    __handedOff = true;
     var outcome = await __call({handoff: {message: String(message).slice(0, 500), target}});
     __states.delete(__key(target));
     if (outcome === 'cancelled') throw Error('HANDOFF_CANCELLED: the user cancelled the hand-off');
@@ -672,63 +674,13 @@ async function __fastProbe(target, url) {
   __probeCache.set(key, {at: Date.now(), text: text});
   return text;
 }
-var __skillCache = new Map();
-async function __siteSkills(url) {
-  var host; try { host = new URL(url).hostname; } catch { return []; }
-  var cached = __skillCache.get(host);
-  if (cached && Date.now() - cached.at < 60000) return cached.list;
-  var list = await __call({siteSkill:'list', url}).catch(() => []);
-  __skillCache.set(host, {at: Date.now(), list});
-  return list;
-}
-// Skills on the current site load by themselves, once per chat (again after one is saved), so
-// their helpers are defined without the agent having to remember skills.load.
-var __loadedSkills = new Map();
-async function __autoLoadSkills(url) {
-  var known = await __siteSkills(url);
-  var lines = [];
-  for (var item of known.slice(0, 4)) {
-    if (__loadedSkills.has(item.name)) continue;
-    try {
-      var info = await skills.load(item.name);
-      lines.push(item.name + (info.defines.length ? ' (defines ' + info.defines.join(', ') + ')' : '') + ' - ' + item.description.slice(0, 80));
-    } catch (error) {
-      __loadedSkills.set(item.name, []);
-      lines.push(item.name + ' failed to load: ' + String(error && error.message || error).slice(0, 120));
-    }
-  }
-  return lines.length ? 'Site skills loaded: ' + lines.join('; ') : '';
-}
-var skills = Object.freeze({
-  list: (url) => __call({siteSkill:'list', url: url ?? (__lastTarget ? browser.page(__lastTarget).url : undefined)}),
-  load: async (name) => {
-    var skill = await __call({siteSkill:'get', name});
-    var before = new Set(Object.keys(globalThis));
-    // Same rules as a cell: top-level const/let/function persist. A skill whose code returns an
-    // object (the function form) has its function members defined as globals.
-    var value = await (0, eval)(__repl(skill.code));
-    if (value && typeof value === 'object')
-      for (var [key, member] of Object.entries(value)) if (typeof member === 'function') globalThis[key] = member;
-    var defines = Object.keys(globalThis).filter(key => !before.has(key) && typeof globalThis[key] === 'function');
-    __loadedSkills.set(skill.name, defines);
-    return {name: skill.name, domains: skill.domains, description: skill.description, examples: skill.examples, defines};
-  },
-  save: async (skill) => {
-    // The function form: its body runs on load, and the object it returns becomes globals.
-    var code = typeof skill.code === 'function' ? 'return await (' + skill.code.toString() + ')()' : skill.code;
-    var saved = await __call({siteSkill:'save', skill: {...skill, code}});
-    __skillCache.clear();
-    __loadedSkills.delete(saved.saved);
-    return saved;
-  },
-  remove: async (name) => { __skillCache.clear(); __loadedSkills.delete(name); return __call({siteSkill:'delete', name}); },
-});
 async function __finishCell() {
   for (var target of [...__dirty.values()]) {
     try { await bu.state({target, final: true}); }
     catch (error) { if (!/UNSUPPORTED/.test(String(error && error.message))) console.log('Final observation unavailable: ' + error.message); }
   }
   __dirty.clear();
+  await __learnFromCell();
 }
 `;
 export const browserCapabilityApi = `
@@ -785,15 +737,6 @@ async function artifact(name,data) {
   return {...result,bytes:base64?Math.floor(value.length*3/4)-(value.endsWith('==')?2:value.endsWith('=')?1:0):new TextEncoder().encode(value).length};
 }
 var checkpoint=(name,value)=>__call({workspace:'checkpoint',name,value});
-// Mapped site APIs (site-to-api): call an operation, or watch it for items new or changed since the last watch.
-var siteApi=Object.freeze({
-  sites:()=>__call({siteApi:'sites'}),
-  operations:site=>__call({siteApi:'operations',site}),
-  call:(site,operation,params={})=>__call({siteApi:'call',site,operation,params}),
-  watch:(site,operation,params={},options={})=>__call({siteApi:'watch',site,operation,params,...options}),
-  action:(site,name,inputs={})=>__call({siteApi:'action',site,name,params:inputs}),
-  channel:(site,id,options={})=>__call({siteApi:'channel',site,name:id,params:options}),
-});
 var loadCheckpoint=name=>__call({workspace:'load',name});
 var saveHelper=(name,fn)=>__call({workspace:'helper',name,value:typeof fn==='function'?'('+fn.toString()+')':fn});
 var loadHelper=async name=>eval(await __call({workspace:'loadHelper',name}));

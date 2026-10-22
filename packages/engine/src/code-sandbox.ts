@@ -12,6 +12,7 @@ import { browserDataApi } from "./code-api-data.js";
 import { browserEventsApi } from "./code-api-events.js";
 import { browserDemonstrationApi } from "./code-api-demonstration.js";
 import { browserRecordingApi } from "./code-api-recording.js";
+import { browserSitesApi } from "./code-api-sites.js";
 
 type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 const scope = globalThis as unknown as Record<string, unknown>;
@@ -78,6 +79,7 @@ scope.__call = (request: unknown) =>
 evaluate(
   [
     browserCodeApi,
+    browserSitesApi,
     browserFastApi,
     browserCapabilityApi,
     browserDocumentApi,

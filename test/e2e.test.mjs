@@ -674,7 +674,13 @@ test(
         );
         assert.match(stdout, /RESULT /, stdout);
         const result = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
-        assert.deepEqual(result.sites, []);
+        // Nothing was mapped by hand: the fixture site's API was learned while the earlier
+        // steps used it.
+        assert.deepEqual(
+          result.sites.map((site) => site.site),
+          ["127.0.0.1"],
+        );
+        assert.ok(result.sites[0].operations > 0);
         assert.match(result.missing, /not mapped/);
       });
 

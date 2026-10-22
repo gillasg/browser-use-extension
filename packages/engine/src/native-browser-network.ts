@@ -6,6 +6,7 @@ import {
 import { toHar, summarize, type NetworkEntry } from "./native-browser-network-format.js";
 import { dryRunActive, setDryRun } from "./native-browser-dry-run.js";
 import { onEngineInstall } from "./native-engine-install.js";
+import { isTrackerUrl, takeLearned } from "./native-browser-network-learn.js";
 
 // Network recording for learning a site's own APIs. While a tab records, its API traffic is
 // kept with full headers (cookies included), the script that made each call, request and
@@ -16,6 +17,8 @@ const DEFAULT_MAX_BODY = 1_000_000;
 const MAX_TOTAL_BODY = 60_000_000;
 const MAX_FRAMES = 200;
 const API_TYPES = new Set(["XHR", "Fetch", "EventSource", "WebSocket", "Document"]);
+const PASSIVE_TYPES = new Set(["XHR", "Fetch"]);
+const PASSIVE_MAX_BODY = 256_000;
 const TEXTUAL = /json|text|javascript|xml|html|graphql|x-www-form-urlencoded|csv|event-stream/i;
 
 interface Recorder {
@@ -26,6 +29,13 @@ interface Recorder {
   bodies: boolean;
   maxBody: number;
   bodyBytes: number;
+  /**
+   * Started by the agent working in the tab (learn-start), not asked for: only the site's own
+   * fetch/XHR calls, no trackers, smaller bodies, and the debugger is not held for it.
+   */
+  passive?: boolean;
+  /** Requests already handed over by take. */
+  taken?: Set<string>;
 }
 const recorders = new Map<number, Recorder>();
 /** Recordings that were stopped: still readable (list, har, save) until a new start or the tab closes. */
@@ -119,6 +129,7 @@ function requestWillBeSent(recorder: Recorder, params: Params): void {
     return;
   }
   if (!recorder.allTypes && !API_TYPES.has(type)) return;
+  if (recorder.passive && (!PASSIVE_TYPES.has(type) || isTrackerUrl(String(request.url)))) return;
   const entry: NetworkEntry = {
     id,
     url: String(request.url),
@@ -293,6 +304,11 @@ export async function networkCall(
   options: Params,
 ): Promise<unknown> {
   if (action === "start") return start(tabId, options);
+  if (action === "learn-start") return learnStart(tabId);
+  if (action === "take") {
+    const recorder = recorders.get(tabId) ?? stopped.get(tabId);
+    return recorder ? takeLearned(recorder) : { log: { version: "1.2", entries: [] } };
+  }
   if (action === "stop") {
     await setDryRun(tabId, false);
     holdBrowserDebugger(tabId, false);
@@ -314,6 +330,25 @@ export async function networkCall(
   throw new Error("UNSUPPORTED: page.network." + action);
 }
 
+/**
+ * Records the site's own requests while the agent works in the tab, so they can be learned as
+ * an API after each step. Never replaces a recording that was asked for.
+ */
+async function learnStart(tabId: number): Promise<unknown> {
+  if (recorders.has(tabId)) return { recording: true };
+  recorders.set(tabId, {
+    entries: new Map(),
+    early: new Map(),
+    allTypes: false,
+    bodies: true,
+    maxBody: PASSIVE_MAX_BODY,
+    bodyBytes: 0,
+    passive: true,
+  });
+  await enableNetwork(tabId);
+  return { recording: true, passive: true };
+}
+
 async function start(tabId: number, options: Params): Promise<unknown> {
   const recorder: Recorder = recorders.get(tabId) ??
     stopped.get(tabId) ?? {
@@ -324,6 +359,9 @@ async function start(tabId: number, options: Params): Promise<unknown> {
       maxBody: DEFAULT_MAX_BODY,
       bodyBytes: 0,
     };
+  // Asking for a recording turns a passive one into a full one, keeping what it has.
+  delete recorder.passive;
+  recorder.maxBody = Math.max(recorder.maxBody, DEFAULT_MAX_BODY);
   if (options.types !== undefined) recorder.allTypes = options.types === "all";
   if (options.bodies !== undefined) recorder.bodies = options.bodies !== false;
   if (typeof options.maxBodyBytes === "number" && options.maxBodyBytes > 0)
