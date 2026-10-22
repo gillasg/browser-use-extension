@@ -13,6 +13,7 @@ import { browserEventsApi } from "./code-api-events.js";
 import { browserDemonstrationApi } from "./code-api-demonstration.js";
 import { browserRecordingApi } from "./code-api-recording.js";
 import { browserSitesApi } from "./code-api-sites.js";
+import { browserHelpApi } from "./code-api-help.js";
 
 type Waiter = { resolve: (value: unknown) => void; reject: (error: Error) => void };
 const scope = globalThis as unknown as Record<string, unknown>;
@@ -80,6 +81,7 @@ evaluate(
   [
     browserCodeApi,
     browserSitesApi,
+    browserHelpApi,
     browserFastApi,
     browserCapabilityApi,
     browserDocumentApi,
@@ -123,7 +125,10 @@ async function run(message: Record<string, unknown>): Promise<void> {
     } | null;
     if (delivered) value = delivered.value;
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : String(caught);
+    error = withHint(
+      caught instanceof Error ? caught.message : String(caught),
+      String(message.code),
+    );
   }
   // Calls the cell started but did not await still finish before the final observation.
   for (let waited = 0; pending.size && waited < 10_000; waited += 5)
@@ -138,6 +143,17 @@ async function run(message: Record<string, unknown>): Promise<void> {
     { kind: "done", cellId, value: portable(value), output, ...(error ? { error } : {}) },
     "*",
   );
+}
+
+/** The error with a "did you mean" from the realm's real API, when one applies. */
+function withHint(message: string, code: string): string {
+  let hint = "";
+  try {
+    hint = String((scope.__hint as (text: string, code: string) => string)(message, code) || "");
+  } catch {
+    // No hint: the error stands as it is.
+  }
+  return hint ? `${message}\nHint: ${hint}` : message;
 }
 
 function portable(value: unknown): unknown {

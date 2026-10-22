@@ -64,6 +64,31 @@ var siteApi=Object.freeze({
   action:(site,name,inputs={})=>__call({siteApi:'action',site,name,params:inputs}),
   channel:(site,id,options={})=>__call({siteApi:'channel',site,name:id,params:options}),
 });
+// The here: line at the top of bu.state(): what already exists for this page and site (its
+// embedded data, the API the site learned, its boosts), printed only when it changes, so the
+// agent reaches for them without being told twice.
+var __hereShown = new Map(), __siteFacts = new Map();
+async function __here(target, url) {
+  var host; try { host = new URL(String(url)).hostname.replace(/^www\\./, ''); } catch { return ''; }
+  var parts = [], data = await __fastProbe(target, url);
+  if (data) parts.push(data);
+  var facts = __siteFacts.get(host);
+  if (!facts || Date.now() - facts.at > 60000) {
+    var operations = await __call({siteApi: 'operations', site: host}).catch(() => []);
+    var boosts = await browser.boosts.list(String(url)).catch(() => []);
+    facts = {at: Date.now(), operations: Array.isArray(operations) ? operations : [], boosts: Array.isArray(boosts) ? boosts : []};
+    __siteFacts.set(host, facts);
+  }
+  if (facts.operations.length) {
+    var reads = facts.operations.filter(op => !op.writes).map(op => op.id), writes = facts.operations.filter(op => op.writes).map(op => op.id);
+    parts.push('site API (siteApi.call): ' + reads.slice(0, 6).join(', ') + (reads.length > 6 ? ' +' + (reads.length - 6) : '') + (writes.length ? ' · writes: ' + writes.slice(0, 4).join(', ') : ''));
+  }
+  if (facts.boosts.length) parts.push('boosts: ' + facts.boosts.slice(0, 3).map(b => b.name).join(', '));
+  var text = parts.length ? 'here: ' + parts.join(' · ') : '';
+  if (!text || __hereShown.get(host) === text) return '';
+  __hereShown.set(host, text);
+  return text;
+}
 // Learning a site's API while working. Every tab the agent acts in records the site's own
 // requests (passively: no trackers, no cookies, no passwords); after each cell they are tagged
 // with the page step that sent them and built into the site's API at once (no model). New
@@ -114,6 +139,7 @@ async function __learnFromCell() {
         if (__announced.has(seen)) continue;
         __announced.add(seen);
         lines.push(__learnedLine(result.site, op));
+        __siteFacts.delete(result.site);
       }
     } catch {}
   }

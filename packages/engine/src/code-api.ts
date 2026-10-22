@@ -612,8 +612,8 @@ var bu = Object.freeze({
     var text = __formatState(state, options.max, final);
     var loaded = await __autoLoadSkills(state.url);
     if (loaded) text = loaded + '\\n' + text;
-    var probe = await __fastProbe(target, state.url);
-    if (probe) text = probe + String.fromCharCode(10) + text;
+    var here = await __here(target, state.url);
+    if (here) text = here + String.fromCharCode(10) + text;
     console.log(text);
     return text;
   },
@@ -667,7 +667,7 @@ async function __fastProbe(target, url) {
         var value = data.sources[name] || {};
         return value.items != null ? name + ' ' + value.items + ' items' : name;
       });
-      text = 'fast: page.data() ' + parts.join(' · ');
+      text = 'page.data() ' + parts.join(' · ');
       if (data.urlParams && data.urlParams.length) text += ' · url ' + data.urlParams.slice(0, 8).join(',');
     }
   } catch {}
