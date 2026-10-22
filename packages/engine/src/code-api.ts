@@ -94,10 +94,12 @@ var browser = Object.freeze({
   tabs: Object.assign(async (query) => (await __step({op:'listTabs', ...(query ? {query} : {})})).tabs
       .map(tab => __listedTab({tabId: tab.target.tabId, id: tab.target.tabId, url: tab.url, title: tab.title, active: tab.active, ...tab})),
     {list: async (query) => browser.tabs(query)}),
-  // The tab the user is looking at: the active tab of the focused window, as a page.
+  // The tab the user is looking at: the active tab of the focused window, as a page. Asking for
+  // it is the agent choosing it, so it comes back attached and ready to use (and becomes page).
   activeTab: async () => {
     var tab = (await browser.tabs()).find(listed => listed.active);
     if (!tab) throw Error('TARGET_LOST: the active tab is not a web page (a new tab or browser page)');
+    await browser.attachTab(tab.target);
     return tab;
   },
   getActiveTab: async () => browser.activeTab(),
@@ -521,10 +523,23 @@ function __element(target, element) {
   return node.backendNodeId ? {kind:'backend',backendNodeId:node.backendNodeId,documentEpoch:state.documentEpoch}
     : {kind:'ref',snapshotId:state.snapshotId,ref:node.ref};
 }
-function __formatState(state, max = 3000) {
+// Many controls with the same role and name (YouTube's 40 "Action menu" buttons) print as one
+// line with all their ids, instead of 40 near-identical lines.
+function __repeats(nodes) {
+  var groups = new Map();
+  for (var n of nodes) {
+    if (['heading','statictext','paragraph'].includes(n.role.toLowerCase()) || n.value !== undefined) continue;
+    var group = n.role + '|' + n.name;
+    groups.set(group, (groups.get(group) || []).concat([n.backendNodeId || n.ref]));
+  }
+  return new Map([...groups].filter(([, ids]) => ids.length > 4));
+}
+// delta: the observation that ends a cell. On the same document it prints only what changed.
+function __formatState(state, max = 3000, delta = false) {
   var key = __key(state.target) + ':' + state.documentEpoch;
   var previous = __seen.get(key) || new Map(), next = new Map();
-  var lines = [state.url];
+  var lines = [state.url], repeats = __repeats(state.nodes), printed = new Set(), unchanged = 0;
+  delta = delta && previous.size > 0;
   for (var n of state.nodes) {
     if (n.role.toLowerCase() === 'heading') {lines.push('## '+n.name);continue;}
     if (['statictext','paragraph'].includes(n.role.toLowerCase())) {lines.push(n.name);continue;}
@@ -533,9 +548,23 @@ function __formatState(state, max = 3000) {
     for (var prop of ['disabled','checked','focused','expanded','selected','pressed','mixed'])
       if (n[prop] !== undefined) text += ' ' + prop + '=' + n[prop];
     var id = n.backendNodeId || n.ref;
+    var changed = previous.size && previous.get(id) !== text;
     next.set(id,text);
-    if (previous.size && previous.get(id) !== text) text = '* ' + text;
+    var group = repeats.get(n.role + '|' + n.name);
+    if (group && !changed) {
+      if (printed.has(group)) continue;
+      printed.add(group);
+      text = '[' + group.join(',') + '] ' + n.role + ' ' + JSON.stringify(n.name) + ' x' + group.length;
+    }
+    if (delta && !changed) { unchanged++; continue; }
+    if (changed) text = '* ' + text;
     lines.push(text);
+  }
+  if (delta) {
+    lines.push(unchanged ? '[' + unchanged + ' unchanged lines hidden; bu.state() shows the whole page]' : '');
+    __seen.set(key,next);
+    var short = lines.filter(Boolean).join('\\n');
+    return short.length > max ? short.slice(0, max) + '\\n[... clipped; bu.state() for more]' : short;
   }
   __seen.set(key,next);
   while (__seen.size > 32) __seen.delete(__seen.keys().next().value);
@@ -560,7 +589,16 @@ function __lazyPage() {
   }});
 }
 Object.defineProperty(globalThis,'page',{value:__lazyPage(),writable:true,configurable:true});
+var __progressAt = 0;
 var bu = Object.freeze({
+  // Long jobs run in one cell and report as they go: bu.progress(47, 77, 'Removing') shows
+  // "Removing 47/77" to the user while the cell runs. At most a few updates a second are sent.
+  progress: (done, total, label) => {
+    var now = Date.now();
+    if (now - __progressAt < 400 && done !== total && done !== 0) return;
+    __progressAt = now;
+    __call({progress: {done: Number(done), total: total == null ? undefined : Number(total), label: label == null ? undefined : String(label)}}).catch(() => {});
+  },
   use: target => {
     if (typeof target === 'number') return __tabTarget(target).then(bu.use);
     __lastTarget = target; globalThis.page = browser.page(target); return globalThis.page;
@@ -568,10 +606,11 @@ var bu = Object.freeze({
   state: async (options = {}) => {
     var target = options.target || __lastTarget;
     if (!target) throw Error('Use bu.use(attachedTarget) or browser.page(target) first');
-    var state = await browser.page(target).snapshot(options);
-    var text = __formatState(state, options.max);
-    var known = await __siteSkills(state.url);
-    if (known.length) text = 'Site skills (skills.load(name)): ' + known.map(k => k.name + ' - ' + k.description.slice(0, 80)).join('; ') + '\\n' + text;
+    var {final, ...snapshot} = options;
+    var state = await browser.page(target).snapshot(snapshot);
+    var text = __formatState(state, options.max, final);
+    var loaded = await __autoLoadSkills(state.url);
+    if (loaded) text = loaded + '\\n' + text;
     var probe = await __fastProbe(target, state.url);
     if (probe) text = probe + String.fromCharCode(10) + text;
     console.log(text);
@@ -642,24 +681,51 @@ async function __siteSkills(url) {
   __skillCache.set(host, {at: Date.now(), list});
   return list;
 }
+// Skills on the current site load by themselves, once per chat (again after one is saved), so
+// their helpers are defined without the agent having to remember skills.load.
+var __loadedSkills = new Map();
+async function __autoLoadSkills(url) {
+  var known = await __siteSkills(url);
+  var lines = [];
+  for (var item of known.slice(0, 4)) {
+    if (__loadedSkills.has(item.name)) continue;
+    try {
+      var info = await skills.load(item.name);
+      lines.push(item.name + (info.defines.length ? ' (defines ' + info.defines.join(', ') + ')' : '') + ' - ' + item.description.slice(0, 80));
+    } catch (error) {
+      __loadedSkills.set(item.name, []);
+      lines.push(item.name + ' failed to load: ' + String(error && error.message || error).slice(0, 120));
+    }
+  }
+  return lines.length ? 'Site skills loaded: ' + lines.join('; ') : '';
+}
 var skills = Object.freeze({
   list: (url) => __call({siteSkill:'list', url: url ?? (__lastTarget ? browser.page(__lastTarget).url : undefined)}),
   load: async (name) => {
     var skill = await __call({siteSkill:'get', name});
-    (0, eval)(skill.code);
-    return {name: skill.name, domains: skill.domains, description: skill.description, examples: skill.examples};
+    var before = new Set(Object.keys(globalThis));
+    // Same rules as a cell: top-level const/let/function persist. A skill whose code returns an
+    // object (the function form) has its function members defined as globals.
+    var value = await (0, eval)(__repl(skill.code));
+    if (value && typeof value === 'object')
+      for (var [key, member] of Object.entries(value)) if (typeof member === 'function') globalThis[key] = member;
+    var defines = Object.keys(globalThis).filter(key => !before.has(key) && typeof globalThis[key] === 'function');
+    __loadedSkills.set(skill.name, defines);
+    return {name: skill.name, domains: skill.domains, description: skill.description, examples: skill.examples, defines};
   },
   save: async (skill) => {
-    var code = typeof skill.code === 'function' ? '(' + skill.code.toString() + ')()' : skill.code;
+    // The function form: its body runs on load, and the object it returns becomes globals.
+    var code = typeof skill.code === 'function' ? 'return await (' + skill.code.toString() + ')()' : skill.code;
     var saved = await __call({siteSkill:'save', skill: {...skill, code}});
     __skillCache.clear();
+    __loadedSkills.delete(saved.saved);
     return saved;
   },
-  remove: async (name) => { __skillCache.clear(); return __call({siteSkill:'delete', name}); },
+  remove: async (name) => { __skillCache.clear(); __loadedSkills.delete(name); return __call({siteSkill:'delete', name}); },
 });
 async function __finishCell() {
   for (var target of [...__dirty.values()]) {
-    try { await bu.state({target}); }
+    try { await bu.state({target, final: true}); }
     catch (error) { if (!/UNSUPPORTED/.test(String(error && error.message))) console.log('Final observation unavailable: ' + error.message); }
   }
   __dirty.clear();
@@ -705,6 +771,9 @@ function __expression(fn,arg) {return typeof fn==='function' ? '('+fn.toString()
 // Written in 1M-character pieces (whole base64 quads, whole surrogate pairs), so a large file
 // never becomes one oversized message.
 async function artifact(name,data) {
+  if (typeof Blob!=='undefined' && data instanceof Blob) data=new Uint8Array(await data.arrayBuffer());
+  // Anything that isn't bytes (objects, arrays of rows) is saved as JSON.
+  else if (data && typeof data==='object' && !ArrayBuffer.isView(data) && !(data instanceof ArrayBuffer) && !(Array.isArray(data) && data.every(n=>typeof n==='number'))) data=JSON.stringify(data,null,2);
   var base64=typeof data!=='string', value=base64?__encodeBytes(data):data, size=1000000, at=0, result;
   do {
     var end=Math.min(value.length,at+size);

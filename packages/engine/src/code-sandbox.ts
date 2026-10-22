@@ -40,6 +40,17 @@ function format(value: unknown): string {
     return String(value);
   }
 }
+/** Binary artifact data as bytes: typed arrays, ArrayBuffers, Blobs read first, or byte arrays. */
+function asBytes(data: unknown): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (ArrayBuffer.isView(data))
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (Array.isArray(data)) return Uint8Array.from(data as number[]);
+  throw new Error(
+    "artifact() takes a string, Uint8Array, ArrayBuffer or byte array; for a Blob, pass new Uint8Array(await blob.arrayBuffer())",
+  );
+}
 const print = (...values: unknown[]) => {
   output += values.map(format).join(" ") + "\n";
   if (output.length > 1_000_000)
@@ -48,13 +59,16 @@ const print = (...values: unknown[]) => {
       "\n[Console limit reached; save large data with artifact() instead.]\n";
 };
 scope.console = Object.freeze({ log: print, info: print, warn: print, error: print, debug: print });
-scope.__encodeBytes = (bytes: Uint8Array) => {
+scope.__encodeBytes = (data: unknown) => {
+  const bytes = asBytes(data);
   if (bytes.byteLength > 16_000_000) throw new Error("Binary artifact exceeds 16 MB; split it");
   let binary = "";
   for (let index = 0; index < bytes.length; index += 0x8000)
     binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
   return btoa(binary);
 };
+// Skills are evaluated with the same REPL rules as cells, so `const helper = ...` persists.
+scope.__repl = toReplScript;
 scope.__call = (request: unknown) =>
   new Promise((resolve, reject) => {
     const callId = String(++sequence);
