@@ -2,6 +2,7 @@
 // created are tracked; user tabs and tabs the user pins are never closed. A tab is touched when
 // an agent sends it a command or the user switches to it.
 import { isAgentGroupId } from "./native-browser-groups.js";
+import { onEngineInstall } from "./native-engine-install.js";
 
 type Tracked = { touched: number };
 
@@ -95,23 +96,25 @@ function save(): void {
   }, 500);
 }
 
-chrome.runtime.onStartup.addListener(() => {
-  tracked.clear();
-  void chrome.storage.local.remove(STORAGE_KEY);
+onEngineInstall(() => {
+  chrome.runtime.onStartup.addListener(() => {
+    tracked.clear();
+    void chrome.storage.local.remove(STORAGE_KEY);
+  });
+  chrome.tabs.onActivated.addListener(({ tabId }) => touchAgentTab(tabId));
+  chrome.tabs.onRemoved.addListener((tabId) => forgetAgentTab(tabId));
+  chrome.tabs.onUpdated.addListener((tabId, change) => {
+    if (change.pinned) forgetAgentTab(tabId);
+    if (change.groupId === undefined) return;
+    if (change.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE && grouped.has(tabId)) {
+      forgetAgentTab(tabId);
+      return;
+    }
+    if (change.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE && !isAgentGroupId(change.groupId))
+      forgetAgentTab(tabId);
+  });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === ALARM) void cleanupAgentTabs();
+  });
+  void chrome.alarms.create(ALARM, { periodInMinutes: 1 });
 });
-chrome.tabs.onActivated.addListener(({ tabId }) => touchAgentTab(tabId));
-chrome.tabs.onRemoved.addListener((tabId) => forgetAgentTab(tabId));
-chrome.tabs.onUpdated.addListener((tabId, change) => {
-  if (change.pinned) forgetAgentTab(tabId);
-  if (change.groupId === undefined) return;
-  if (change.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE && grouped.has(tabId)) {
-    forgetAgentTab(tabId);
-    return;
-  }
-  if (change.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE && !isAgentGroupId(change.groupId))
-    forgetAgentTab(tabId);
-});
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) void cleanupAgentTabs();
-});
-void chrome.alarms.create(ALARM, { periodInMinutes: 1 });

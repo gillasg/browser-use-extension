@@ -17,6 +17,7 @@ import {
   hostErrorCode,
   installBoosts,
   installBrowserPopupGuard,
+  installEngineListeners,
   installNativeStartup,
   releaseBrowserExecutor,
   resetRealm,
@@ -44,6 +45,7 @@ configureEngine({
   idleTitle: "Browser Use Extension",
   notificationIcon: "icon-128.png",
 });
+installEngineListeners();
 void chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 // Saved boosts (browser.boosts) apply in every tab.
 installBoosts();

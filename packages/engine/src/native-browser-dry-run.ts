@@ -1,4 +1,5 @@
 import { withBrowserDebugger } from "./native-browser-session.js";
+import { onEngineInstall } from "./native-engine-install.js";
 
 // Dry run: while a tab records with {dryRun: true}, requests that would change something (a like,
 // a message, a post, a purchase) are answered by the browser itself with an empty success and never
@@ -28,10 +29,12 @@ export function looksLikeRead(method: string, url: string, body?: string): boole
   }
 }
 
-chrome.debugger.onEvent.addListener((source, method, raw) => {
-  const tabId = source.tabId;
-  if (method !== "Fetch.requestPaused" || tabId === undefined || !dryRunTabs.has(tabId)) return;
-  void answer(tabId, source.sessionId, (raw ?? {}) as Params);
+onEngineInstall(() => {
+  chrome.debugger.onEvent.addListener((source, method, raw) => {
+    const tabId = source.tabId;
+    if (method !== "Fetch.requestPaused" || tabId === undefined || !dryRunTabs.has(tabId)) return;
+    void answer(tabId, source.sessionId, (raw ?? {}) as Params);
+  });
 });
 
 async function answer(tabId: number, sessionId: string | undefined, params: Params): Promise<void> {
@@ -78,4 +81,6 @@ export async function setDryRun(tabId: number, enabled: boolean): Promise<void> 
 
 export const dryRunActive = (tabId: number): boolean => dryRunTabs.has(tabId);
 
-chrome.tabs.onRemoved.addListener((tabId) => dryRunTabs.delete(tabId));
+onEngineInstall(() => {
+  chrome.tabs.onRemoved.addListener((tabId) => dryRunTabs.delete(tabId));
+});

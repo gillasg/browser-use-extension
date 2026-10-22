@@ -1,3 +1,4 @@
+import { onEngineInstall } from "./native-engine-install.js";
 // Network rules for one agent tab: block ads, trackers, cookie banners or heavy media, set request
 // headers such as Accept-Language, or answer a URL with a fixed response. Rules are session rules
 // scoped to that tab's id, so the user's own tabs are never affected; they end when the tab closes.
@@ -69,7 +70,9 @@ const HEAVY: Record<string, ResourceType[]> = {
 };
 const MAX_MOCK = 1_000_000;
 
-chrome.tabs.onRemoved.addListener((tabId) => void clearRules(tabId).catch(() => undefined));
+onEngineInstall(() => {
+  chrome.tabs.onRemoved.addListener((tabId) => void clearRules(tabId).catch(() => undefined));
+});
 
 export function rulesCall(tabId: number, value: Record<string, unknown>): Promise<unknown> {
   if (value.rules === "block") return addRules(tabId, blockRules(value));

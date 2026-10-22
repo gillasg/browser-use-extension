@@ -1,4 +1,5 @@
 import type { BrowserExecutorRequest, BrowserTargetKey } from "@browser-use-extension/protocol";
+import { onEngineInstall } from "./native-engine-install.js";
 
 interface EventItem {
   method: string;
@@ -61,20 +62,22 @@ function acknowledgeFrame(source: chrome.debugger.Debuggee, params: unknown): vo
       .sendCommand(source, "Page.screencastFrameAck", { sessionId })
       .catch(() => undefined);
 }
-chrome.debugger.onEvent.addListener((source, method, params) => {
-  if (method === "Page.screencastFrame") acknowledgeFrame(source, params);
-  if (source.tabId !== undefined)
-    publishBrowserEvent(
-      source.tabId,
-      method,
-      (params ?? {}) as Record<string, unknown>,
-      source.sessionId,
-    );
-});
-chrome.tabs.onRemoved.addListener((tabId) => invalidateBrowserEvents(tabId, "Tab closed"));
-chrome.debugger.onDetach.addListener((source) => {
-  if (source.tabId !== undefined)
-    invalidateBrowserEvents(source.tabId, "Browser transport detached");
+onEngineInstall(() => {
+  chrome.debugger.onEvent.addListener((source, method, params) => {
+    if (method === "Page.screencastFrame") acknowledgeFrame(source, params);
+    if (source.tabId !== undefined)
+      publishBrowserEvent(
+        source.tabId,
+        method,
+        (params ?? {}) as Record<string, unknown>,
+        source.sessionId,
+      );
+  });
+  chrome.tabs.onRemoved.addListener((tabId) => invalidateBrowserEvents(tabId, "Tab closed"));
+  chrome.debugger.onDetach.addListener((source) => {
+    if (source.tabId !== undefined)
+      invalidateBrowserEvents(source.tabId, "Browser transport detached");
+  });
 });
 export function invalidateBrowserEvents(tabId: number, reason: string): void {
   for (const entry of subscriptions.values())
@@ -248,22 +251,24 @@ export function forgetDiagnostics(tabId: number): void {
   enabled.delete(tabId);
   for (const key of requests.keys()) if (key.startsWith(tabId + ":")) requests.delete(key);
 }
-chrome.debugger.onEvent.addListener((source, method, raw) => {
-  if (source.tabId === undefined) return;
-  const buffer = buffers.get(source.tabId);
-  if (!buffer) return;
-  const params = (raw ?? {}) as Record<string, unknown>;
-  if (method === "Page.javascriptDialogOpening") {
-    buffer.console.push({
-      level: "info",
-      text: `[dialog ${String(params.type)}] ${String(params.message).slice(0, 300)} (accepted)`,
-    });
-    if (buffer.console.length > 80) buffer.console.shift();
-    return;
-  }
-  if (method === "Runtime.consoleAPICalled" || method === "Runtime.exceptionThrown")
-    captureConsole(buffer, method, params);
-  else captureNetwork(source.tabId, buffer, method, params);
+onEngineInstall(() => {
+  chrome.debugger.onEvent.addListener((source, method, raw) => {
+    if (source.tabId === undefined) return;
+    const buffer = buffers.get(source.tabId);
+    if (!buffer) return;
+    const params = (raw ?? {}) as Record<string, unknown>;
+    if (method === "Page.javascriptDialogOpening") {
+      buffer.console.push({
+        level: "info",
+        text: `[dialog ${String(params.type)}] ${String(params.message).slice(0, 300)} (accepted)`,
+      });
+      if (buffer.console.length > 80) buffer.console.shift();
+      return;
+    }
+    if (method === "Runtime.consoleAPICalled" || method === "Runtime.exceptionThrown")
+      captureConsole(buffer, method, params);
+    else captureNetwork(source.tabId, buffer, method, params);
+  });
 });
 function captureConsole(
   buffer: Diagnostics,

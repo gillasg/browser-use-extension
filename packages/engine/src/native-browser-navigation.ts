@@ -1,6 +1,7 @@
 import { noteDeviceEmulation } from "./native-browser-session.js";
 import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
 import { BrowserActionError } from "./native-browser-common.js";
+import { onEngineInstall } from "./native-engine-install.js";
 
 interface Activity {
   pending: Map<string, number>;
@@ -26,19 +27,26 @@ export function trackBrowserActivity(tabId: number): void {
 export function forgetBrowserActivity(tabId: number): void {
   activity.delete(tabId);
 }
-chrome.debugger.onEvent.addListener((source, method, raw) => {
-  if (source.tabId === undefined) return;
-  const state = activity.get(source.tabId);
-  if (!state) return;
-  const data = (raw ?? {}) as { requestId?: string; type?: string; defaultPrompt?: string };
-  if (method === "Page.javascriptDialogOpening")
-    void chrome.debugger
-      .sendCommand(source, "Page.handleJavaScriptDialog", {
-        accept: true,
-        promptText: data.defaultPrompt ?? "",
-      })
-      .catch(() => undefined);
-  captureNetworkActivity(state, (source.sessionId ?? "") + ":" + data.requestId, method, data.type);
+onEngineInstall(() => {
+  chrome.debugger.onEvent.addListener((source, method, raw) => {
+    if (source.tabId === undefined) return;
+    const state = activity.get(source.tabId);
+    if (!state) return;
+    const data = (raw ?? {}) as { requestId?: string; type?: string; defaultPrompt?: string };
+    if (method === "Page.javascriptDialogOpening")
+      void chrome.debugger
+        .sendCommand(source, "Page.handleJavaScriptDialog", {
+          accept: true,
+          promptText: data.defaultPrompt ?? "",
+        })
+        .catch(() => undefined);
+    captureNetworkActivity(
+      state,
+      (source.sessionId ?? "") + ":" + data.requestId,
+      method,
+      data.type,
+    );
+  });
 });
 function captureNetworkActivity(state: Activity, key: string, method: string, type?: string) {
   if (method === "Network.requestWillBeSent") {

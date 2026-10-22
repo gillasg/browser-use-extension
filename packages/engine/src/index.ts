@@ -1,6 +1,7 @@
-// Service-worker entry points of the engine. Importing this registers the engine's Chrome
-// listeners (debugger events, tabs, runtime messages), so import it from a service worker only;
-// pages import single modules by subpath instead.
+// Service-worker entry points of the engine. The worker calls installEngineListeners() at load
+// to register the engine's Chrome listeners (debugger events, tabs, runtime messages); importing
+// a module never touches `chrome` by itself.
+export { installEngineListeners } from "./native-engine-install.js";
 export { configureEngine, type EngineConfig } from "./engine-config.js";
 export { authenticate } from "./native-authenticate.js";
 export { handleBrowserCodeMessage, resetRealm } from "./code-runtime-host.js";

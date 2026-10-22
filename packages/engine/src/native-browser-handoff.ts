@@ -1,6 +1,7 @@
 import { engineConfig } from "./engine-config.js";
 import { guardAgentTab } from "./native-browser-tab-cleanup.js";
 import { withBrowserDebugger } from "./native-browser-session.js";
+import { onEngineInstall } from "./native-engine-install.js";
 
 // Hand-off: the agent pauses and asks the user to do something in the real tab (sign in, 2FA,
 // pick an option). A banner on the page carries the request plus Done and Cancel; the cell
@@ -32,10 +33,12 @@ const BANNER = (message: string) => `(() => {
 
 // Answers given from the chat's hand-off card, keyed by tab; the next poll picks them up.
 const answers = new Map<number, "done" | "cancelled">();
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (sender.id !== chrome.runtime.id || message?.kind !== "aeon.handoff.answer") return;
-  if (message.answer === "done" || message.answer === "cancelled")
-    answers.set(Number(message.tabId), message.answer);
+onEngineInstall(() => {
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    if (sender.id !== chrome.runtime.id || message?.kind !== "aeon.handoff.answer") return;
+    if (message.answer === "done" || message.answer === "cancelled")
+      answers.set(Number(message.tabId), message.answer);
+  });
 });
 
 const CLEAR = `(() => { delete globalThis[${KEY}]; document.getElementById("aeon-handoff")?.remove(); })()`;
@@ -80,17 +83,19 @@ export async function handOffToUser(
   }
 }
 
-chrome.notifications.onClicked.addListener((id) => {
-  if (!id.startsWith("aeon-handoff-")) return;
-  const tabId = Number(id.slice("aeon-handoff-".length));
-  void chrome.tabs.get(tabId).then(
-    (tab) =>
-      Promise.all([
-        chrome.tabs.update(tabId, { active: true }),
-        chrome.windows.update(tab.windowId, { focused: true }),
-      ]),
-    () => undefined,
-  );
+onEngineInstall(() => {
+  chrome.notifications.onClicked.addListener((id) => {
+    if (!id.startsWith("aeon-handoff-")) return;
+    const tabId = Number(id.slice("aeon-handoff-".length));
+    void chrome.tabs.get(tabId).then(
+      (tab) =>
+        Promise.all([
+          chrome.tabs.update(tabId, { active: true }),
+          chrome.windows.update(tab.windowId, { focused: true }),
+        ]),
+      () => undefined,
+    );
+  });
 });
 
 async function evaluate(tabId: number, expression: string): Promise<unknown> {

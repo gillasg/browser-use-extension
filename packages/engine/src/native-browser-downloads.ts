@@ -1,6 +1,7 @@
 import type { BrowserTargetKey, BrowserExecutorRequest } from "@browser-use-extension/protocol";
 import { browserSessionOwner } from "./native-browser-session.js";
 import { publishBrowserEvent } from "./native-browser-events.js";
+import { onEngineInstall } from "./native-engine-install.js";
 
 interface Owner {
   chatId: string;
@@ -63,15 +64,17 @@ interface Token {
   downloadId?: number;
 }
 const tokens = new Map<string, Token>();
-chrome.debugger.onEvent.addListener((source, method, raw) => {
-  if (source.tabId === undefined || method !== "Page.downloadWillBegin") return;
-  const chatId = browserSessionOwner(source.tabId),
-    params = raw as { url: string; guid: string; suggestedFilename?: string };
-  if (!chatId) return;
-  const token = crypto.randomUUID();
-  tokens.set(token, { chatId, tabId: source.tabId, url: params.url, at: Date.now() });
-  while (tokens.size > 128) tokens.delete(tokens.keys().next().value ?? "");
-  publishBrowserEvent(source.tabId, "download", { ...params, token }, source.sessionId);
+onEngineInstall(() => {
+  chrome.debugger.onEvent.addListener((source, method, raw) => {
+    if (source.tabId === undefined || method !== "Page.downloadWillBegin") return;
+    const chatId = browserSessionOwner(source.tabId),
+      params = raw as { url: string; guid: string; suggestedFilename?: string };
+    if (!chatId) return;
+    const token = crypto.randomUUID();
+    tokens.set(token, { chatId, tabId: source.tabId, url: params.url, at: Date.now() });
+    while (tokens.size > 128) tokens.delete(tokens.keys().next().value ?? "");
+    publishBrowserEvent(source.tabId, "download", { ...params, token }, source.sessionId);
+  });
 });
 type Download = BrowserExecutorRequest & {
   step: Extract<BrowserExecutorRequest["step"], { op: "downloads" }>;

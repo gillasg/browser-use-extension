@@ -4,6 +4,7 @@ import {
   BrowserScriptsSyncSchema,
 } from "@browser-use-extension/protocol";
 import { withBrowserDebugger } from "./native-browser-session.js";
+import { onEngineInstall } from "./native-engine-install.js";
 
 export const SCRIPT_KEY = "aeon-site-scripts";
 export function readScripts(value: unknown): SiteScriptDefinition[] {
@@ -161,8 +162,10 @@ function matches(pattern: string, url: string): boolean {
     );
   return new RegExp("^" + escaped.join(".*") + "$").test(url);
 }
-chrome.tabs.onRemoved.addListener((id) => {
-  for (const key of worlds.keys()) if (key.startsWith(id + ":")) worlds.delete(key);
+onEngineInstall(() => {
+  chrome.tabs.onRemoved.addListener((id) => {
+    for (const key of worlds.keys()) if (key.startsWith(id + ":")) worlds.delete(key);
+  });
 });
 
 async function boundedPreview<T>(operation: Promise<T>): Promise<T> {
@@ -340,29 +343,31 @@ async function recordError(id: string, error: string): Promise<void> {
     "aeon-site-script-errors": { ...previous, [id]: error.slice(0, 1000) },
   });
 }
-chrome.runtime.onUserScriptMessage.addListener((message, sender) => {
-  if (
-    sender.id !== chrome.runtime.id ||
-    message?.kind !== "aeon.script.report" ||
-    typeof message.scriptId !== "string" ||
-    typeof message.error !== "string"
-  )
-    return;
-  void recordError(message.scriptId, message.error);
+onEngineInstall(() => {
+  chrome.runtime.onUserScriptMessage.addListener((message, sender) => {
+    if (
+      sender.id !== chrome.runtime.id ||
+      message?.kind !== "aeon.script.report" ||
+      typeof message.scriptId !== "string" ||
+      typeof message.error !== "string"
+    )
+      return;
+    void recordError(message.scriptId, message.error);
+  });
+  chrome.runtime.onInstalled.addListener(
+    () => void restoreScripts().catch((error) => recordError("restore", String(error))),
+  );
+  chrome.runtime.onStartup.addListener(
+    () => void restoreScripts().catch((error) => recordError("restore", String(error))),
+  );
+  chrome.permissions.onRemoved.addListener(
+    () => void restoreScripts().catch((error) => recordError("restore", String(error))),
+  );
+  chrome.permissions.onAdded.addListener(
+    () => void restoreScripts().catch((error) => recordError("restore", String(error))),
+  );
+  void restoreScripts().catch((error) => recordError("restore", String(error)));
 });
-chrome.runtime.onInstalled.addListener(
-  () => void restoreScripts().catch((error) => recordError("restore", String(error))),
-);
-chrome.runtime.onStartup.addListener(
-  () => void restoreScripts().catch((error) => recordError("restore", String(error))),
-);
-chrome.permissions.onRemoved.addListener(
-  () => void restoreScripts().catch((error) => recordError("restore", String(error))),
-);
-chrome.permissions.onAdded.addListener(
-  () => void restoreScripts().catch((error) => recordError("restore", String(error))),
-);
-void restoreScripts().catch((error) => recordError("restore", String(error)));
 
 async function restoreScripts(): Promise<void> {
   const stored = await chrome.storage.local.get(SCRIPT_KEY);

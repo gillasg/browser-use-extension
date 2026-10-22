@@ -7,6 +7,7 @@ import {
 } from "./native-browser-session.js";
 import { publishBrowserEvent } from "./native-browser-events.js";
 import { engineConfig } from "./engine-config.js";
+import { onEngineInstall } from "./native-engine-install.js";
 const children = new Map<number, Set<number>>();
 const active = new Map<number, number>(),
   previous = new Map<number, number>();
@@ -25,21 +26,23 @@ export async function browserPopups(tabId: number): Promise<BrowserTab[]> {
   );
   return tabs.filter((tab): tab is BrowserTab => Boolean(tab));
 }
-chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
-  const old = active.get(windowId);
-  if (old !== undefined && old !== tabId) previous.set(windowId, old);
-  active.set(windowId, tabId);
-});
-chrome.tabs.onCreated.addListener((tab) => {
-  if (tab.id !== undefined && tab.openerTabId !== undefined) void adopt(tab.id, tab.openerTabId);
-});
-chrome.webNavigation.onCreatedNavigationTarget.addListener(
-  (event) => void adopt(event.tabId, event.sourceTabId),
-);
-chrome.tabs.onRemoved.addListener((tabId) => {
-  children.delete(tabId);
-  handled.delete(tabId);
-  for (const set of children.values()) set.delete(tabId);
+onEngineInstall(() => {
+  chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+    const old = active.get(windowId);
+    if (old !== undefined && old !== tabId) previous.set(windowId, old);
+    active.set(windowId, tabId);
+  });
+  chrome.tabs.onCreated.addListener((tab) => {
+    if (tab.id !== undefined && tab.openerTabId !== undefined) void adopt(tab.id, tab.openerTabId);
+  });
+  chrome.webNavigation.onCreatedNavigationTarget.addListener(
+    (event) => void adopt(event.tabId, event.sourceTabId),
+  );
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    children.delete(tabId);
+    handled.delete(tabId);
+    for (const set of children.values()) set.delete(tabId);
+  });
 });
 async function adopt(tabId: number, openerId: number): Promise<void> {
   try {

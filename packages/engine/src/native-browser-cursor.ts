@@ -4,6 +4,7 @@
 // agent moves on while the cursor is still gliding.
 import { engineConfig } from "./engine-config.js";
 import { browserSessionTabs } from "./native-browser-session.js";
+import { onEngineInstall } from "./native-engine-install.js";
 export interface CursorUpdate {
   x?: number;
   y?: number;
@@ -188,7 +189,9 @@ export function showAgentCursor(
   if (tabId !== undefined) lastPositions.set(tabId, { x: Math.round(x), y: Math.round(y) });
 }
 const lastPositions = new Map<number, { x: number; y: number }>();
-chrome.tabs.onRemoved.addListener((tabId) => lastPositions.delete(tabId));
+onEngineInstall(() => {
+  chrome.tabs.onRemoved.addListener((tabId) => lastPositions.delete(tabId));
+});
 
 /** A caption without moving the cursor, e.g. while reading or navigating. */
 export function showAgentCaption(debuggee: chrome.debugger.Debuggee, caption: string): void {

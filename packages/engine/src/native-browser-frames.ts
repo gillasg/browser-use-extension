@@ -1,6 +1,7 @@
 import { BrowserActionError } from "./native-browser-common.js";
 import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
 import { onNode } from "./native-browser-dom.js";
+import { onEngineInstall } from "./native-engine-install.js";
 
 interface FrameNode {
   frame: { id: string; url: string; loaderId?: string; parentId?: string };
@@ -13,31 +14,33 @@ interface FrameInfo {
   sessionId?: string;
 }
 const sessions = new Map<number, Map<string, string>>();
-chrome.debugger.onEvent.addListener((source, method, raw) => {
-  if (source.tabId === undefined) return;
-  const params = raw as { sessionId?: string; targetInfo?: { targetId: string; type: string } };
-  if (
-    method === "Target.attachedToTarget" &&
-    params.sessionId &&
-    params.targetInfo?.type === "iframe"
-  ) {
-    const map = sessions.get(source.tabId) ?? new Map<string, string>();
-    map.set(params.targetInfo.targetId, params.sessionId);
-    sessions.set(source.tabId, map);
-    void chrome.debugger
-      .sendCommand({ tabId: source.tabId, sessionId: params.sessionId }, "Target.setAutoAttach", {
-        autoAttach: true,
-        waitForDebuggerOnStart: false,
-        flatten: true,
-      })
-      .catch(() => undefined);
-  }
-  if (method === "Target.detachedFromTarget")
-    for (const map of sessions.values())
-      for (const [id, sessionId] of map) if (sessionId === params.sessionId) map.delete(id);
-});
-chrome.debugger.onDetach.addListener((source) => {
-  if (source.tabId !== undefined) sessions.delete(source.tabId);
+onEngineInstall(() => {
+  chrome.debugger.onEvent.addListener((source, method, raw) => {
+    if (source.tabId === undefined) return;
+    const params = raw as { sessionId?: string; targetInfo?: { targetId: string; type: string } };
+    if (
+      method === "Target.attachedToTarget" &&
+      params.sessionId &&
+      params.targetInfo?.type === "iframe"
+    ) {
+      const map = sessions.get(source.tabId) ?? new Map<string, string>();
+      map.set(params.targetInfo.targetId, params.sessionId);
+      sessions.set(source.tabId, map);
+      void chrome.debugger
+        .sendCommand({ tabId: source.tabId, sessionId: params.sessionId }, "Target.setAutoAttach", {
+          autoAttach: true,
+          waitForDebuggerOnStart: false,
+          flatten: true,
+        })
+        .catch(() => undefined);
+    }
+    if (method === "Target.detachedFromTarget")
+      for (const map of sessions.values())
+        for (const [id, sessionId] of map) if (sessionId === params.sessionId) map.delete(id);
+  });
+  chrome.debugger.onDetach.addListener((source) => {
+    if (source.tabId !== undefined) sessions.delete(source.tabId);
+  });
 });
 export async function discoverFrames(debuggee: chrome.debugger.Debuggee): Promise<FrameInfo[]> {
   await chrome.debugger.sendCommand(debuggee, "Target.setAutoAttach", {

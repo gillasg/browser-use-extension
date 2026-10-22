@@ -10,6 +10,7 @@ import { engineConfig } from "./engine-config.js";
 import { currentInventoryTabs } from "./native-inventory-client.js";
 import { touchAgentTab } from "./native-browser-tab-cleanup.js";
 import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
+import { onEngineInstall } from "./native-engine-install.js";
 
 interface Attachment {
   chatId: string;
@@ -44,17 +45,19 @@ function idleDetach(tabId: number): void {
   void detach(tabId);
 }
 
-chrome.debugger.onDetach.addListener((source, reason) => {
-  if (source.tabId === undefined) return;
-  forget(source.tabId);
-  if (reason === "canceled_by_user") cancelled.set(source.tabId, owners.get(source.tabId));
-});
-chrome.tabs.onRemoved.addListener((tabId) => {
-  held.delete(tabId);
-  emulated.delete(tabId);
-  forget(tabId);
-  owners.delete(tabId);
-  cancelled.delete(tabId);
+onEngineInstall(() => {
+  chrome.debugger.onDetach.addListener((source, reason) => {
+    if (source.tabId === undefined) return;
+    forget(source.tabId);
+    if (reason === "canceled_by_user") cancelled.set(source.tabId, owners.get(source.tabId));
+  });
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    held.delete(tabId);
+    emulated.delete(tabId);
+    forget(tabId);
+    owners.delete(tabId);
+    cancelled.delete(tabId);
+  });
 });
 
 /** Tabs held by a chat's session, or by any session. */
@@ -247,7 +250,9 @@ export function noteDeviceEmulation(tabId: number, method: string, params: unkno
   if (method === "Emulation.setDeviceMetricsOverride") emulated.set(tabId, params);
   else if (method === "Emulation.clearDeviceMetricsOverride") emulated.delete(tabId);
 }
-chrome.tabs.onActivated?.addListener(({ tabId }) => void restoreBrowserViewport(tabId));
+onEngineInstall(() => {
+  chrome.tabs.onActivated?.addListener(({ tabId }) => void restoreBrowserViewport(tabId));
+});
 export async function ensureBrowserViewport(tabId: number): Promise<void> {
   if (emulated.has(tabId)) return;
   if (overridden.has(tabId)) return;

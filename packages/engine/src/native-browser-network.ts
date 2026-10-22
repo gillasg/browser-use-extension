@@ -5,6 +5,7 @@ import {
 } from "./native-browser-session.js";
 import { toHar, summarize, type NetworkEntry } from "./native-browser-network-format.js";
 import { dryRunActive, setDryRun } from "./native-browser-dry-run.js";
+import { onEngineInstall } from "./native-engine-install.js";
 
 // Network recording for learning a site's own APIs. While a tab records, its API traffic is
 // kept with full headers (cookies included), the script that made each call, request and
@@ -37,13 +38,15 @@ onBrowserDebuggerAttached(async (tabId) => {
     await chrome.debugger.sendCommand({ tabId }, "Network.enable", NETWORK_BUFFERS);
 });
 
-chrome.debugger.onEvent.addListener((source, method, raw) => {
-  const tabId = source.tabId;
-  const recorder = tabId === undefined ? undefined : recorders.get(tabId);
-  if (!recorder || source.sessionId || tabId === undefined) return;
-  const params = (raw ?? {}) as Params;
-  const handler = HANDLERS[method];
-  if (handler) handler(recorder, params, tabId);
+onEngineInstall(() => {
+  chrome.debugger.onEvent.addListener((source, method, raw) => {
+    const tabId = source.tabId;
+    const recorder = tabId === undefined ? undefined : recorders.get(tabId);
+    if (!recorder || source.sessionId || tabId === undefined) return;
+    const params = (raw ?? {}) as Params;
+    const handler = HANDLERS[method];
+    if (handler) handler(recorder, params, tabId);
+  });
 });
 
 const HANDLERS: Record<string, (recorder: Recorder, params: Params, tabId: number) => void> = {
@@ -264,10 +267,12 @@ function initiatorOf(value: unknown): Pick<NetworkEntry, "initiator"> {
   return { initiator: result };
 }
 
-chrome.tabs.onRemoved.addListener((tabId) => {
-  recorders.delete(tabId);
-  stopped.delete(tabId);
-  holdBrowserDebugger(tabId, false);
+onEngineInstall(() => {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    recorders.delete(tabId);
+    stopped.delete(tabId);
+    holdBrowserDebugger(tabId, false);
+  });
 });
 
 const NETWORK_BUFFERS = {
