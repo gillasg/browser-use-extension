@@ -335,6 +335,8 @@ var browser = Object.freeze({
       if (result.status >= 400) throw Error('HTTP ' + result.status + ' from ' + url + ': ' + JSON.stringify(result.data ?? result.text).slice(0, 300));
       return result.data ?? result.text;
     },
+    // Hands this tab to the user: it stays open after the run instead of being tidied away.
+    keep: () => __call({tabs:'keep', tabIds:[target.tabId]}),
     close: async () => { await __step({op:'cdp',target,method:'Page.close',params:{}}).catch(() => {}); __states.delete(__key(target)); __tabs.delete(__key(target)); },
     waitFor: (fn, options = {}) => __waitCondition(target, typeof fn === 'function' ? '('+fn.toString()+')()' : String(fn), typeof options === 'number' ? options : (options.timeoutMs ?? options.timeout ?? 5000)),
     // Also takes {direction, amount} or a wheel-style {deltaY}.

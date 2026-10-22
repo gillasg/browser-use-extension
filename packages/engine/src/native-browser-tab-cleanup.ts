@@ -1,14 +1,20 @@
-// Close tabs an agent opened once nobody has touched them for a while. Only tabs the agent
-// created are tracked; user tabs and tabs the user pins are never closed. A tab is touched when
-// an agent sends it a command or the user switches to it.
+// Close tabs an agent opened once they are no longer needed. Only tabs the agent created are
+// tracked; user tabs and tabs the user pins are never closed. When a run ends, its chat keeps
+// only the tab it used last and tabs the user switched to; during a run a chat keeps at most
+// MAX_CHAT_TABS; any left over close after DEFAULT_IDLE_MINUTES untouched. A tab is touched when
+// an agent sends it a command or the user switches to it. Tabs held for a hand-off or recording,
+// playing audio, or in front of the user stay open; page.keep() hands a tab to the user for good.
 import { isAgentGroupId } from "./native-browser-groups.js";
 import { onEngineInstall } from "./native-engine-install.js";
 
-type Tracked = { touched: number };
+type Tracked = { touched: number; chatId?: string; seen?: boolean };
 
 const STORAGE_KEY = "aeon-agent-tab-cleanup";
 const ALARM = "aeon-agent-tab-cleanup";
 const DEFAULT_IDLE_MINUTES = 10;
+const MAX_CHAT_TABS = 6;
+// A tab used this recently is still part of the work (parallel reads, a page it will return to).
+const BUSY_MS = 30_000;
 
 const tracked = new Map<number, Tracked>();
 const guarded = new Set<number>();
@@ -16,9 +22,10 @@ const grouped = new Set<number>();
 let restored: Promise<void> | undefined;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-export function trackAgentTab(tabId: number): void {
-  tracked.set(tabId, { touched: Date.now() });
+export function trackAgentTab(tabId: number, chatId?: string): void {
+  tracked.set(tabId, { touched: Date.now(), ...(chatId ? { chatId } : {}) });
   save();
+  if (chatId) void capChatTabs(chatId);
 }
 
 export function touchAgentTab(tabId: number): void {
@@ -26,6 +33,13 @@ export function touchAgentTab(tabId: number): void {
   if (!entry) return;
   entry.touched = Date.now();
   save();
+}
+
+/** The user switched to the tab: they may want it after the run, so the run's tidy-up keeps it. */
+function seeAgentTab(tabId: number): void {
+  const entry = tracked.get(tabId);
+  if (entry) entry.seen = true;
+  touchAgentTab(tabId);
 }
 
 export function forgetAgentTab(tabId: number): void {
@@ -50,23 +64,46 @@ export function isAgentTab(tabId: number): boolean {
 
 export async function cleanupAgentTabs(options: { minutes?: number } = {}): Promise<number[]> {
   await restore();
-  const minutes = options.minutes ?? DEFAULT_IDLE_MINUTES;
+  const idle = (options.minutes ?? DEFAULT_IDLE_MINUTES) * 60_000;
   const now = Date.now();
+  return closeTabs(
+    [...tracked].filter(([, entry]) => now - entry.touched >= idle),
+    false,
+  );
+}
+
+/** After a chat's run: close its tabs except the one it used last and ones the user looked at. */
+export async function tidyChatTabs(chatId: string): Promise<number[]> {
+  await restore();
+  return closeTabs(chatTabs(chatId).slice(1), true);
+}
+
+/** During a run: past MAX_CHAT_TABS, close the chat's least recently used tabs. */
+async function capChatTabs(chatId: string): Promise<number[]> {
+  const now = Date.now();
+  const extra = chatTabs(chatId)
+    .slice(MAX_CHAT_TABS)
+    .filter(([, entry]) => now - entry.touched >= BUSY_MS);
+  return extra.length ? closeTabs(extra, true) : [];
+}
+
+/** A chat's tracked tabs, most recently used first. */
+function chatTabs(chatId: string): [number, Tracked][] {
+  return [...tracked]
+    .filter(([, entry]) => entry.chatId === chatId)
+    .sort((a, b) => b[1].touched - a[1].touched);
+}
+
+async function closeTabs(entries: [number, Tracked][], keepSeen: boolean): Promise<number[]> {
   const focused = await chrome.windows.getLastFocused().catch(() => undefined);
   const closed: number[] = [];
-  for (const [tabId, entry] of Array.from(tracked)) {
-    if (now - entry.touched < minutes * 60_000) continue;
+  for (const [tabId, entry] of entries) {
     const tab = await chrome.tabs.get(tabId).catch(() => undefined);
-    if (!tab) {
+    if (!tab || tab.pinned) {
       tracked.delete(tabId);
       continue;
     }
-    if (tab.pinned) {
-      tracked.delete(tabId);
-      continue;
-    }
-    if (tab.active && tab.windowId === focused?.id && focused?.focused) continue;
-    if (tab.audible || guarded.has(tabId)) continue;
+    if (!closable(tab, entry, focused, keepSeen)) continue;
     const removed = await chrome.tabs.remove(tabId).then(
       () => true,
       () => false,
@@ -76,6 +113,17 @@ export async function cleanupAgentTabs(options: { minutes?: number } = {}): Prom
   }
   save();
   return closed;
+}
+
+function closable(
+  tab: chrome.tabs.Tab,
+  entry: Tracked,
+  focused: chrome.windows.Window | undefined,
+  keepSeen: boolean,
+): boolean {
+  if (tab.active && tab.windowId === focused?.id && focused?.focused) return false;
+  if (tab.audible || guarded.has(tab.id ?? -1)) return false;
+  return !(keepSeen && entry.seen);
 }
 
 function restore(): Promise<void> {
@@ -101,7 +149,7 @@ onEngineInstall(() => {
     tracked.clear();
     void chrome.storage.local.remove(STORAGE_KEY);
   });
-  chrome.tabs.onActivated.addListener(({ tabId }) => touchAgentTab(tabId));
+  chrome.tabs.onActivated.addListener(({ tabId }) => seeAgentTab(tabId));
   chrome.tabs.onRemoved.addListener((tabId) => forgetAgentTab(tabId));
   chrome.tabs.onUpdated.addListener((tabId, change) => {
     if (change.pinned) forgetAgentTab(tabId);

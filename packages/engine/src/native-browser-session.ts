@@ -8,7 +8,7 @@ import { trackBrowserActivity, forgetBrowserActivity } from "./native-browser-na
 import { presentBrowserTask } from "./native-browser-layout.js";
 import { engineConfig } from "./engine-config.js";
 import { currentInventoryTabs } from "./native-inventory-client.js";
-import { touchAgentTab } from "./native-browser-tab-cleanup.js";
+import { tidyChatTabs, touchAgentTab } from "./native-browser-tab-cleanup.js";
 import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
 import { onEngineInstall } from "./native-engine-install.js";
 
@@ -297,6 +297,8 @@ export function handleBrowserRelease(candidate: unknown): boolean {
     return false;
   chatEpochs.set(candidate.chatId, (chatEpochs.get(candidate.chatId) ?? 0) + 1);
   void releaseBrowserSessions(candidate.chatId, "reset" in candidate && candidate.reset === true);
+  // The end of a run: close the tabs it no longer needs.
+  if ("tidy" in candidate && candidate.tidy === true) void tidyChatTabs(candidate.chatId);
   return true;
 }
 export function registerBrowserRequest(request: BrowserExecutorRequest): void {

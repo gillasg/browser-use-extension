@@ -1,4 +1,5 @@
 import { boostsCall, isBoostsRequest } from "./native-browser-boosts.js";
+import { forgetAgentTab } from "./native-browser-tab-cleanup.js";
 
 // The user's history and bookmarks, for questions like "that article I read last week" and for
 // organizing bookmarks. Results are compact records; the code runtime gets them as plain data.
@@ -14,6 +15,7 @@ export function isLibraryRequest(value: Request | null): boolean {
       typeof value.downloads === "string" ||
       typeof value.extension === "string" ||
       value.tabs === "move" ||
+      value.tabs === "keep" ||
       isBoostsRequest(value)),
   );
 }
@@ -23,8 +25,20 @@ export function libraryCall(value: Request): Promise<unknown> {
   if (typeof value.downloads === "string") return downloadsCall(value.downloads, value);
   if (typeof value.extension === "string") return extensionCall(value.extension, value.message);
   if (value.tabs === "move") return moveTabs(value);
+  if (value.tabs === "keep") return keepTabs(value);
   if (isBoostsRequest(value)) return boostsCall(value);
   return bookmarksCall(String(value.bookmarks), value);
+}
+
+/** Hand agent tabs to the user: out of the agent's group, never closed by the tidy-up. */
+async function keepTabs(value: Request): Promise<unknown> {
+  const ids = Array.isArray(value.tabIds)
+    ? value.tabIds.filter((id) => Number.isSafeInteger(id))
+    : [];
+  if (!ids.length) throw new Error("INVALID_TARGET: pass one or more tab ids");
+  for (const id of ids as number[]) forgetAgentTab(id);
+  await chrome.tabs.ungroup(ids as [number, ...number[]]).catch(() => undefined);
+  return { kept: ids };
 }
 
 /** Reorder tabs: move them, in the order given, to an index (-1 = the end) and optionally another

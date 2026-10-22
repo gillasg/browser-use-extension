@@ -442,7 +442,7 @@ async function openTab(
   const step = validOpenTab(request, identity);
   const created = await createTab(step);
   if (created.id === undefined) throw new Error("TARGET_LOST");
-  trackAgentTab(created.id);
+  trackAgentTab(created.id, request.chatId);
   bindBrowserSession(created.id, request.chatId);
   await groupAgentTab(created.id, created.windowId, request.chatId);
   markAgentTabGrouped(created.id);
