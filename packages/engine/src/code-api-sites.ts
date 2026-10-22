@@ -111,6 +111,24 @@ async function __saveReads() {
 // with the page step that sent them and built into the site's API at once (no model). New
 // operations are announced once per chat, in the cell's output.
 var __learning = new Set(), __actions = [], __announced = new Set(), __learnTouched = new Map(), __handedOff = false;
+var __wallNoted = new Set();
+/** One suggestion per endpoint per chat after repeated refusals; never a stop. */
+async function __wallNote() {
+  for (var target of [...__learnTouched.values()]) {
+    var list;
+    try { list = await __call({network: 'failures', target}); } catch { continue; }
+    for (var item of list || []) {
+      if (!item || item.attempts < 3) continue;
+      var statuses = item.statuses || [];
+      if (!statuses.some(s => s === 403 || s === 429 || s >= 500)) continue;
+      var key = item.method + ' ' + item.path;
+      if (__wallNoted.has(key)) continue;
+      __wallNoted.add(key);
+      var size = item.lastSuccess && item.lastSuccess.requestBytes ? ' Last success: ' + item.lastSuccess.requestBytes + ' B.' : '';
+      console.log('Note: ' + key + ' has refused ' + item.attempts + ' attempts (' + statuses.join('/') + ').' + size + ' page.network.failures() has the details. If this is a site-side block, reporting it may be better than more attempts.');
+    }
+  }
+}
 async function __learnOn(target, step) {
   var key = __key(target);
   __learnTouched.set(key, target);

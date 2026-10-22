@@ -309,6 +309,17 @@ var browser = Object.freeze({
         }
       },
       get: (id) => __call({network:'get', target, id}),
+      // Failed requests grouped by endpoint: statuses, sizes, timing, block headers and the last
+      // success. Repeated probes of the same limit collapse into one entry.
+      failures: async (options = {}) => {
+        try { return await __call({network:'failures', target, ...(typeof options === 'string' ? {match: options} : options)}); }
+        catch (error) {
+          if (!/Not recording/.test(String(error && error.message))) throw error;
+          await __call({network:'start', target});
+          console.log('[ok] network capture started now; repeat the action, then failures() again');
+          return [];
+        }
+      },
       body: (id) => __call({network:'body', target, id}),
       har: () => __call({network:'har', target}),
       save: async (name = 'network.har') => (await artifact(name, JSON.stringify(await __call({network:'har', target}))), {saved: name}),
@@ -680,6 +691,7 @@ async function __finishCell() {
     catch (error) { if (!/UNSUPPORTED/.test(String(error && error.message))) console.log('Final observation unavailable: ' + error.message); }
   }
   __dirty.clear();
+  await __wallNote();
   await __learnFromCell();
   await __saveReads();
 }
