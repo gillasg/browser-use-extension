@@ -342,7 +342,7 @@ function __extendPage(target, base) {
     }, options.timeout ?? 15000),
     waitForTimeout: (ms) => new Promise((done) => setTimeout(done, Math.min(ms, 30000))),
     // Extraction: a table as rows keyed by its header cells, and links with their text.
-    table: (selector = 'table', options = {}) => base.inspect('(' + __readTable.toString() + ')(' + JSON.stringify(selector) + ', ' + JSON.stringify(options) + ')'),
+    table: (selector = 'table', options = {}) => (__noteRead(target), base.inspect('(' + __readTable.toString() + ')(' + JSON.stringify(selector) + ', ' + JSON.stringify(options) + ')')),
     links: (selector = 'body') => base.inspect('(' + __readLinks.toString() + ')(' + JSON.stringify(selector) + ')'),
     keyboard,
     mouse: Object.freeze({

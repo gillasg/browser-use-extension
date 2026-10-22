@@ -58,6 +58,7 @@ var siteApi=Object.freeze({
   sites:()=>__call({siteApi:'sites'}),
   operations:site=>__call({siteApi:'operations',site}),
   call:(site,operation,params={})=>__call({siteApi:'call',site,operation,params}),
+  undo:(site,operation,params={})=>__call({siteApi:'undo',site,operation,params}),
   write:(site,operation,params={})=>__call({siteApi:'write',site,operation,params}),
   batch:(site,operation,items,options={})=>__writeBatch(site,operation,items,options),
   watch:(site,operation,params={},options={})=>__call({siteApi:'watch',site,operation,params,...options}),
@@ -88,6 +89,22 @@ async function __here(target, url) {
   if (!text || __hereShown.get(host) === text) return '';
   __hereShown.set(host, text);
   return text;
+}
+// Saved reads: a page whose content the agent read this cell (page.data, page.markdown,
+// page.table) has its visible text saved after the cell, so when the user comes back to it the
+// page can show what changed since. The same text the page itself compares against.
+var __readTargets = new Map();
+function __noteRead(target) { if (target) __readTargets.set(__key(target), target); }
+var __pageText = '(() => { var root = document.querySelector("main, [role=main]") || document.body; return {url: location.href, text: root ? root.innerText : ""}; })()';
+async function __saveReads() {
+  for (var target of [...__readTargets.values()]) {
+    try {
+      var page = await __call({op: 'evaluate', target, expression: __pageText});
+      var value = page && page.data && page.data.value;
+      if (value && value.text) await __call({savedRead: {url: value.url, text: String(value.text).slice(0, 400000)}});
+    } catch {}
+  }
+  __readTargets.clear();
 }
 // Learning a site's API while working. Every tab the agent acts in records the site's own
 // requests (passively: no trackers, no cookies, no passwords); after each cell they are tagged

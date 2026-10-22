@@ -331,6 +331,35 @@ export async function networkCall(
 }
 
 /**
+ * The user's own tab, recording passively while they browse it (they switched it on for this
+ * tab). The debugger is attached directly, not claimed for a chat: the tab stays where it is,
+ * and Chrome shows its debugger bar while this is on.
+ */
+export async function learnUserTab(tabId: number, on: boolean): Promise<void> {
+  if (!on) {
+    // Only a passive recording is ours to detach; an agent tab keeps its debugger.
+    if (!recorders.get(tabId)?.passive) return;
+    recorders.delete(tabId);
+    await chrome.debugger.detach({ tabId }).catch(() => undefined);
+    return;
+  }
+  if (!recorders.has(tabId))
+    recorders.set(tabId, {
+      entries: new Map(),
+      early: new Map(),
+      allTypes: false,
+      bodies: true,
+      maxBody: PASSIVE_MAX_BODY,
+      bodyBytes: 0,
+      passive: true,
+    });
+  await chrome.debugger.attach({ tabId }, "1.3").catch((error: unknown) => {
+    if (!/already attached/i.test(String(error))) throw error;
+  });
+  await chrome.debugger.sendCommand({ tabId }, "Network.enable", NETWORK_BUFFERS);
+}
+
+/**
  * Records the site's own requests while the agent works in the tab, so they can be learned as
  * an API after each step. Never replaces a recording that was asked for.
  */

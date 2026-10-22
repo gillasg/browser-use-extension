@@ -163,9 +163,9 @@ function __extendPageData(target, base) {
       } else if (changes.body !== undefined) request.body = changes.body;
       return inspect(__pageRequest, request);
     },
-    data: (options = {}) => base.inspect('(' + __readPageData.toString() + ')(' + __readMetadata.toString() + ', ' + JSON.stringify(options) + ')'),
+    data: (options = {}) => (__noteRead(target), base.inspect('(' + __readPageData.toString() + ')(' + __readMetadata.toString() + ', ' + JSON.stringify(options) + ')')),
     metadata: () => base.inspect('(' + __readMetadata.toString() + ')()'),
-    markdown: (options = {}) => inspect(__readMarkdown, options),
+    markdown: (options = {}) => (__noteRead(target), inspect(__readMarkdown, options)),
     status: async () => {
       var status = await base.inspect(() => performance.getEntriesByType('navigation')[0]?.responseStatus ?? null);
       return status === null || status === undefined || status === '' ? null : Number(status);

@@ -681,6 +681,7 @@ async function __finishCell() {
   }
   __dirty.clear();
   await __learnFromCell();
+  await __saveReads();
 }
 `;
 export const browserCapabilityApi = `
