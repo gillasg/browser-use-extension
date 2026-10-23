@@ -3,11 +3,12 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 
 export const chromePath = process.env.CHROME_PATH ?? "";
-export const extensionDir = resolve("build");
+export const extensionDir = fileURLToPath(new URL("../build/", import.meta.url));
 export const EXTENSION_ID = "kcfodpkdfapojnbhkgdlpkikipneejpf";
 export const canRun =
   Boolean(chromePath) && existsSync(chromePath) && existsSync(join(extensionDir, "manifest.json"));
