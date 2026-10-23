@@ -57,9 +57,11 @@ async function setupProvider(name: ProviderName): Promise<number> {
 
 function unlockBitwarden(): Promise<string | undefined> {
   return new Promise((resolve) => {
-    const child = spawn("bw", ["unlock", "--raw"], {
+    // One command string with no argument array: on Windows `bw` is a .cmd shim that needs a
+    // shell, and Node warns when a shell is given separate arguments.
+    const child = spawn("bw unlock --raw", [], {
       stdio: ["inherit", "pipe", "inherit"],
-      shell: process.platform === "win32",
+      shell: true,
     });
     let text = "";
     child.stdout.on("data", (chunk: Buffer) => (text += chunk.toString()));

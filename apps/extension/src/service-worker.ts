@@ -50,7 +50,7 @@ void chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 // Saved boosts (browser.boosts) apply in every tab.
 installBoosts();
 installNativeStartup(ensureConnection, () => scheduleExecutorReconnect(ensureConnection));
-// Status for the toolbar popup.
+// Status for the toolbar popup and the welcome page.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (sender.id !== chrome.runtime.id || message?.kind !== "bue.status") return;
   void ensureConnection().then(
@@ -58,6 +58,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     (error: unknown) => reply({ connected: false, error: String(error) }),
   );
   return true;
+});
+// The first install opens a page that says what this is and the one command that sets it up.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason !== "install") return;
+  void chrome.tabs.create({ url: chrome.runtime.getURL("welcome.html") }).catch(() => undefined);
 });
 
 function ensureConnection(): Promise<Connection> {

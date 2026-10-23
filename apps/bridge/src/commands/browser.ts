@@ -2,6 +2,7 @@ import { BridgeClient } from "../client.js";
 import { startBridge } from "../bridge-server.js";
 import { runDoctor } from "../doctor.js";
 import { formatResult } from "../format.js";
+import { installSkill } from "../install-skill.js";
 import { runMcpServer } from "../mcp.js";
 import { nextSteps, setup } from "../setup.js";
 import { flag, has, type Args } from "../args.js";
@@ -88,6 +89,8 @@ async function serve(): Promise<number> {
 async function register(args: Args): Promise<number> {
   await setup({ register: !has(args, "no-register") });
   process.stdout.write(nextSteps() + "\n");
+  const linked = await installSkill();
+  for (const path of linked) out(`Linked the browserkit skill at ${path}`);
   return 0;
 }
 
@@ -104,7 +107,9 @@ export const browserGroup: Command[] = [
     help: `Usage: browserkit setup [--no-register]
 
 Writes the native messaging host manifest and registers it for Chrome, Edge, Chromium and Brave.
-An older registration from before the rename is removed. --no-register only writes the files.`,
+An older registration from before the rename is removed. --no-register only writes the files.
+It also links the browserkit skill into ~/.agents/skills (and ~/.claude/skills) so coding agents
+on this machine find it.`,
     run: register,
   },
   {

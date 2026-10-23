@@ -13,6 +13,7 @@ await mkdir(output, { recursive: true });
 const entries = [
   [join(root, "src/service-worker.ts"), "service-worker.js"],
   [join(root, "src/popup.ts"), "popup.js"],
+  [join(root, "src/welcome.ts"), "welcome.js"],
   [join(engine, "src/code-offscreen.ts"), "code-offscreen.js"],
   [join(engine, "src/code-sandbox.ts"), "code-sandbox.js"],
 ];
@@ -36,6 +37,7 @@ await Promise.all(
 const copies = [
   [join(root, "manifest.json"), "manifest.json"],
   [join(root, "popup.html"), "popup.html"],
+  [join(root, "welcome.html"), "welcome.html"],
   [join(engine, "assets/code-offscreen.html"), "code-offscreen.html"],
   [join(engine, "assets/code-sandbox.html"), "code-sandbox.html"],
   ...[16, 32, 48, 128].map((size) => [join(root, `assets/icon-${size}.png`), `icon-${size}.png`]),
