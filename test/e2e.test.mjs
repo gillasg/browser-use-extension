@@ -471,6 +471,21 @@ test(
           const output = String(missing.stdout ?? "") + String(missing.stderr ?? "");
           assert.match(output, /nothing called text exists here/, output);
           assert.doesNotMatch(output, /WebGL/, output);
+          // A top-level name that is also a browser global keeps the agent's value in its cell.
+          const shadowed = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "lists",
+              "const [history, name] = await Promise.all([Promise.resolve([1, 2, 3]), 'kept']); ({count: history.length, name})",
+            ],
+            { env },
+          );
+          assert.match(shadowed.stdout, /"count": ?3/, shadowed.stdout);
+          assert.match(shadowed.stdout, /"name": ?"kept"/, shadowed.stdout);
+          assert.match(shadowed.stdout, /browser global names/, shadowed.stdout);
           // A cell that works but goes the long way gets one tip, once per session.
           const tipCode = "await page.evaluate(() => localStorage.length)";
           const tipped = await run(process.execPath, [cli, "repl", "--session", "lists", tipCode], {

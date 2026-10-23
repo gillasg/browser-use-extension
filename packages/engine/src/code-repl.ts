@@ -28,9 +28,31 @@ export function toReplScript(code: string): string {
   let body = code;
   for (const [start, end, replacement] of edits.sort((a, b) => b[0] - a[0]))
     body = body.slice(0, start) + replacement + body.slice(end);
-  const declarations = [...names].map((name) => `var ${name};`).join("");
+  // A built-in read-only global (history, location, name, status…) can't hold the agent's value:
+  // `history = x` would silently keep window.history. Such names stay local to this cell.
+  const fixed = [...names].filter(isReadOnlyGlobal);
+  const declarations = [...names]
+    .filter((name) => !fixed.includes(name))
+    .map((name) => `var ${name};`)
+    .join("");
+  const locals = fixed.length
+    ? `let ${fixed.join(", ")};console.log(${JSON.stringify(`Note: ${fixed.join(", ")} ${fixed.length === 1 ? "is a browser global name" : "are browser global names"}, so ${fixed.length === 1 ? "it stays" : "they stay"} in this cell only; pick another name to keep a value for later cells.`)});`
+    : "";
   const exports = functions.map((name) => `globalThis.${name} = ${name};`).join("");
-  return `${declarations}(async () => {${exports}${body}\n})()`;
+  return `${declarations}(async () => {${locals}${exports}${body}\n})()`;
+}
+
+/**
+ * True for globals an assignment can't simply replace: read-only values, and the browser's own
+ * getters and setters (window.history ignores it, window.name turns it into a string, and
+ * window.location navigates). Values from earlier cells are plain writable properties.
+ */
+function isReadOnlyGlobal(name: string): boolean {
+  for (let owner: object | null = globalThis; owner; owner = Object.getPrototypeOf(owner)) {
+    const descriptor = Object.getOwnPropertyDescriptor(owner, name);
+    if (descriptor) return "value" in descriptor ? descriptor.writable === false : true;
+  }
+  return false;
 }
 
 function rewrite(
