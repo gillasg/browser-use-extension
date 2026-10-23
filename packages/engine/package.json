@@ -13,7 +13,7 @@
     "acorn": "8.18.0",
     "zod": "4.6.5",
     "@browser-use-extension/protocol": "workspace:*",
-    "site-boosts": "link:../../../site-boosts"
+    "site-boosts": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "0.3.0"

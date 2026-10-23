@@ -21,9 +21,11 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
-    "format": "prettier --write \"src/**/*.{ts,html,css}\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" \"*.{json,yaml,mjs}\" \".github/**/*.yml\"",
-    "format:check": "prettier --check \"src/**/*.{ts,html,css}\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" \"*.{json,yaml,mjs}\" \".github/**/*.yml\"",
+    "format": "prettier --write \"src/**/*.{ts,html,css}\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" \"*.{json,yaml,mjs}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,html,css}\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" \"*.{json,yaml,mjs}\"",
     "test": "node --test --test-timeout=180000 test/*.test.mjs",
+    "test:unit": "pnpm build && node --test --test-timeout=180000 test/unit.test.mjs",
+    "test:e2e": "pnpm build && node --test --test-timeout=180000 test/e2e.test.mjs",
     "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm build && pnpm test",
     "pack": "node scripts/pack.mjs"
   },
