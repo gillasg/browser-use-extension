@@ -1,7 +1,14 @@
 import type { Command } from "../usage.js";
 import { boostsCommand } from "./boosts.js";
 import { browserGroup } from "./browser.js";
-import { crawlCommand, findCommand, scrapeCommand, searchCommand, urlMapCommand } from "./crawl.js";
+import {
+  crawlCommand,
+  findCommand,
+  scrapeCommand,
+  searchCommand,
+  syncCommand,
+  urlMapCommand,
+} from "./crawl.js";
 import { mapGroup } from "./site-map.js";
 import { keepGroup } from "./site-keep.js";
 import { useGroup } from "./site-use.js";
@@ -14,6 +21,7 @@ export const COMMANDS: Command[] = [
   urlMapCommand,
   searchCommand,
   findCommand,
+  syncCommand,
   ...mapGroup,
   ...useGroup,
   ...keepGroup,

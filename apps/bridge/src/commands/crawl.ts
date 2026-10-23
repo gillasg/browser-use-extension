@@ -5,6 +5,7 @@ import {
   mapSite,
   scrape,
   search,
+  syncSite,
   writeOutput,
   type Format,
 } from "@browserkit/tools/browser-crawl";
@@ -43,6 +44,7 @@ function crawlOptions(args: Args): Parameters<typeof crawl>[0] {
   const include = list(args, "include");
   const exclude = list(args, "exclude");
   const query = flag(args, "query");
+  const api = flag(args, "api");
   return {
     url: wholeSite,
     limit: Number(flag(args, "limit") ?? 25),
@@ -52,6 +54,7 @@ function crawlOptions(args: Args): Parameters<typeof crawl>[0] {
     ...(include.length ? { include } : {}),
     ...(exclude.length ? { exclude } : {}),
     ...(query ? { query, strategy: "best" as const } : {}),
+    ...(api ? { api: { site: api.split(":")[0] ?? "", operation: api.split(":")[1] ?? "" } } : {}),
   };
 }
 
@@ -123,6 +126,34 @@ async function runCrawl(args: Args): Promise<number> {
   return 0;
 }
 
+async function runSync(args: Args): Promise<number> {
+  const [url, dir] = args.positional;
+  if (!url || !dir) throw new Error("Usage: browserkit sync <url> <folder> [--limit n]");
+  const report = await syncSite({
+    url,
+    dir: resolve(dir),
+    limit: Number(flag(args, "limit") ?? 500),
+    render: render(args),
+  });
+  if (has(args, "json")) printJson(report);
+  else
+    out(
+      `${report.added.length} added, ${report.changed.length} changed, ${report.unchanged.length} unchanged, ${report.removed.length} removed, ${report.failed.length} failed`,
+    );
+  return 0;
+}
+
+export const syncCommand: Command = {
+  name: "sync",
+  group: "Read the web",
+  summary: "keep a Markdown mirror of a site: adds, changes and removals only",
+  help: `Usage: browserkit sync <url> <folder> [--limit n] [--render mode] [--json]
+
+Writes each page as Markdown under the folder and remembers what it wrote, so the next run only
+touches what changed.`,
+  run: runSync,
+};
+
 export const crawlCommand: Command = {
   name: "crawl",
   group: "Read the web",
@@ -141,6 +172,7 @@ export const crawlCommand: Command = {
   --render <mode>        auto (default), static, browser
   --query <text>         rank pages and keep the relevant parts
   --site                 start from the site's root instead of this page
+  --api <site>:<op>      read a mapped site's operation instead of pages
   --out <dir>            write every page there
   --json                 the whole answer as JSON
 

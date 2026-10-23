@@ -130,6 +130,8 @@ test("help lists every command, and each command has its own help", async () => 
       "repl",
       "mcp",
       "crawl",
+      "scrape",
+      "sync",
       "map",
       "build",
       "ops",

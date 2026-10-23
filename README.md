@@ -80,12 +80,15 @@ browserkit tabs
 browserkit status
 browserkit crawl https://docs.example.com --limit 100 --out docs/
 browserkit scrape https://example.com/pricing --formats markdown,tables
+browserkit sync https://wiki.example mirror/         # only what changed, next time
+browserkit search "chrome devtools protocol"
 browserkit map https://shop.example               # use the site once; its API is built from it
 browserkit ops shop.example
 browserkit call shop.example searchProducts '{"q":"headphones"}'
 browserkit watch shop.example listOrders --key id
 browserkit federate shop.example:searchProducts other.example:search
 browserkit heal shop.example
+browserkit rest                                   # local REST API over every mapped site
 browserkit boosts list
 ```
 
