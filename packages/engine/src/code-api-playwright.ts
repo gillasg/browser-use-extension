@@ -343,6 +343,8 @@ function __extendPage(target, base) {
     waitForTimeout: (ms) => new Promise((done) => setTimeout(done, Math.min(ms, 30000))),
     // Extraction: a table as rows keyed by its header cells, and links with their text.
     table: (selector = 'table', options = {}) => (__noteRead(target), base.inspect('(' + __readTable.toString() + ')(' + JSON.stringify(selector) + ', ' + JSON.stringify(options) + ')')),
+    // Every row of a list, scrolling lists that only draw what is on screen (code-api-list.ts).
+    list: (selector, options) => (__noteRead(target), __collectList(base, selector, options)),
     links: (selector = 'body') => base.inspect('(' + __readLinks.toString() + ')(' + JSON.stringify(selector) + ')'),
     keyboard,
     mouse: Object.freeze({

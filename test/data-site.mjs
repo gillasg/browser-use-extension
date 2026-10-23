@@ -20,8 +20,34 @@ fetch("/api/search?q=phone", { method: "POST", headers: { "content-type": "appli
 </script>
 </body></html>`;
 
+// A virtualized list, as job boards and feeds draw them: 150 rows, only the visible ones in the DOM.
+const VIRTUAL = `<!doctype html><html><head><title>Virtual</title></head><body>
+<div id="scroller" style="height:300px;overflow-y:auto"><div id="inner" style="position:relative"></div></div>
+<script>
+const ROW = 40, COUNT = 150, scroller = document.getElementById("scroller"), inner = document.getElementById("inner");
+inner.style.height = ROW * COUNT + "px";
+function draw() {
+  const first = Math.floor(scroller.scrollTop / ROW), last = Math.min(COUNT, first + 10);
+  inner.innerHTML = "";
+  for (let i = first; i < last; i++) {
+    const row = document.createElement("div");
+    row.setAttribute("data-index", String(i));
+    row.style.cssText = "position:absolute;top:" + i * ROW + "px;height:" + ROW + "px";
+    row.textContent = "Job " + i + (i === 120 ? " Yet to apply" : " Applications closed");
+    inner.append(row);
+  }
+}
+scroller.addEventListener("scroll", draw);
+draw();
+</script></body></html>`;
+
 export function dataRoutes(request, response) {
   const url = new URL(request.url ?? "/", "http://localhost");
+  if (url.pathname === "/virtual") {
+    response.setHeader("content-type", "text/html");
+    response.end(VIRTUAL);
+    return true;
+  }
   if (url.pathname === "/deals") {
     response.setHeader("content-type", "text/html");
     response.end(ARTICLE);

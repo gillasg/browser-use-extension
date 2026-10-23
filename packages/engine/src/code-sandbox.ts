@@ -9,6 +9,7 @@ import {
 } from "./code-api.js";
 import { browserPlaywrightApi } from "./code-api-playwright.js";
 import { browserDataApi } from "./code-api-data.js";
+import { browserListApi } from "./code-api-list.js";
 import { browserEventsApi } from "./code-api-events.js";
 import { browserDemonstrationApi } from "./code-api-demonstration.js";
 import { browserRecordingApi } from "./code-api-recording.js";
@@ -88,6 +89,7 @@ evaluate(
     browserDocumentApi,
     browserPlaywrightApi,
     browserDataApi,
+    browserListApi,
     browserEventsApi,
     browserRecordingApi,
     browserDemonstrationApi,

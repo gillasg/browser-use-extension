@@ -428,6 +428,53 @@ test(
       );
 
       await t.test(
+        "page.list reads every row of a virtualized list; tabs print compactly; unknown names get a useful hint",
+        async () => {
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "lists",
+              `page = await browser.openTab(${JSON.stringify(siteUrl + "virtual")});
+            await page.evaluate(() => { document.getElementById("scroller").scrollTop = 3000; });
+            const all = await page.list();
+            const open = all.items.filter((item) => /Yet to apply/.test(item.text)).map((item) => item.text);
+            const scrolled = await page.evaluate(() => document.getElementById("scroller").scrollTop);
+            const [tab] = await browser.tabs(${JSON.stringify(siteUrl + "virtual")});
+            console.log("LIST " + JSON.stringify({count: all.count, complete: all.complete, first: all.items[0].text, open, scrolled}));
+            console.log("TAB " + JSON.stringify({keys: Object.keys(JSON.parse(JSON.stringify(tab))), hasTarget: Boolean(tab.target && tab.tabId)}));`,
+            ],
+            { env },
+          );
+          assert.deepEqual(
+            JSON.parse(/LIST (.*)/.exec(stdout)[1]),
+            {
+              count: 150,
+              complete: true,
+              first: "Job 0 Applications closed",
+              open: ["Job 120 Yet to apply"],
+              scrolled: 3000,
+            },
+            stdout,
+          );
+          assert.deepEqual(JSON.parse(/TAB (.*)/.exec(stdout)[1]), {
+            keys: ["id", "title", "url", "active"],
+            hasTarget: true,
+          });
+          const missing = await run(
+            process.execPath,
+            [cli, "repl", "--session", "lists", "text(JSON.stringify(1))"],
+            { env },
+          ).catch((error) => error);
+          const output = String(missing.stdout ?? "") + String(missing.stderr ?? "");
+          assert.match(output, /nothing called text exists here/, output);
+          assert.doesNotMatch(output, /WebGL/, output);
+        },
+      );
+
+      await t.test(
         "Playwright-style calls, extraction, one group for parallel tabs, Google parsing",
         async () => {
           const catalog = siteUrl + "catalog";

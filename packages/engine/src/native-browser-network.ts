@@ -7,6 +7,7 @@ import { toHar, summarize, type NetworkEntry } from "./native-browser-network-fo
 import { dryRunActive, setDryRun } from "./native-browser-dry-run.js";
 import { onEngineInstall } from "./native-engine-install.js";
 import { isTrackerUrl, takeLearned } from "./native-browser-network-learn.js";
+import { rememberSessionHeaders, sessionHeadersFor } from "./native-browser-session-headers.js";
 
 // Network recording for learning a site's own APIs. While a tab records, its API traffic is
 // kept with full headers (cookies included), the script that made each call, request and
@@ -145,6 +146,7 @@ function requestWillBeSent(recorder: Recorder, params: Params): void {
   if (typeof request.postData === "string") entry.requestBody = request.postData;
   else if (request.hasPostData) entry.requestBodyPending = true;
   add(recorder, entry);
+  rememberSessionHeaders(entry.url, entry.requestHeaders);
   const early = recorder.early.get(id);
   if (early) {
     recorder.early.delete(id);
@@ -235,6 +237,7 @@ function mergeHeaders(
     return;
   }
   entry[field] = { ...entry[field], ...headers(params.headers) };
+  if (field === "requestHeaders") rememberSessionHeaders(entry.url, entry.requestHeaders);
 }
 
 function frame(recorder: Recorder, params: Params, direction: "sent" | "received"): void {
@@ -305,6 +308,8 @@ export async function networkCall(
 ): Promise<unknown> {
   if (action === "start") return start(tabId, options);
   if (action === "learn-start") return learnStart(tabId);
+  // For site API calls made from the site's page (site-to-api's page transport) only.
+  if (action === "session-headers") return sessionHeadersFor(String(options.url ?? ""));
   if (action === "take") {
     const recorder = recorders.get(tabId) ?? stopped.get(tabId);
     return recorder ? takeLearned(recorder) : { log: { version: "1.2", entries: [] } };

@@ -92,7 +92,7 @@ var browser = Object.freeze({
   // Listed tabs work as pages too (agents call tab.locator(...) or use tab.id); acting on one
   // the session did not open still needs browser.attachTab(tab) first.
   tabs: Object.assign(async (query) => (await __step({op:'listTabs', ...(query ? {query} : {})})).tabs
-      .map(tab => __listedTab({tabId: tab.target.tabId, id: tab.target.tabId, url: tab.url, title: tab.title, active: tab.active, ...tab})),
+      .map(tab => __listedTab(__compactTab(tab))),
     {list: async (query) => browser.tabs(query)}),
   // The tab the user is looking at: the active tab of the focused window, as a page. Asking for
   // it is the agent choosing it, so it comes back attached and ready to use (and becomes page).
@@ -438,6 +438,14 @@ export const browserFastApi = `
 var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __busy = new Set(), __lastTarget;
 var __key = target => JSON.stringify(target);
 // A bare tab id from browser.tabs() or a step line stands for that tab's full target.
+// Printed tabs show what an agent reads (id, title, url, active); the rest stays usable but
+// leaves printouts and JSON, so listing many tabs costs little context.
+function __compactTab(tab) {
+  var entry = {id: tab.target.tabId, title: tab.title, url: tab.url, active: tab.active};
+  for (var [key, value] of Object.entries({...tab, tabId: tab.target.tabId}))
+    if (!(key in entry)) Object.defineProperty(entry, key, {value, enumerable: false});
+  return entry;
+}
 function __listedTab(entry) {
   var page;
   // Built on first use without changing the current page (browser.page sets __lastTarget).
