@@ -56,7 +56,7 @@ function toolName(id: string): string {
 function siteTools(model: SiteModel, saved: Record<string, SiteAction> = {}): Json[] {
   const ops = model.operations.map((op) => ({
     name: toolName(op.id),
-    description: `${op.summary ?? op.description ?? op.id}: ${op.method} ${op.path} on ${model.site} (${op.role}, ${op.bucket} confidence).`,
+    description: `${op.summary ?? op.description ?? op.id}: ${op.method} ${op.path} on ${model.site} (${op.role}, ${op.bucket} confidence${op.capabilities?.length ? `, ${op.capabilities.join("/")}` : ""}).`,
     inputSchema: inputSchema(op),
     annotations: { readOnlyHint: op.role === "read", destructiveHint: op.method === "DELETE" },
   }));

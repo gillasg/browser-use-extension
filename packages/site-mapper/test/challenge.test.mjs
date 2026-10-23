@@ -38,3 +38,18 @@ test("a normal answer is never a wall", () => {
   assert.equal(detectChallenge(answer(500, {}, "Internal Server Error")), undefined);
   assert.equal(detectChallenge(answer(404, {}, "Not Found")), undefined);
 });
+
+test("a wall thrown from a call is its own kind, not a broken API", async () => {
+  const { Challenged, errorKind } = await import("../dist/index.js");
+  const error = new Challenged(
+    "getStreams",
+    { status: 403, headers: {} },
+    {
+      vendor: "cloudflare",
+      evidence: "cf-mitigated: challenge",
+    },
+  );
+  assert.equal(errorKind(error), "challenged");
+  assert.match(error.message, /cloudflare bot wall/);
+  assert.match(error.message, /nothing to repair/);
+});

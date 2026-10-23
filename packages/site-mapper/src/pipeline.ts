@@ -4,12 +4,20 @@ import { filterExchanges, filterOptions, learnNoise, originMatches } from "./fil
 import { inferSecurity } from "./infer/auth.js";
 import { hoistComponents } from "./infer/components.js";
 import { scoreOperation } from "./infer/confidence.js";
-import { buildOperation, finalizeNames, groupExchanges, type Grouped } from "./infer/operations.js";
+import {
+  buildOperation,
+  finalizeNames,
+  groupExchanges,
+  type Grouped,
+  type Member,
+} from "./infer/operations.js";
 import { buildChannels, buildPages } from "./infer/pages.js";
 import { detectPagination } from "./infer/pagination.js";
 import { detectSigning, markSignedParams } from "./infer/signing.js";
 import { traceDependencies, type StorageSnapshot } from "./infer/trace.js";
-import type { Exchange, Overrides, SiteModel } from "./types.js";
+import { detectCapabilities } from "./infer/capabilities.js";
+import { volatileFields } from "./infer/volatile.js";
+import type { Exchange, Operation, Overrides, SiteModel } from "./types.js";
 
 // The build pipeline: filter → normalize → infer → trace. Each stage can be the last one run,
 // and each writes its intermediate result when a work folder is given.
@@ -76,6 +84,17 @@ function normalizedSummary(grouped: Grouped): unknown {
     documents: grouped.documents.map((doc) => doc.origin + doc.template),
     channels: grouped.channels.map((channel) => channel.url),
   };
+}
+
+/** Signals, roles and lifetime: everything an operation knows about itself beyond its shape. */
+function annotate(operation: Operation, members: Member[], overrides: Overrides): void {
+  const signing = detectSigning(operation, members);
+  if (signing) operation.signing = signing;
+  markSignedParams(operation);
+  const capabilities = overrides.capabilities?.[operation.id] ?? detectCapabilities(operation);
+  if (capabilities.length) operation.capabilities = capabilities;
+  const volatile = volatileFields(operation.samples);
+  if (volatile.length) operation.volatile = volatile.map((field) => field.pointer);
 }
 
 export async function buildSiteModel(
@@ -155,9 +174,7 @@ export async function buildSiteModel(
   for (const { operation, members } of live) {
     const pagination = detectPagination(operation, members);
     if (pagination) operation.pagination = pagination;
-    const signing = detectSigning(operation, members);
-    if (signing) operation.signing = signing;
-    markSignedParams(operation);
+    annotate(operation, members, overrides);
     const description = overrides.descriptions?.[operation.id];
     if (description) operation.description = description;
     scoreOperation(operation);

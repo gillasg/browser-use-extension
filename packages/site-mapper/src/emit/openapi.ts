@@ -112,6 +112,8 @@ function extensions(operation: Operation, redactor: Redactor): Doc {
   if (operation.pagination) doc["x-pagination"] = operation.pagination;
   if (operation.dependencies.length) doc["x-dependencies"] = operation.dependencies;
   if (operation.signing) doc["x-signing"] = operation.signing;
+  if (operation.capabilities?.length) doc["x-capabilities"] = operation.capabilities;
+  if (operation.volatile?.length) doc["x-volatile"] = operation.volatile;
   if (operation.pageUrls.length)
     doc["x-pages"] = operation.pageUrls.map((url) => redactor.text(url));
   return doc;

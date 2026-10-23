@@ -356,7 +356,9 @@ async function listOperations(site: string): Promise<void> {
   const model = await mappedModel(site);
   for (const op of model.operations) {
     const inputs = inputParams(op).map((p) => p.name);
-    out(`${op.id}\t${op.method} ${op.path}\t${inputs.join(", ")}`);
+    const caps = op.capabilities?.length ? `\t[${op.capabilities.join(", ")}]` : "";
+    const lives = op.volatile?.length ? `\tvolatile: ${op.volatile.join(", ")}` : "";
+    out(`${op.id}\t${op.method} ${op.path}\t${inputs.join(", ")}${caps}${lives}`);
   }
   for (const page of model.pages) out(`${page.id}\tPAGE ${page.path}`);
 }
@@ -419,6 +421,7 @@ const EXIT_CODES = {
   failed: 1,
   "missing-input": 2,
   "signed-out": 3,
+  challenged: 6,
   "browser-offline": 4,
   broken: 5,
 };

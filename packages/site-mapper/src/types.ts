@@ -54,6 +54,12 @@ export interface Exchange {
 
 export type Category = "api" | "document" | "channel" | "auth";
 
+/**
+ * What an operation is *for*, in words an app understands, so it can find "a search" on a site it
+ * has never seen instead of hardcoding one site's operation ids.
+ */
+export type Capability = "search" | "list" | "detail" | "price" | "availability";
+
 export interface Param {
   name: string;
   in: "path" | "query" | "header" | "cookie";
@@ -145,6 +151,13 @@ export interface Operation {
   pagination?: Pagination;
   dependencies: Dependency[];
   signing?: Signing;
+  /** What an app can use this operation for (search, list, detail, price, availability). */
+  capabilities?: Capability[];
+  /**
+   * Response pointers whose values are minted for one call and expire: stream tickets, signed
+   * URLs, upload tokens. A caller must ask again rather than reuse what it stored.
+   */
+  volatile?: string[];
   confidence: number;
   bucket: "high" | "medium" | "low";
   flags: string[];
@@ -239,6 +252,8 @@ export interface Overrides {
   templates?: string[];
   /** Rename operations: generated id → new id. */
   names?: Record<string, string>;
+  /** Say what an operation is for, when the guess is wrong: search, list, detail, price, availability. */
+  capabilities?: Record<string, Capability[]>;
   descriptions?: Record<string, string>;
   /** URL regexes to drop as noise. */
   noise?: string[];

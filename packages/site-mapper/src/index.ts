@@ -18,6 +18,8 @@ export {
 export { filterExchanges, learnNoise, type FilterOptions } from "./filter.js";
 export { inferSchema } from "./infer/schema.js";
 export { templatePaths } from "./infer/templates.js";
+export { detectCapabilities, capabilityIndex } from "./infer/capabilities.js";
+export { volatileFields, type VolatileField, type VolatileReason } from "./infer/volatile.js";
 export { extractEmbedded } from "./infer/html.js";
 export { toOpenApi, toAsyncApi } from "./emit/openapi.js";
 export { toYaml } from "./emit/yaml.js";

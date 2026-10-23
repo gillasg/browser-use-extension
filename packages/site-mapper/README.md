@@ -13,6 +13,11 @@ Browser Use Extension now: capabilities are ported into it on purpose, and chang
 - `dist/cli.js` is the `site-to-api` command line (`record`, `build`, `call`, `watch`, `serve`,
   `mcp`, `export`, `heal`, ...).
 
+Every read operation also says what an app can use it for (`search`, `list`, `detail`, `price`,
+`availability`) and marks response values that are minted per call and expire (a stream ticket, a
+signed URL). A refused bot wall is a `Challenged` error with the vendor, not a broken API;
+`sessionStatus(site)` says whether an exported session exists and is still fresh.
+
 The optional AI features (`describe`, `explore`, `edit`, `name`) take a model from the caller:
 pass a `ModelLike` (`{ complete(context) }`) in their options. Nothing in this package signs in
 to a model, and calling those features without one fails with a clear error.

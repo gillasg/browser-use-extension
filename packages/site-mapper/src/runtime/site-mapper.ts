@@ -1,4 +1,5 @@
 import { originMatches } from "../filter.js";
+import { detectChallenge, type Challenge } from "../challenge.js";
 import { extractEmbedded, metaTags } from "../infer/html.js";
 import { getPointer } from "../infer/schema.js";
 import { loadModel, readOverrides, readSession, siteName } from "../registry.js";
@@ -74,6 +75,19 @@ export class SignedOut extends HttpError {
   }
 }
 
+/** The site refused the call with a bot wall (Cloudflare, DataDome, PerimeterX, Akamai). */
+export class Challenged extends HttpError {
+  constructor(
+    operationId: string,
+    response: RuntimeResponse,
+    public readonly wall: Challenge,
+  ) {
+    super(operationId, response);
+    this.name = "Challenged";
+    this.message = `A ${wall.vendor} bot wall answered ${operationId} (${wall.evidence}). There is nothing to repair: open the site in a tab, clear the check like a person would, then call again. Re-recording only teaches the wall.`;
+  }
+}
+
 /** A write reached the API runtime. Writes go through the site's page UI, never through SiteMapper. */
 export class WriteThroughApi extends Error {
   constructor(operationId: string) {
@@ -82,12 +96,14 @@ export class WriteThroughApi extends Error {
   }
 }
 
-export type ErrorKind = "signed-out" | "missing-input" | "browser-offline" | "broken" | "failed";
+export type ErrorKind =
+  "signed-out" | "challenged" | "missing-input" | "browser-offline" | "broken" | "failed";
 
 /** What kind of failure an error is, so callers know what to do next. */
 export function errorKind(error: unknown): ErrorKind {
   const cause = (error as { cause?: unknown } | undefined)?.cause;
   if (cause instanceof Error) return errorKind(cause);
+  if (error instanceof Challenged) return "challenged";
   if (error instanceof SignedOut) return "signed-out";
   if (error instanceof MissingParams) return "missing-input";
   if (error instanceof BrowserNotConnected) return "browser-offline";
@@ -409,6 +425,8 @@ export class SiteClient {
   /** The operation's data; throws HttpError on 4xx/5xx. */
   async call(id: string, params: Params = {}): Promise<unknown> {
     const response = await this.request(id, params);
+    const wall = detectChallenge(response);
+    if (wall) throw new Challenged(id, response, wall);
     if (response.status === 401 || response.status === 403) throw new SignedOut(id, response);
     if (response.status >= 400 || response.status === 0) throw new HttpError(id, response);
     return response.json ?? response.text;

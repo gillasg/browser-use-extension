@@ -11,6 +11,7 @@ export {
   SiteClient,
   HttpError,
   SignedOut,
+  Challenged,
   errorKind,
   type ErrorKind,
   type SiteMapper,
@@ -34,6 +35,7 @@ export {
   type FederatedItem,
 } from "./federate.js";
 export { exportSession } from "./session-export.js";
+export { sessionStatus, type SessionStatus } from "./session-status.js";
 export {
   type Bridge,
   BridgeClient,
