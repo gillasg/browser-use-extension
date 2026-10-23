@@ -10,7 +10,7 @@ import WebSocket from "ws";
 
 const run = promisify(execFile);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-const bue = resolve(process.env.BUE_DIR ?? "../browser-use-extension");
+const bue = resolve(process.env.BUE_DIR ?? "../..");
 const extension = join(bue, "apps/extension/build");
 const bueCli = join(bue, "apps/bridge/dist/cli.js");
 const chromePath = process.env.CHROME_PATH ?? "";

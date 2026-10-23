@@ -22,7 +22,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "browser-crawl": "link:../../../browser-crawl",
+    "browser-crawl": "workspace:*",
     "@browser-use-extension/site-mapper": "workspace:*"
   },
   "files": [

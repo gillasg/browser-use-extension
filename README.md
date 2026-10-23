@@ -23,7 +23,6 @@ Most browser-automation tools start a separate, empty browser. This one runs ins
 Requires Node.js 22+ and Chrome, Edge or Brave.
 
 ```sh
-node scripts/link-repos.mjs   # fetches and builds browser-crawl next to this folder
 pnpm install
 pnpm build
 node apps/bridge/dist/cli.js setup
@@ -96,14 +95,16 @@ agent ──MCP/CLI──▶ bridge (local, 127.0.0.1) ◀──WebSocket── 
 - `packages/protocol`: the messages the engine speaks.
 - `packages/tools`: the `crawl` and `site_mapper` tools built on the packages below.
 - `packages/site-mapper`: the site mapping and calling library (the site-to-api engine, maintained here).
+- `packages/crawl`: the crawler, as its own package: plain HTTP first, a browser when a page needs one. It installs and runs on its own, without the extension.
 
-browser-crawl is its own project, linked from a sibling folder (`link:../browser-crawl`) instead of being copied, so a change there is used here on the next build. `node scripts/link-repos.mjs --revisions` prints the revision of each linked repo.
+`node scripts/link-repos.mjs --revisions` prints the revision of each linked repo.
 
 ## Development
 
 ```sh
-node scripts/link-repos.mjs   # once, and after pulling browser-crawl
 pnpm check                    # format, types, and an end-to-end test in real Chrome (set CHROME_PATH)
 pnpm test:boosts              # Site Boosts unit tests
+pnpm test:site-mapper         # site API unit tests
+pnpm test:crawl               # crawler tests (real Chrome too when CHROME_PATH is set)
 CHROME_PATH=... pnpm test:boosts:e2e   # Site Boosts in headless Chrome for Testing
 ```
