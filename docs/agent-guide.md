@@ -265,7 +265,7 @@ Saving with an existing `id` replaces that boost. Scripts (`js`) need **Allow Us
 
 ## Mapped site APIs in code
 
-Sites mapped with `site_mapper` (site-to-api) can be called from browser code too:
+Sites mapped with `site_mapper` (the site API in `packages/site-mapper`) can be called from browser code too:
 
 ```js
 await siteMapper.sites();
@@ -320,9 +320,10 @@ Recipes:
   web (messages.google.com/web) once it is paired with the phone.
 - Phone and desktop apps: route them through mitmproxy (on Android, `adb` sets the proxy and
   installs its certificate) and `learn` from the saved flow files.
-- An MCP server or SDK for a site: map it (`explore` with `actions: true`, or capture and
-  `learn`), check `operations` and `docs`, save multi-step actions, `heal` what breaks, then
-  `export` (OpenAPI and a typed client) or serve it with `npx site-to-api mcp <site>`.
+- An MCP server or SDK for a site: map it (`browserkit map <url>` or `browserkit map --explore <site>`
+  with `--actions`), check `browserkit ops <site>` and `browserkit docs <site>`, save multi-step
+  actions, `browserkit heal <site>`, then `browserkit export <site>` (OpenAPI and a typed client)
+  or `browserkit mcp`.
 - Whole videos: `yt-dlp` in a shell.
 
 ## Other extensions

@@ -74,11 +74,24 @@ Agents without MCP can use the CLI below; `repl` takes the same code.
 ## CLI
 
 ```sh
+browserkit setup                                  # native host, then load apps/extension/build
 browserkit repl "page = await browser.openTab('https://example.com'); await bu.state()"
-browserkit repl --session research "page.url"
 browserkit tabs
 browserkit status
+browserkit crawl https://docs.example.com --limit 100 --out docs/
+browserkit scrape https://example.com/pricing --formats markdown,tables
+browserkit map https://shop.example               # use the site once; its API is built from it
+browserkit ops shop.example
+browserkit call shop.example searchProducts '{"q":"headphones"}'
+browserkit watch shop.example listOrders --key id
+browserkit federate shop.example:searchProducts other.example:search
+browserkit heal shop.example
+browserkit boosts list
 ```
+
+Every command prints what it needs with `--help`, and takes `--json` where the answer is data.
+Run `browserkit mcp` for the MCP server and `browserkit rest` for a local REST API over every
+mapped site.
 
 Agents bring their own model: this extension does not sign in to model providers and does not provide a model to other extensions. A companion asking for one is told that none is available.
 

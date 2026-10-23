@@ -562,7 +562,7 @@ export async function siteMapper(
   const model = options.model ?? (await loadModel(site));
   if (!model)
     throw new Error(
-      `${siteName(site)} is not mapped yet. Record it first: npx site-to-api record https://${siteName(site)}`,
+      `${siteName(site)} is not mapped yet. Record it first: browserkit map https://${siteName(site)}`,
     );
   const overrides = options.model ? {} : await readOverrides(site);
   const session = await initialSession(model, options);

@@ -1,22 +1,23 @@
 #!/usr/bin/env node
-import { BridgeClient } from "./client.js";
-import { startBridge } from "./bridge-server.js";
-import { runDoctor } from "./doctor.js";
-import { formatResult } from "./format.js";
-import { runMcpServer } from "./mcp.js";
+import { closeSharedBridge as closeCrawlBridge } from "@browserkit/tools/browser-crawl";
+import { closeSharedBridge, errorKind } from "@browserkit/tools/site-to-api";
+import { has, parseArgs } from "./args.js";
+import { COMMANDS } from "./commands/index.js";
 import { runNativeHost } from "./native-host.js";
-import { nextSteps, setup } from "./setup.js";
+import { printError, out } from "./output.js";
+import { commandHelp, usageText } from "./usage.js";
 
-const usage = `browserkit: let agents use your real Chrome.
+/** Exit codes callers can act on: 2 needs input, 3 signed out, 4 no browser, 5 the API failed. */
+const EXIT_CODES: Record<string, number> = {
+  failed: 1,
+  "missing-input": 2,
+  "signed-out": 3,
+  "browser-offline": 4,
+  broken: 5,
+  challenged: 6,
+};
 
-  setup                 register the native host and print how to connect agents
-  repl "<code>"         run a browser_code cell  [--session name] [--timeout ms]
-  tabs                  list the browser's open tabs
-  status                show whether a browser is connected
-  doctor                check the install, bridge and browser connection
-  journal <session>     show the last execute entries for a session
-  mcp                   run the stdio MCP server for coding agents and MCP clients
-  serve                 run the bridge in the foreground`;
+const HELP = new Set(["help", "--help", "-h"]);
 
 async function main(argv: string[]): Promise<number> {
   // Chrome launches the native host with the calling extension's origin as the first argument.
@@ -24,84 +25,36 @@ async function main(argv: string[]): Promise<number> {
     await runNativeHost();
     return 0;
   }
-  const [command, ...rest] = argv;
-  if (command === "serve") {
-    const { state } = await startBridge();
-    process.stderr.write(`Bridge listening on 127.0.0.1:${state.port}\n`);
-    await new Promise(() => undefined);
+  if (HELP.has(argv[0] ?? "")) return printHelp(argv.slice(1));
+  const args = parseArgs(argv);
+  const [name, ...rest] = args.positional;
+  const command = COMMANDS.find((item) => item.name === name);
+  if (!command) {
+    out(usageText(COMMANDS));
+    return name ? 1 : 0;
   }
-  if (command === "mcp") {
-    await runMcpServer();
+  if (has(args, "help")) {
+    out(commandHelp(command));
     return 0;
   }
-  if (command === "setup") {
-    await setup({ register: !rest.includes("--no-register") });
-    process.stdout.write(nextSteps() + "\n");
-    return 0;
-  }
-  if (command === "doctor") return runDoctor();
-  if (command === "repl" || command === "tabs" || command === "status" || command === "journal")
-    return client(command, rest);
-  process.stdout.write(usage + "\n");
-  return command ? 1 : 0;
+  return command.run({ ...args, positional: rest });
 }
 
-async function client(command: string, rest: string[]): Promise<number> {
-  const bridge = await BridgeClient.connect();
-  try {
-    if (command === "status") {
-      const reply = await bridge.request("status");
-      process.stdout.write(`Bridge running; ${String(reply.browsers)} browser(s) connected.\n`);
-      return 0;
-    }
-    if (command === "tabs") {
-      const reply = await bridge.request("tabs");
-      for (const tab of (reply.tabs as Record<string, unknown>[] | undefined) ?? [])
-        process.stdout.write(
-          `${String((tab.target as { tabId?: number })?.tabId)}\t${String(tab.title ?? "")}\t${String(tab.url ?? "")}\n`,
-        );
-      return 0;
-    }
-    if (command === "journal") {
-      const session = rest.filter((_, index) => !isOption(rest, index))[0] ?? "cli";
-      const limit = Number(option(rest, "--limit") ?? 50);
-      const reply = await bridge.request("journal", { session, limit });
-      const entries = (reply.entries as Record<string, unknown>[] | undefined) ?? [];
-      if (!entries.length) process.stdout.write("No journal entries.\n");
-      for (const entry of entries)
-        process.stdout.write(
-          `${String(entry.ts ?? "")} ${entry.isError ? "ERR" : "ok "} ${String(entry.durationMs ?? 0)}ms ${String(entry.resultPreview ?? "").slice(0, 120)}\n`,
-        );
-      return 0;
-    }
-    const code = rest.filter((_, index) => !isOption(rest, index)).join(" ");
-    if (!code) throw new Error('Usage: browserkit repl "<code>"');
-    const result = await bridge.request("run", {
-      code,
-      session: option(rest, "--session") ?? "cli",
-      ...(option(rest, "--timeout") ? { timeoutMs: Number(option(rest, "--timeout")) } : {}),
-    });
-    process.stdout.write(formatResult(result).text + "\n");
-    return result.error ? 1 : 0;
-  } finally {
-    bridge.close();
-  }
-}
-
-function option(args: string[], name: string): string | undefined {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
-}
-
-function isOption(args: string[], index: number): boolean {
-  const value = args[index] ?? "";
-  return value.startsWith("--") || (index > 0 && (args[index - 1] ?? "").startsWith("--"));
+function printHelp(rest: string[]): number {
+  const name = rest[0];
+  const command = name ? COMMANDS.find((item) => item.name === name) : undefined;
+  out(command ? commandHelp(command) : usageText(COMMANDS));
+  return command || !name ? 0 : 1;
 }
 
 main(process.argv.slice(2)).then(
-  (code) => process.exit(code),
-  (error: unknown) => {
-    process.stderr.write((error instanceof Error ? error.message : String(error)) + "\n");
-    process.exit(1);
+  async (code) => {
+    await Promise.all([closeSharedBridge(), closeCrawlBridge()]);
+    process.exit(code);
+  },
+  async (error: unknown) => {
+    printError(error);
+    await Promise.all([closeSharedBridge(), closeCrawlBridge()]);
+    process.exit(EXIT_CODES[errorKind(error)] ?? 1);
   },
 );

@@ -16,6 +16,7 @@ export {
   encodeTnetstring,
 } from "./load/index.js";
 export { filterExchanges, learnNoise, type FilterOptions } from "./filter.js";
+export { inputParams, documentedParams, isDerived } from "./params.js";
 export { inferSchema } from "./infer/schema.js";
 export { templatePaths } from "./infer/templates.js";
 export { detectCapabilities, capabilityIndex } from "./infer/capabilities.js";

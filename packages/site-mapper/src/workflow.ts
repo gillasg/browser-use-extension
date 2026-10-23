@@ -59,9 +59,7 @@ export async function rebuild(site: string, options: RebuildOptions = {}): Promi
   const name = siteName(site);
   const { exchanges, storage } = await loadFlows(name);
   if (!exchanges.length)
-    throw new Error(
-      `${name} has no recorded flows. Record one: npx site-to-api record https://${name}`,
-    );
+    throw new Error(`${name} has no recorded flows. Record one: browserkit map https://${name}`);
   const overrides = await readOverrides(name);
   const result = await buildSiteModel(exchanges, {
     site: name,
