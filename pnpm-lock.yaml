@@ -28,9 +28,6 @@ importers:
       "@browser-use-extension/tools":
         specifier: workspace:*
         version: link:../../packages/tools
-      pi-ai-login:
-        specifier: link:../../../pi-ai-login
-        version: link:../../../pi-ai-login
       ws:
         specifier: 8.22.0
         version: 8.22.0
@@ -159,14 +156,41 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
+  packages/site-api:
+    devDependencies:
+      "@eslint/js":
+        specifier: 10.0.1
+        version: 10.0.1(eslint@10.11.0)
+      "@types/node":
+        specifier: 26.6.3
+        version: 26.6.3
+      "@types/ws":
+        specifier: 8.18.1
+        version: 8.18.1
+      eslint:
+        specifier: 10.11.0
+        version: 10.11.0
+      prettier:
+        specifier: 3.9.9
+        version: 3.9.9
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      typescript-eslint:
+        specifier: 8.70.1
+        version: 8.70.1(eslint@10.11.0)(typescript@6.0.3)
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+
   packages/tools:
     dependencies:
+      "@browser-use-extension/site-api":
+        specifier: workspace:*
+        version: link:../site-api
       browser-crawl:
         specifier: link:../../../browser-crawl
         version: link:../../../browser-crawl
-      site-to-api:
-        specifier: link:../../../site-to-api
-        version: link:../../../site-to-api
 
 packages:
   "@cacheable/memory@2.2.0":

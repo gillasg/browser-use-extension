@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "site-to-api and browser-crawl, linked from their own repos, for everything built on the Browser Use Extension.",
+  "description": "site-to-api and browser-crawl, for everything built on the Browser Use Extension.",
   "exports": {
     "./site-to-api": {
       "types": "./dist/site-to-api.d.ts",
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "browser-crawl": "link:../../../browser-crawl",
-    "site-to-api": "link:../../../site-to-api"
+    "@browser-use-extension/site-api": "workspace:*"
   },
   "files": [
     "dist"
