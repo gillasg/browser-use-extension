@@ -60,10 +60,7 @@ jobs:
           node-version: 22.19.0
       - name: Set up this repo and the projects that use it
         run: node scripts/link-repos.mjs --also aeon-browser
-      - name: Type-check core
-        working-directory: ../core
-        run: pnpm typecheck
-      - name: Check and build aeon-browser
+      - name: Check and build Aeon
         working-directory: ../aeon-browser
         run: |
           pnpm typecheck

@@ -16,7 +16,7 @@ Most browser-automation tools start a separate, empty browser. This one runs ins
 - **Many agents, one browser.** Each session owns the tabs it opens; sessions do not interfere with each other or with your own tabs.
 - **Visible work.** An on-page cursor shows where the agent clicks.
 - **Boosts.** `browser.boosts.save({ name, sites, css, zaps, actions, network, js })` saves a lasting change to a site that applies on every visit, from the [Site Boosts](https://github.com/gillasg/site-boosts) engine built in.
-- **Crawling and site APIs.** The `crawl` tool reads pages and whole sites as Markdown ([browser-crawl](https://github.com/gillasg/browser-crawl)); `site_api` turns sites mapped from your own traffic into APIs ([site-to-api](https://github.com/gillasg/site-to-api)).
+- **Crawling and site APIs.** The `crawl` tool reads pages and whole sites as Markdown ([browser-crawl](https://github.com/gillasg/browser-crawl)); `site_api` turns sites mapped from your own traffic into APIs (the site-to-api engine, built in).
 
 ## Setup
 
@@ -95,7 +95,7 @@ agent ──MCP/CLI──▶ bridge (local, 127.0.0.1) ◀──WebSocket── 
 - `apps/bridge`: the bridge, native messaging host, CLI and MCP server.
 - `packages/protocol`: the messages the engine speaks.
 - `packages/tools`: the `crawl` and `site_api` tools built on the packages below.
-- `packages/site-api`: the site mapping and calling library (a snapshot of site-to-api, now maintained here).
+- `packages/site-api`: the site mapping and calling library (the site-to-api engine, maintained here).
 
 browser-crawl is its own project, linked from a sibling folder (`link:../browser-crawl`) instead of being copied, so a change there is used here on the next build. `node scripts/link-repos.mjs --revisions` prints the revision of each linked repo.
 
