@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Site Boosts",
+  "version": "0.1.0",
+  "description": "Make any site behave your way: describe a change or point at it, and it stays. Styles, zaps, actions, network rules and userscripts.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqVKgTn1bWy/miJQgZoTjOJC039NMWARPwdfRyscBQgW0KpenuEfBwVHmpM2rEnAQCMIIJ/Rix98tbZY4NaGA7km2d4UEcxUdCAMCbn5a9SvAT4i07BAD6G/8Z66yKyM/AqgAcJUs/Xv9HRnUSW+eQVc20Y879e7Ub92kzYgKMKZFCDMMP+nqJPiqD3pf/JrAkr0LT2w71Rgi9NJRfzl3sn1Ko0Ags3MbxrZiTanEuyapbVvHUiVd6JH3D00iJyp2x8s3ZL3uueL6rNCLDzv+puzLZdoUFD5A1EsnNaFrt8p0fvx3JSbrZvEFe7dzwcegt5S7v8KwwLPT0hgRql9TuwIDAQAB",
+  "minimum_chrome_version": "135",
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Site Boosts", "default_popup": "popup.html" },
+  "options_page": "manager.html",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "scripting",
+    "userScripts",
+    "declarativeNetRequest",
+    "webNavigation",
+    "contextMenus",
+    "notifications",
+    "downloads",
+    "cookies",
+    "alarms",
+    "offscreen",
+    "clipboardWrite"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*", "file:///*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "commands": {
+    "zap": {
+      "suggested_key": { "default": "Alt+Shift+Z" },
+      "description": "Hide something on this page"
+    },
+    "chip": {
+      "suggested_key": { "default": "Alt+Shift+B" },
+      "description": "Open Site Boosts on this page"
+    }
+  },
+  "icons": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" }
+}
