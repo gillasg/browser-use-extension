@@ -32,6 +32,10 @@ async function tabs(args: Args): Promise<number> {
   const bridge = await BridgeClient.connect();
   try {
     const reply = await bridge.request("tabs");
+    if (has(args, "json")) {
+      out(JSON.stringify(reply.tabs ?? [], null, 2));
+      return 0;
+    }
     for (const tab of (reply.tabs as Record<string, unknown>[] | undefined) ?? [])
       out(
         `${String((tab.target as { tabId?: number })?.tabId)}\t${String(tab.title ?? "")}\t${String(tab.url ?? "")}`,
@@ -121,9 +125,9 @@ An older registration from before the rename is removed. --no-register only writ
     name: "tabs",
     group: "Browser",
     summary: "list the browser's open tabs",
-    help: `Usage: browserkit tabs
+    help: `Usage: browserkit tabs [--json]
 
-Prints tab id, title and URL, one tab per line.`,
+Prints tab id, title and URL, one tab per line; --json prints the browser's own entries.`,
     run: tabs,
   },
   {

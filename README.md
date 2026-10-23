@@ -90,6 +90,8 @@ browserkit boosts list
 ```
 
 Every command prints what it needs with `--help`, and takes `--json` where the answer is data.
+Exit codes say what went wrong: 1 failed, 2 a needed input was missing, 3 signed out, 4 no browser
+connected, 5 the site's API broke, 6 a bot wall answered.
 Run `browserkit mcp` for the MCP server and `browserkit rest` for a local REST API over every
 mapped site.
 
