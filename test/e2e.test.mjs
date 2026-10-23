@@ -4,10 +4,11 @@ import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { dataRoutes } from "./data-site.mjs";
+import { LOGIN, fakeBitwarden, loginRoutes } from "./login-site.mjs";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import WebSocket from "ws";
 
@@ -31,8 +32,14 @@ test(
   },
   async (t) => {
     const home = await mkdtemp(join(tmpdir(), "bue-home-"));
+    const bw = await fakeBitwarden("127.0.0.1");
+    await writeFile(
+      join(home, "password-manager.json"),
+      JSON.stringify({ provider: "bitwarden", bitwardenSession: "test" }),
+    );
     const env = {
       ...process.env,
+      PATH: bw + delimiter + process.env.PATH,
       BROWSER_USE_EXTENSION_HOME: home,
       SITE_TO_API_HOME: join(home, "site-to-api"),
     };
@@ -109,6 +116,7 @@ test(
         return;
       }
       if (dataRoutes(request, response)) return;
+      if (loginRoutes(request, response)) return;
       response.setHeader("content-type", "text/html");
       response.end(
         `<title>Shop</title><h1>Shop</h1><button onclick="document.title='bought'">Buy</button>`,
@@ -950,6 +958,77 @@ test(
         assert.equal(result.changed, false, JSON.stringify(result));
         assert.ok(result.pixels > 100000, JSON.stringify(result));
         assert.equal(result.path, "diff.png");
+      });
+
+      await t.test(
+        "bu.signIn signs in from the password manager without showing the password",
+        async () => {
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "signin",
+              `page = await browser.openTab(${JSON.stringify(siteUrl + "login")});
+            await page.waitForSelector("input[type=email]");
+            // Stands in for the user clicking "Always here" on the approval banner.
+            await page.evaluate(() => setTimeout(() => { globalThis[Symbol.for("signin.approval")] = "always"; }, 1500));
+            const result = await bu.signIn();
+            let leaked = "no";
+            try { await __call({ credential: "login", url: page.url() }); leaked = "yes"; } catch (error) { leaked = String(error.message).slice(0, 40); }
+            console.log("RESULT " + JSON.stringify({ result, title: await page.title(), leaked }))`,
+            ],
+            { env },
+          ).catch((error) => {
+            console.log(error.stdout, error.stderr);
+            throw error;
+          });
+          assert.match(stdout, /RESULT /, stdout);
+          assert.ok(!stdout.includes(LOGIN.password), "the password never reaches agent output");
+          assert.ok(!stdout.includes(LOGIN.code), "the one-time code never reaches agent output");
+          const { result, title, leaked } = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+          assert.equal(result.signedIn, true, JSON.stringify(result));
+          assert.equal(result.provider, "Bitwarden");
+          assert.equal(result.account, LOGIN.username);
+          assert.equal(title, "Account");
+          assert.match(leaked, /FORBIDDEN/);
+        },
+      );
+
+      await t.test("blocked sites stay out of reach for the agent", async () => {
+        await writeFile(join(home, "site-rules.json"), JSON.stringify({ blocked: ["localhost"] }));
+        const blockedUrl = siteUrl.replace("127.0.0.1", "localhost");
+        try {
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "blocked",
+              `const out = {};
+              try { await browser.openTab(${JSON.stringify(blockedUrl)}); out.open = "opened"; } catch (e) { out.open = e.message.slice(0, 30); }
+              try { await browser.fetch(${JSON.stringify(blockedUrl + "api/items")}); out.fetch = "fetched"; } catch (e) { out.fetch = e.message.slice(0, 30); }
+              page = await browser.openTab(${JSON.stringify(siteUrl)});
+              await page.evaluate((href) => { const a = document.createElement("a"); a.href = href; a.id = "away"; a.textContent = "away"; document.body.append(a); }, ${JSON.stringify(blockedUrl)});
+              await page.locator("#away").click().catch(() => {});
+              await new Promise((r) => setTimeout(r, 1500));
+              out.after = await page.evaluate(() => location.hostname + " " + document.title).catch((e) => "error " + e.message.slice(0, 30));
+              console.log("RESULT " + JSON.stringify(out))`,
+            ],
+            { env },
+          ).catch((error) => {
+            console.log(error.stdout, error.stderr);
+            throw error;
+          });
+          const out = JSON.parse(/RESULT (.*)/.exec(stdout)[1]);
+          assert.match(out.open, /SITE_BLOCKED/, stdout);
+          assert.match(out.fetch, /SITE_BLOCKED/, stdout);
+          assert.ok(!/Shop/.test(out.after) || !out.after.startsWith("localhost"), stdout);
+        } finally {
+          await rm(join(home, "site-rules.json"), { force: true });
+        }
       });
     } finally {
       chrome?.kill();

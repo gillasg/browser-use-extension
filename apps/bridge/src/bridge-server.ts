@@ -4,6 +4,8 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { dataDirectory, statePath, type BridgeState } from "./paths.js";
+import { handleCredentialRequest, isCredentialRequest } from "@browserkit/credentials";
+import { isSiteRulesRequest, readSiteRules } from "./site-rules.js";
 import { isSiteSkillRequest, siteSkillCall } from "./site-skills.js";
 import {
   appendJournalEntry,
@@ -324,6 +326,8 @@ export class Bridge {
 /** Workspace files, site skills and upload checks: what a cell asks of the machine. */
 function serveRequest(request: unknown, session: string): Promise<unknown> {
   const workspace = join(dataDirectory(), "workspaces", session);
+  if (isCredentialRequest(request)) return handleCredentialRequest(request, dataDirectory());
+  if (isSiteRulesRequest(request)) return readSiteRules();
   if (isSiteSkillRequest(request))
     return siteSkillCall(join(dataDirectory(), "site-skills"), request);
   if (isWorkspaceRequest(request)) return workspaceCall(workspace, request);

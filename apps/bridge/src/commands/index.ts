@@ -11,6 +11,7 @@ import {
 } from "./crawl.js";
 import { mapGroup } from "./site-map.js";
 import { keepGroup } from "./site-keep.js";
+import { signinCommand } from "./signin.js";
 import { useGroup } from "./site-use.js";
 
 // Every capability the MCP tools and the bundled packages have, as a command.
@@ -25,5 +26,6 @@ export const COMMANDS: Command[] = [
   ...mapGroup,
   ...useGroup,
   ...keepGroup,
+  signinCommand,
   boostsCommand,
 ];

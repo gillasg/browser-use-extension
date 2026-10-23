@@ -11,10 +11,12 @@ import { callParams, flag, has, type Args } from "../args.js";
 import { out, printJson, printRows } from "../output.js";
 import type { Command } from "../usage.js";
 import { mappedModel } from "./site-map.js";
+import { guardSites, isGuardSites } from "./sites.js";
 
 // Using a mapped site: list it, list what it can do, call one, watch one, ask several at once.
 
 async function sites(args: Args): Promise<number> {
+  if (isGuardSites(args)) return guardSites(args);
   const sites = await listSites();
   if (has(args, "json")) printJson(sites);
   else
@@ -142,10 +144,19 @@ async function rest(args: Args): Promise<number> {
 export const sitesCommand: Command = {
   name: "sites",
   group: "Use a site",
-  summary: "list mapped sites",
+  summary: "list mapped sites, or block a site from the agent for good",
   help: `Usage: browserkit sites [--json]
+       browserkit sites block <site>
+       browserkit sites unblock <site>
+       browserkit sites blocked [--json]
 
-  --json   one JSON object per site, with its operation count and update date`,
+  --json   one JSON object per site, with its operation count and update date
+
+With no action, the mapped sites. \`block\` puts the site (and its subdomains) off limits for
+every agent: no tab opens it, browser.fetch and site API calls refuse it, and requests a working
+tab makes to it (clicks, redirects, scripts) are blocked. \`blocked\` lists them. A site the user
+names in their request is allowed for that run only. The list lives in site-rules.json in
+browserkit's data folder; the extension's own block list adds to it.`,
   run: sites,
 };
 

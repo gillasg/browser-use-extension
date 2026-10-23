@@ -668,6 +668,13 @@ var bu = Object.freeze({
     if (outcome === 'cancelled') throw Error('HANDOFF_CANCELLED: the user cancelled the hand-off');
     return 'done';
   },
+  signIn: async (options = {}) => {
+    var target = options.target || __lastTarget;
+    if (!target) throw Error('Use bu.use(attachedTarget) or browser.page(target) first');
+    var result = await __call({signIn: {target, ...(options.account ? {account: String(options.account)} : {})}});
+    __states.delete(__key(target));
+    return result;
+  },
 });
 // Draws each interactive bu id on the page, captures, then removes the overlay.
 async function __labeledScreenshot(target) {

@@ -11,7 +11,8 @@
   ],
   "dependencies": {
     "ws": "8.22.0",
-    "@browserkit/tools": "workspace:*"
+    "@browserkit/tools": "workspace:*",
+    "@browserkit/credentials": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "26.6.3",

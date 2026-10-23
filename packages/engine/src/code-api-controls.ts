@@ -534,7 +534,7 @@ var __CHALLENGE_ADVICE = {
   captcha: 'One real click on its checkbox sometimes passes; otherwise bu.handoff() for the user. Do not try to solve it.',
   blocked: 'The site refused this request; repeating it will not help. Use another route (its API, another source) or tell the user.',
   'rate-limit': 'Slow down: wait before the next request and stop parallel requests to this site.',
-  login: 'The user is signed out here: unless signing in is the task, bu.handoff("Please sign in") and continue after.',
+  login: 'The user is signed out here: await bu.signIn() signs in with their password manager (it returns {signedIn, reason}); if it cannot (reason NO_PASSWORD_MANAGER, NO_SAVED_LOGIN, NEEDS_CODE, CAPTCHA, DECLINED), bu.handoff("Please sign in") and continue after.',
 };
 var __challengeSeen = new Set();
 async function __challenges(target) {

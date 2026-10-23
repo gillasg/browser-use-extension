@@ -25,6 +25,9 @@ importers:
 
   apps/bridge:
     dependencies:
+      "@browserkit/credentials":
+        specifier: workspace:*
+        version: link:../../packages/credentials
       "@browserkit/tools":
         specifier: workspace:*
         version: link:../../packages/tools
@@ -188,6 +191,12 @@ importers:
       typescript-eslint:
         specifier: 8.70.1
         version: 8.70.1(eslint@10.11.0)(typescript@6.0.3)
+
+  packages/credentials:
+    devDependencies:
+      "@types/node":
+        specifier: 26.6.3
+        version: 26.6.3
 
   packages/engine:
     dependencies:

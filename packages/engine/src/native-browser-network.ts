@@ -8,6 +8,7 @@ import { dryRunActive, setDryRun } from "./native-browser-dry-run.js";
 import { onEngineInstall } from "./native-engine-install.js";
 import { isTrackerUrl, takeLearned } from "./native-browser-network-learn.js";
 import { rememberSessionHeaders, sessionHeadersFor } from "./native-browser-session-headers.js";
+import { hideSecrets } from "./native-browser-secrets.js";
 
 // Network recording for learning a site's own APIs. While a tab records, its API traffic is
 // kept with full headers (cookies included), the script that made each call, request and
@@ -143,7 +144,7 @@ function requestWillBeSent(recorder: Recorder, params: Params): void {
   };
   if (typeof params.frameId === "string") entry.frameId = params.frameId;
   if (typeof params.documentURL === "string") entry.documentURL = params.documentURL;
-  if (typeof request.postData === "string") entry.requestBody = request.postData;
+  if (typeof request.postData === "string") entry.requestBody = hideSecrets(request.postData);
   else if (request.hasPostData) entry.requestBodyPending = true;
   add(recorder, entry);
   rememberSessionHeaders(entry.url, entry.requestHeaders);
@@ -179,7 +180,7 @@ async function captureBodies(tabId: number, recorder: Recorder, entry: NetworkEn
   const textual = TEXTUAL.test(entry.mimeType ?? "") || entry.type === "Fetch";
   if (entry.requestBodyPending) {
     const post = await command(tabId, "Network.getRequestPostData", { requestId: entry.id });
-    if (typeof post?.postData === "string") entry.requestBody = post.postData;
+    if (typeof post?.postData === "string") entry.requestBody = hideSecrets(post.postData);
     delete entry.requestBodyPending;
   }
   if (!textual || (entry.size ?? 0) > recorder.maxBody * 2) return;
