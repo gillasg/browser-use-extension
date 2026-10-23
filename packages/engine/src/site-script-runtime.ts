@@ -2,7 +2,7 @@ import {
   SiteScriptDefinitionSchema,
   type SiteScriptDefinition,
   BrowserScriptsSyncSchema,
-} from "@browser-use-extension/protocol";
+} from "@browserkit/protocol";
 import { withBrowserDebugger } from "./native-browser-session.js";
 import { onEngineInstall } from "./native-engine-install.js";
 

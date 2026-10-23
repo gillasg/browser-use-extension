@@ -1,4 +1,4 @@
-// A private, headless Chrome for Testing with the Browser Use Extension and its own bridge, for
+// A private, headless Chrome for Testing with browserkit and its own bridge, for
 // end-to-end tests. Nothing touches the user's browser or real data.
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";

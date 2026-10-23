@@ -1,4 +1,4 @@
-import { AuthReplySchema } from "@browser-use-extension/protocol";
+import { AuthReplySchema } from "@browserkit/protocol";
 export function authenticate(
   socket: WebSocket,
   hello: unknown,

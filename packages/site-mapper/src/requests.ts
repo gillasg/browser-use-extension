@@ -4,7 +4,7 @@ import { siteMapper } from "./runtime/site-mapper.js";
 import { watch } from "./watch.js";
 import { learnLive, undoLive, writeLive } from "./live.js";
 
-// Requests from browser code (the `siteMapper` global in the Browser Use Extension's runtime): a
+// Requests from browser code (the `siteMapper` global in browserkit's runtime): a
 // browser cell, or a watcher's check, can list mapped sites, call or watch their operations, run
 // their saved actions and listen on their live channels.
 

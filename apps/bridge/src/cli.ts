@@ -7,7 +7,7 @@ import { runMcpServer } from "./mcp.js";
 import { runNativeHost } from "./native-host.js";
 import { nextSteps, setup } from "./setup.js";
 
-const usage = `browser-use-extension: let agents use your real Chrome.
+const usage = `browserkit: let agents use your real Chrome.
 
   setup                 register the native host and print how to connect agents
   repl "<code>"         run a browser_code cell  [--session name] [--timeout ms]
@@ -75,7 +75,7 @@ async function client(command: string, rest: string[]): Promise<number> {
       return 0;
     }
     const code = rest.filter((_, index) => !isOption(rest, index)).join(" ");
-    if (!code) throw new Error('Usage: browser-use-extension repl "<code>"');
+    if (!code) throw new Error('Usage: browserkit repl "<code>"');
     const result = await bridge.request("run", {
       code,
       session: option(rest, "--session") ?? "cli",

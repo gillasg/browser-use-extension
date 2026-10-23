@@ -1,4 +1,4 @@
-import type { BrowserExecutorRequest, BrowserTargetKey } from "@browser-use-extension/protocol";
+import type { BrowserExecutorRequest, BrowserTargetKey } from "@browserkit/protocol";
 import { onEngineInstall } from "./native-engine-install.js";
 
 interface EventItem {

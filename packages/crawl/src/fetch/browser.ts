@@ -3,7 +3,7 @@ import type { Action, ScrapeOptions } from "../types.js";
 import type { Fetched, Fetcher } from "./types.js";
 import { flattenedHtml } from "./flatten.js";
 
-// The user's own browser, through the Browser Use Extension: their logins, a real fingerprint,
+// The user's own browser, through browserkit: their logins, a real fingerprint,
 // JavaScript rendering, actions, scrolling, screenshots and PDFs. Each worker has its own
 // session and tab, so pages load in parallel; a page that asks the user to sign in or verify
 // waits for them (only that worker).

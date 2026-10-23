@@ -8,7 +8,7 @@ import {
   BrowserExecutorResultSchema,
   BrowserOperationResultSchema,
   type BrowserTargetKey,
-} from "@browser-use-extension/protocol";
+} from "@browserkit/protocol";
 import {
   withBrowserDebugger,
   reconnectBrowserSession,

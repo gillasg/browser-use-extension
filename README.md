@@ -1,4 +1,4 @@
-# Browser Use Extension
+# browserkit
 
 Let coding agents and any MCP client use **your real Chrome**: your tabs, your logins, while you watch.
 
@@ -16,7 +16,7 @@ Most browser-automation tools start a separate, empty browser. This one runs ins
 - **Many agents, one browser.** Each session owns the tabs it opens; sessions do not interfere with each other or with your own tabs.
 - **Visible work.** An on-page cursor shows where the agent clicks.
 - **Boosts.** `browser.boosts.save({ name, sites, css, zaps, actions, network, js })` saves a lasting change to a site that applies on every visit, from the [Site Boosts](https://github.com/gillasg/site-boosts) engine built in.
-- **Crawling and site APIs.** The `crawl` tool reads pages and whole sites as Markdown ([browser-crawl](https://github.com/gillasg/browser-crawl)); `site_mapper` turns sites mapped from your own traffic into APIs (the site-to-api engine, built in).
+- **Crawling and site APIs.** The `crawl` tool reads pages and whole sites as Markdown (the crawler in `packages/crawl`); `site_mapper` turns sites mapped from your own traffic into APIs (the mapper in `packages/site-mapper`).
 
 ## Setup
 
@@ -42,9 +42,9 @@ The MCP server speaks stdio. Point any MCP client at it:
 ```json
 {
   "mcpServers": {
-    "browser-use-extension": {
+    "browserkit": {
       "command": "node",
-      "args": ["/path/to/browser-use-extension/apps/bridge/dist/cli.js", "mcp"]
+      "args": ["/path/to/browserkit/apps/bridge/dist/cli.js", "mcp"]
     }
   }
 }
@@ -53,9 +53,9 @@ The MCP server speaks stdio. Point any MCP client at it:
 For Codex, add to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.browser-use-extension]
+[mcp_servers.browserkit]
 command = "node"
-args = ["/path/to/browser-use-extension/apps/bridge/dist/cli.js", "mcp"]
+args = ["/path/to/browserkit/apps/bridge/dist/cli.js", "mcp"]
 ```
 
 It exposes four tools:
@@ -74,10 +74,10 @@ Agents without MCP can use the CLI below; `repl` takes the same code.
 ## CLI
 
 ```sh
-browser-use-extension repl "page = await browser.openTab('https://example.com'); await bu.state()"
-browser-use-extension repl --session research "page.url"
-browser-use-extension tabs
-browser-use-extension status
+browserkit repl "page = await browser.openTab('https://example.com'); await bu.state()"
+browserkit repl --session research "page.url"
+browserkit tabs
+browserkit status
 ```
 
 Agents bring their own model: this extension does not sign in to model providers and does not provide a model to other extensions. A companion asking for one is told that none is available.

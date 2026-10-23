@@ -1,8 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import {
-  handleSiteMapperRequest,
-  isSiteMapperRequest,
-} from "@browser-use-extension/tools/site-to-api";
+import { handleSiteMapperRequest, isSiteMapperRequest } from "@browserkit/tools/site-to-api";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
@@ -74,8 +71,7 @@ export class Bridge {
     const executor = await this.pickExecutor();
     if (!executor)
       return {
-        error:
-          "BROWSER_OFFLINE: open Chrome with Browser Use Extension installed (see `browser-use-extension setup`).",
+        error: "BROWSER_OFFLINE: open Chrome with browserkit installed (see `browserkit setup`).",
       };
     const session = sessionId(String(request.session ?? "default"));
     const timeoutMs = Math.min(Math.max(Number(request.timeoutMs ?? 60000), 1000), 600000);

@@ -26,7 +26,7 @@ export interface EngineConfig {
 
 export const engineConfig: EngineConfig = {
   controllingTitle: () => "An agent is controlling this tab",
-  idleTitle: "Browser Use Extension",
+  idleTitle: "browserkit",
   notificationIcon: "icon-128.png",
   tabGroups: true,
   tabGroupTitle: () => "Agent",

@@ -34,7 +34,7 @@ export async function runDoctor(): Promise<number> {
   check(
     (await exists(manifest)) ? "ok" : "fail",
     "native host manifest",
-    (await exists(manifest)) ? manifest : "missing; run `browser-use-extension setup`",
+    (await exists(manifest)) ? manifest : "missing; run `browserkit setup`",
   );
   check(
     (await exists(extensionBuild)) ? "ok" : "warn",
@@ -45,7 +45,7 @@ export async function runDoctor(): Promise<number> {
   check(
     state ? "ok" : "fail",
     "bridge state",
-    state ? statePath() : "missing; run a browser command or `browser-use-extension serve`",
+    state ? statePath() : "missing; run a browser command or `browserkit serve`",
   );
 
   if (state) {
@@ -77,13 +77,13 @@ export async function runDoctor(): Promise<number> {
     : checks.some((item) => item.status === "warn")
       ? "warn"
       : "ok";
-  process.stdout.write("Browser Use Extension doctor\n");
+  process.stdout.write("browserkit doctor\n");
   process.stdout.write(`Status: ${status}\n`);
   for (const item of checks)
     process.stdout.write(`[${item.status}] ${item.label}: ${item.message}\n`);
   if (status !== "ok") {
     process.stdout.write(
-      "Next: run `browser-use-extension setup`, reload the extension at chrome://extensions, then try `browser-use-extension status`.\n",
+      "Next: run `browserkit setup`, reload the extension at chrome://extensions, then try `browserkit status`.\n",
     );
   }
   return status === "fail" ? 1 : 0;

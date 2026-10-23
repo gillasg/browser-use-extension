@@ -1,4 +1,4 @@
-// browser-crawl, as part of the Browser Use Extension.
+// browser-crawl, as part of browserkit.
 //
 // browser-crawl no longer depends on site-to-api: the extension is the host that has a site API,
 // so it lends browser-crawl the mapped-site client here. Standalone browser-crawl simply fetches
@@ -12,7 +12,7 @@ import {
   sharedBridge,
   siteMapper,
   siteName,
-} from "@browser-use-extension/site-mapper";
+} from "@browserkit/site-mapper";
 import { useBrowser, useSiteApi } from "browser-crawl";
 
 useBrowser({

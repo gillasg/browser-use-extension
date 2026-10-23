@@ -1,4 +1,4 @@
-import type { BrowserTargetKey, BrowserExecutorRequest } from "@browser-use-extension/protocol";
+import type { BrowserTargetKey, BrowserExecutorRequest } from "@browserkit/protocol";
 import { browserSessionOwner } from "./native-browser-session.js";
 import { publishBrowserEvent } from "./native-browser-events.js";
 import { onEngineInstall } from "./native-engine-install.js";

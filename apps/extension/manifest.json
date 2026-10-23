@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Browser Use Extension",
+  "name": "browserkit",
   "version": "0.1.0",
   "description": "Lets local agents and any MCP client use your real Chrome: your tabs, your logins, visibly.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtRrwwE6+14hGVsj6Klg0RCg45mA/JVB+eXQOfUKZ9S+SU5T45HSFuwUvf20v1lgtowTosMl1Z1ZIP88pkZ3h2Z/3oXH3/DFA6DHHFRWMHBfXt9Syipcm9msEuYyYJbCbSSb7YWmTK/0nQEIUpeNwtVUYMkpOVXAeHFAbaVMiGLPoseoUsI3StEkf9BE4ED3u1S3bNWhY0Xyg3jZBMgU1YbncGSFECgTbj6YopRnp2wvyuDiKtjuixDP4c8fLygolV6uRdf6pAyI9wJia1B0QOnpp3GPnaVT0SrShZbNlIyliNrDRHwhPsmwEx6m2KHBzqL/8OMw/RkAo0kCDUJgsdQIDAQAB",
@@ -9,7 +9,7 @@
     "service_worker": "service-worker.js"
   },
   "action": {
-    "default_title": "Browser Use Extension",
+    "default_title": "browserkit",
     "default_popup": "popup.html"
   },
   "permissions": [

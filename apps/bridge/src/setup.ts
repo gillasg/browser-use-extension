@@ -8,6 +8,8 @@ import { NATIVE_HOST, dataDirectory } from "./paths.js";
 // Registers the native messaging host that lets the extension find the bridge, then prints how
 // to load the extension and connect agents.
 export const EXTENSION_ID = "dmlgohfphkbenjopdphcojgjeidlmajj";
+/** The host name this bridge used before it was renamed, removed on setup. */
+const OLD_NATIVE_HOST = "com.browser_use_extension.bridge";
 const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
 const extensionBuild = fileURLToPath(new URL("../../extension/build", import.meta.url));
 
@@ -44,7 +46,7 @@ export async function setup(options: { register: boolean }): Promise<string> {
     JSON.stringify(
       {
         name: NATIVE_HOST,
-        description: "Browser Use Extension bridge",
+        description: "browserkit bridge",
         path: launcher,
         type: "stdio",
         allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
@@ -86,12 +88,26 @@ async function register(manifest: string): Promise<void> {
         ],
         { stdio: "ignore", windowsHide: true },
       );
+      unregisterWindows(browser.win);
       continue;
     }
     const directory = join(homedir(), process.platform === "darwin" ? browser.mac : browser.linux);
     await mkdir(directory, { recursive: true });
-    const { copyFile } = await import("node:fs/promises");
+    const { copyFile, rm } = await import("node:fs/promises");
     await copyFile(manifest, join(directory, NATIVE_HOST + ".json"));
+    await rm(join(directory, OLD_NATIVE_HOST + ".json"), { force: true });
+  }
+}
+
+/** The name this host had before browserkit: left behind, it makes Chrome look for a dead one. */
+function unregisterWindows(key: string): void {
+  try {
+    execFileSync("reg.exe", ["delete", `HKCU\\${key}\\${OLD_NATIVE_HOST}`, "/f"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  } catch {
+    // Not registered: nothing to remove.
   }
 }
 
@@ -103,10 +119,10 @@ export function nextSteps(): string {
     `   "Load unpacked" and choose: ${extensionBuild}`,
     "2. Connect an agent:",
     `   Codex:        add to ~/.codex/config.toml:`,
-    `                 [mcp_servers.browser-use-extension]`,
+    `                 [mcp_servers.browserkit]`,
     `                 command = ${JSON.stringify(process.execPath)}`,
     `                 args = [${JSON.stringify(cli)}, "mcp"]`,
     `   Any MCP client: {"command": ${JSON.stringify(process.execPath)}, "args": [${JSON.stringify(cli)}, "mcp"]}`,
-    '3. Try it: browser-use-extension repl "(await browser.tabs()).length"',
+    '3. Try it: browserkit repl "(await browser.tabs()).length"',
   ].join("\n");
 }

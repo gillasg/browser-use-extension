@@ -14,9 +14,8 @@ const OWNER = "https://github.com/gillasg";
 // The same table in every repo: what each repo links to, and the script that builds what the
 // repos above it use (none when they use its source directly).
 const REPOS = {
-  "site-to-api": { links: [], build: "build" },
-  "browser-use-extension": { links: [], build: "build" },
-  "aeon-browser": { links: ["browser-use-extension"], build: undefined },
+  browserkit: { links: [], build: "build" },
+  "aeon-browser": { links: ["browserkit"], build: undefined },
 };
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));

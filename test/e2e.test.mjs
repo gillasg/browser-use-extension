@@ -764,7 +764,7 @@ test(
             protocolVersion: "2025-06-18",
             capabilities: {},
           });
-          assert.equal(init.serverInfo.name, "browser-use-extension");
+          assert.equal(init.serverInfo.name, "browserkit");
           const listed = await mcp.call("tools/list", {});
           assert.deepEqual(
             listed.tools.map((tool) => tool.name),

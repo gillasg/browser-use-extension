@@ -1,4 +1,4 @@
-// End to end in real Chrome: the Browser Use Extension records a session on the fixture shop,
+// End to end in real Chrome: the browserkit records a session on the fixture shop,
 // site-to-api builds its API, then calls it inside the page (cookies, CSRF and the page's own
 // request signing apply) and from Node with an exported session. Uses a private, headless
 // Chrome for Testing profile and a private bridge.

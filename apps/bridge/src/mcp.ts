@@ -69,7 +69,7 @@ async function handle(message: Json, bridge: () => Promise<BridgeClient>): Promi
       protocolVersion:
         typeof params.protocolVersion === "string" ? params.protocolVersion : "2025-06-18",
       capabilities: { tools: {} },
-      serverInfo: { name: "browser-use-extension", version: "0.1.0" },
+      serverInfo: { name: "browserkit", version: "0.1.0" },
     };
   if (message.method === "ping") return {};
   if (message.method === "tools/list") return { tools: [...tools, ...webTools] };

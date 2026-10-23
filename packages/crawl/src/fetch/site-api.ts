@@ -1,5 +1,5 @@
 // The mapped-site API client is supplied by the host. browser-crawl no longer imports
-// site-to-api directly: a host that has it (the Browser Use Extension, Aeon) installs an adapter
+// site-to-api directly: a host that has it (browserkit, Aeon) installs an adapter
 // once with `useSiteApi()`, and every crawler in the process can then read mapped sites through
 // their API. Standalone browser-crawl simply fetches the page normally.
 

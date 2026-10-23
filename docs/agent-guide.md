@@ -1,6 +1,6 @@
 # Agent guide
 
-This guide is for agents using browser-use-extension, and for people writing prompts for them. It drives the user's real browser, with their tabs and logins, while they watch.
+This guide is for agents using browserkit, and for people writing prompts for them. It drives the user's real browser, with their tabs and logins, while they watch.
 
 ## The model
 

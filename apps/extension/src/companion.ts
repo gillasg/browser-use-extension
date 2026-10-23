@@ -9,11 +9,10 @@ interface CompanionMessage {
 type Reply = { ok: true; value: unknown } | { ok: false; error: string };
 
 const NO_MODEL =
-  "No model available: Browser Use Extension does not provide an AI model. The agent using it supplies its own.";
+  "No model available: browserkit does not provide an AI model. The agent using it supplies its own.";
 
 function handle(message: CompanionMessage): Reply {
-  if (message.kind === "ping")
-    return { ok: true, value: { name: "Browser Use Extension", features: [] } };
+  if (message.kind === "ping") return { ok: true, value: { name: "browserkit", features: [] } };
   if (message.kind === "model.complete") return { ok: false, error: NO_MODEL };
   return { ok: false, error: `Unsupported request: ${String(message.kind)}` };
 }

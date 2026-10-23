@@ -2,7 +2,7 @@ import { copyFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { boostEngineDefine, writeBoostContent } from "@browser-use-extension/engine/boosts-build";
+import { boostEngineDefine, writeBoostContent } from "@browserkit/engine/boosts-build";
 
 // Builds the unpacked extension into apps/extension/build.
 const root = fileURLToPath(new URL("../", import.meta.url));

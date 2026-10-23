@@ -3,14 +3,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { access, mkdtemp, readFile, rm, constants } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile, constants } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const cli = resolve("apps/bridge/dist/cli.js");
 const run = promisify(execFile);
-const HOST = "com.browser_use_extension.bridge";
+const HOST = "com.browserkit.bridge";
+/** The host name before the rename: setup clears its manifest so Chrome stops looking for it. */
+const OLD_HOST = "com.browser_use_extension.bridge";
 const folders = {
   darwin: [
     "Library/Application Support/Google/Chrome/NativeMessagingHosts",
@@ -31,10 +33,15 @@ test(
   { skip: process.platform === "win32" },
   async () => {
     const home = await mkdtemp(join(tmpdir(), "bue-setup-"));
-    const env = { ...process.env, HOME: home, BROWSER_USE_EXTENSION_HOME: join(home, "data") };
+    const env = { ...process.env, HOME: home, BROWSERKIT_HOME: join(home, "data") };
     try {
+      // An install from before the rename leaves its manifest behind.
+      const old = join(home, folders[process.platform][0], OLD_HOST + ".json");
+      await mkdir(dirname(old), { recursive: true });
+      await writeFile(old, "{}");
       const { stdout } = await run(process.execPath, [cli, "setup"], { env });
       assert.match(stdout, /Native host registered/);
+      await assert.rejects(() => access(old), "the old registration is removed");
       let launcher;
       for (const folder of folders[process.platform]) {
         const manifest = JSON.parse(await readFile(join(home, folder, HOST + ".json"), "utf8"));

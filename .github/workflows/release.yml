@@ -55,7 +55,7 @@ jobs:
           TAG: ${{ steps.build.outputs.tag }}
         run: |
           cp build-info.json apps/extension/build/
-          (cd apps/extension/build && zip -qr "../../../browser-use-extension-$TAG.zip" .)
+          (cd apps/extension/build && zip -qr "../../../browserkit-$TAG.zip" .)
           {
             echo "The extension, built from these revisions:"
             echo
@@ -65,5 +65,5 @@ jobs:
             echo
             echo "Unzip it and load the folder with Load unpacked in chrome://extensions. The bridge, CLI and MCP server come from the source at this tag (see Setup in the README)."
           } > notes.md
-          gh release create "$TAG" "browser-use-extension-$TAG.zip" build-info.json \
+          gh release create "$TAG" "browserkit-$TAG.zip" build-info.json \
             --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md

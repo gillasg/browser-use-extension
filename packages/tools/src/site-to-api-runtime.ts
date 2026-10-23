@@ -1,2 +1,2 @@
-// site-to-api's runtime client, as part of the Browser Use Extension.
-export * from "@browser-use-extension/site-mapper/runtime";
+// site-to-api's runtime client, as part of browserkit.
+export * from "@browserkit/site-mapper/runtime";

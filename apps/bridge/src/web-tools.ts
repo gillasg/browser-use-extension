@@ -6,7 +6,7 @@ import {
   scrape,
   search,
   type Format,
-} from "@browser-use-extension/tools/browser-crawl";
+} from "@browserkit/tools/browser-crawl";
 import {
   checkCaptures,
   explore,
@@ -21,7 +21,7 @@ import {
   siteMapper,
   siteName,
   watch,
-} from "@browser-use-extension/tools/site-to-api";
+} from "@browserkit/tools/site-to-api";
 import { dataDirectory } from "./paths.js";
 
 // crawl and site_mapper for MCP clients: browser-crawl reads pages and sites, site-to-api turns

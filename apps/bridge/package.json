@@ -1,17 +1,17 @@
 {
-  "name": "browser-use-extension",
+  "name": "browserkit",
   "version": "0.1.0",
-  "description": "Let coding agents and any MCP client use your real Chrome through the Browser Use Extension.",
+  "description": "Let coding agents and any MCP client use your real Chrome through browserkit.",
   "type": "module",
   "bin": {
-    "browser-use-extension": "dist/cli.js"
+    "browserkit": "dist/cli.js"
   },
   "files": [
     "dist"
   ],
   "dependencies": {
     "ws": "8.22.0",
-    "@browser-use-extension/tools": "workspace:*"
+    "@browserkit/tools": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "26.6.3",

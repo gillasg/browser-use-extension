@@ -17,7 +17,7 @@ export async function ensureBridge(): Promise<BridgeState> {
     const next = await readState();
     if (next && next.pid !== current?.pid && (await reachable(next))) return next;
   }
-  throw new Error("The bridge did not start; run `browser-use-extension serve` to see why.");
+  throw new Error("The bridge did not start; run `browserkit serve` to see why.");
 }
 
 async function readState(): Promise<BridgeState | undefined> {

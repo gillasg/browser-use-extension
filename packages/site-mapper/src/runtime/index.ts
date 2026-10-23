@@ -1,4 +1,4 @@
-// The runtime, importable on its own: `import { siteMapper } from "@browser-use-extension/site-mapper/runtime"`.
+// The runtime, importable on its own: `import { siteMapper } from "@browserkit/site-mapper/runtime"`.
 export {
   docsExpression,
   docsTargets,

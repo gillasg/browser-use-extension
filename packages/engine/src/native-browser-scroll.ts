@@ -1,9 +1,5 @@
 import { noteActionTiming } from "./native-browser-action-timing.js";
-import type {
-  BrowserScrollState,
-  BrowserExecutorRequest,
-  BrowserStep,
-} from "@browser-use-extension/protocol";
+import type { BrowserScrollState, BrowserExecutorRequest, BrowserStep } from "@browserkit/protocol";
 import {
   getCenter,
   getViewportCenter,

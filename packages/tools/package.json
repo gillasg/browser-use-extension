@@ -1,9 +1,9 @@
 {
-  "name": "@browser-use-extension/tools",
+  "name": "@browserkit/tools",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "site-to-api and browser-crawl, for everything built on the Browser Use Extension.",
+  "description": "site-to-api and browser-crawl, for everything built on browserkit.",
   "exports": {
     "./site-to-api": {
       "types": "./dist/site-to-api.d.ts",
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "browser-crawl": "workspace:*",
-    "@browser-use-extension/site-mapper": "workspace:*"
+    "@browserkit/site-mapper": "workspace:*"
   },
   "files": [
     "dist"

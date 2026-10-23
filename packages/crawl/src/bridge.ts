@@ -2,22 +2,20 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// The connection to the user's browser: the Browser Use Extension's local bridge. Each call
+// The connection to the user's browser: browserkit's local bridge. Each call
 // runs a small piece of browser code in a named session; tabs and variables persist per session.
 //
 // Copied from site-to-api (`src/runtime/bridge.ts`) so browser-crawl can stand alone. Keep the
 // two in step when the bridge protocol changes.
 
 export function bridgeDataDirectory(): string {
-  if (process.env.BROWSER_USE_EXTENSION_HOME) return process.env.BROWSER_USE_EXTENSION_HOME;
+  const home = process.env.BROWSERKIT_HOME ?? process.env.BROWSER_USE_EXTENSION_HOME;
+  if (home) return home;
   if (process.platform === "win32" && process.env.LOCALAPPDATA)
-    return join(process.env.LOCALAPPDATA, "browser-use-extension");
+    return join(process.env.LOCALAPPDATA, "browserkit");
   if (process.platform === "darwin")
-    return join(homedir(), "Library", "Application Support", "browser-use-extension");
-  return join(
-    process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
-    "browser-use-extension",
-  );
+    return join(homedir(), "Library", "Application Support", "browserkit");
+  return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "browserkit");
 }
 
 export interface CellResult {
@@ -29,7 +27,7 @@ export interface CellResult {
 export class BrowserNotConnected extends Error {
   constructor(detail: string) {
     super(
-      `${detail} Install the Browser Use Extension in Chrome or Edge and run \`npx browser-use-extension setup\` once, then keep the browser open.`,
+      `${detail} Install browserkit in Chrome or Edge and run \`npx browserkit setup\` once, then keep the browser open.`,
     );
     this.name = "BrowserNotConnected";
   }
@@ -48,7 +46,7 @@ export interface Bridge {
   close(): void;
 }
 
-/** The Browser Use Extension bridge, over its local WebSocket. */
+/** The browserkit bridge, over its local WebSocket. */
 export class BridgeClient implements Bridge {
   private sequence = 0;
   private readonly waiting = new Map<number, Waiter>();

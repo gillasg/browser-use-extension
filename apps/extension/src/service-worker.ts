@@ -1,4 +1,4 @@
-// Browser Use Extension service worker: connects this browser to the local bridge as a browser
+// browserkit service worker: connects this browser to the local bridge as a browser
 // executor, so any agent talking to the bridge (CLI or MCP) can run browser_code here.
 import {
   AuthHelloSchema,
@@ -7,7 +7,7 @@ import {
   NativeBootstrapRequestSchema,
   NativeBootstrapResponseSchema,
   ENGINE_PROTOCOL_VERSION,
-} from "@browser-use-extension/protocol";
+} from "@browserkit/protocol";
 import {
   authenticate,
   configureEngine,
@@ -25,10 +25,10 @@ import {
   startExecutorHeartbeat,
   synchronizeBrowserInventory,
   type BrowserIdentity,
-} from "@browser-use-extension/engine";
+} from "@browserkit/engine";
 import { listenToCompanions } from "./companion.js";
 
-const NATIVE_HOST = "com.browser_use_extension.bridge";
+const NATIVE_HOST = "com.browserkit.bridge";
 
 listenToCompanions();
 
@@ -42,7 +42,7 @@ let connecting: Promise<Connection> | undefined;
 
 configureEngine({
   controllingTitle: (session) => "An agent is controlling this tab · " + session.slice(0, 8),
-  idleTitle: "Browser Use Extension",
+  idleTitle: "browserkit",
   notificationIcon: "icon-128.png",
 });
 installEngineListeners();

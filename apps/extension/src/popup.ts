@@ -9,5 +9,5 @@ void chrome.runtime
       return;
     }
     status.innerHTML =
-      '<span class="off">● Not connected.</span> Run <code>npx browser-use-extension setup</code>, then reopen this popup.';
+      '<span class="off">● Not connected.</span> Run <code>npx browserkit setup</code>, then reopen this popup.';
   });

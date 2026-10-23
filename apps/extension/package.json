@@ -1,5 +1,5 @@
 {
-  "name": "@browser-use-extension/extension",
+  "name": "@browserkit/extension",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,8 +7,8 @@
     "build": "node scripts/build.mjs"
   },
   "dependencies": {
-    "@browser-use-extension/engine": "workspace:*",
-    "@browser-use-extension/protocol": "workspace:*"
+    "@browserkit/engine": "workspace:*",
+    "@browserkit/protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "0.3.0",

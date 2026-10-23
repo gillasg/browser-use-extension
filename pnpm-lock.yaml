@@ -25,7 +25,7 @@ importers:
 
   apps/bridge:
     dependencies:
-      "@browser-use-extension/tools":
+      "@browserkit/tools":
         specifier: workspace:*
         version: link:../../packages/tools
       ws:
@@ -41,10 +41,10 @@ importers:
 
   apps/extension:
     dependencies:
-      "@browser-use-extension/engine":
+      "@browserkit/engine":
         specifier: workspace:*
         version: link:../../packages/engine
-      "@browser-use-extension/protocol":
+      "@browserkit/protocol":
         specifier: workspace:*
         version: link:../../packages/protocol
     devDependencies:
@@ -191,7 +191,7 @@ importers:
 
   packages/engine:
     dependencies:
-      "@browser-use-extension/protocol":
+      "@browserkit/protocol":
         specifier: workspace:*
         version: link:../protocol
       acorn:
@@ -243,7 +243,7 @@ importers:
 
   packages/tools:
     dependencies:
-      "@browser-use-extension/site-mapper":
+      "@browserkit/site-mapper":
         specifier: workspace:*
         version: link:../site-mapper
       browser-crawl:

@@ -1,5 +1,5 @@
 {
-  "name": "@browser-use-extension/engine",
+  "name": "@browserkit/engine",
   "version": "0.3.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
   "dependencies": {
     "acorn": "8.18.0",
     "zod": "4.6.5",
-    "@browser-use-extension/protocol": "workspace:*",
+    "@browserkit/protocol": "workspace:*",
     "site-boosts": "workspace:*"
   },
   "devDependencies": {

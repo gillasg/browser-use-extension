@@ -5,7 +5,7 @@ import {
   type BrowserExecutorRequest,
   type BrowserExecutorResult,
   type BrowserTargetKey,
-} from "@browser-use-extension/protocol";
+} from "@browserkit/protocol";
 import {
   booleanProperty,
   textValue,

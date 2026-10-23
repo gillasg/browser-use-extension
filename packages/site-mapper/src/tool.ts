@@ -17,7 +17,7 @@ import { siteMapper } from "./runtime/site-mapper.js";
 import { loadFlows } from "./workflow.js";
 
 // The site_mapper actions beyond sites/operations/call/watch/learn/explore, shared by every host
-// (this package's MCP server, the Browser Use Extension's MCP tools, Aeon's site_mapper tool).
+// (this package's MCP server, browserkit's MCP tools, Aeon's site_mapper tool).
 
 export const SITE_TOOL_ACTIONS = [
   "docs",

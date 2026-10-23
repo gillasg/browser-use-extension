@@ -8,7 +8,7 @@ import {
   type BrowserStep,
   BrowserExecutorResultSchema,
   type BrowserExecutorResult,
-} from "@browser-use-extension/protocol";
+} from "@browserkit/protocol";
 import {
   resolveElement,
   clickAt,

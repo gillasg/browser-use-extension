@@ -1,5 +1,5 @@
 import { BrowserActionError } from "./native-browser-common.js";
-import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
+import type { BrowserExecutorRequest } from "@browserkit/protocol";
 import { onNode } from "./native-browser-dom.js";
 import { onEngineInstall } from "./native-engine-install.js";
 

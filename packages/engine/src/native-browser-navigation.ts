@@ -1,5 +1,5 @@
 import { noteDeviceEmulation } from "./native-browser-session.js";
-import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
+import type { BrowserExecutorRequest } from "@browserkit/protocol";
 import { BrowserActionError } from "./native-browser-common.js";
 import { onEngineInstall } from "./native-engine-install.js";
 

@@ -133,7 +133,7 @@ export function toHar(entries: NetworkEntry[]): Record<string, unknown> {
   return {
     log: {
       version: "1.2",
-      creator: { name: "browser-use-extension", version: "1" },
+      creator: { name: "browserkit", version: "1" },
       pages: [],
       entries: entries.filter((entry) => entry.done || entry.type === "WebSocket").map(harEntry),
     },

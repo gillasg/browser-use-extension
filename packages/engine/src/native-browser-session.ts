@@ -9,7 +9,7 @@ import { presentBrowserTask } from "./native-browser-layout.js";
 import { engineConfig } from "./engine-config.js";
 import { currentInventoryTabs } from "./native-inventory-client.js";
 import { tidyChatTabs, touchAgentTab } from "./native-browser-tab-cleanup.js";
-import type { BrowserExecutorRequest } from "@browser-use-extension/protocol";
+import type { BrowserExecutorRequest } from "@browserkit/protocol";
 import { onEngineInstall } from "./native-engine-install.js";
 
 interface Attachment {

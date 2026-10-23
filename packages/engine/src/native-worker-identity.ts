@@ -21,8 +21,8 @@ export async function getBrowserIdentity(): Promise<BrowserIdentity> {
 }
 
 export function sameScope(
-  left: import("@browser-use-extension/protocol").PageGrantScope,
-  right: import("@browser-use-extension/protocol").PageGrantScope,
+  left: import("@browserkit/protocol").PageGrantScope,
+  right: import("@browserkit/protocol").PageGrantScope,
 ): boolean {
   return (
     left.kind === right.kind &&

@@ -7,7 +7,7 @@ import {
   type BrowserCodeRun,
   type BrowserStep,
   type BrowserTargetKey,
-} from "@browser-use-extension/protocol";
+} from "@browserkit/protocol";
 import { browserErrorDetail, errorCode, targetIdentity } from "./native-browser-common.js";
 import { executeLocalBrowserStep } from "./native-browser-executor.js";
 import { browserSessionOwner } from "./native-browser-session.js";

@@ -27,7 +27,7 @@ const page = await scrape("https://shop.example/p/lamp", { formats: ["markdown",
 ## Requirements
 
 - Node.js 22.19 or newer.
-- For browser fetching: Chrome or Edge with the [Browser Use Extension](https://github.com/gillasg/browser-use-extension) (set up once with `npx browser-use-extension setup`). Without it, everything runs over plain HTTP. Apps that already drive a browser can use theirs instead: `useBrowser({ run, status, close })`, where `run(code, { session, timeoutMs })` runs browser code.
+- For browser fetching: Chrome or Edge with the [browserkit](https://github.com/gillasg/browserkit) (set up once with `npx browserkit setup`). Without it, everything runs over plain HTTP. Apps that already drive a browser can use theirs instead: `useBrowser({ run, status, close })`, where `run(code, { session, timeoutMs })` runs browser code.
 
 ## Commands
 
@@ -143,7 +143,7 @@ pnpm check
 
 browser-crawl has no sibling packages: a change here is committed only here. `node scripts/link-repos.mjs --revisions` prints the revision of each linked repo.
 
-The end-to-end test drives a private, headless Chrome for Testing with the Browser Use Extension. It runs when it finds the extension (`BUE_DIR`, default `../browser-use-extension`) and Chrome (`CHROME_PATH`), and always in CI.
+The end-to-end test drives a private, headless Chrome for Testing with browserkit. It runs when it finds the extension (`BUE_DIR`, default `../browserkit`) and Chrome (`CHROME_PATH`), and always in CI.
 
 ## License
 

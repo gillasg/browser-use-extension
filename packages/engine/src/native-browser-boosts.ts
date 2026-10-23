@@ -3,7 +3,7 @@ import { startBoostEngine, type BoostEngine, type BoostEngineOptions } from "sit
 // Boosts from Site Boosts' engine, built into this extension: saved page changes (styles, hidden
 // elements, actions, network rules, scripts) that apply in every tab and survive restarts.
 // Host extensions call installBoosts() in their service worker and include the content script
-// from @browser-use-extension/engine/boosts-build in their build.
+// from @browserkit/engine/boosts-build in their build.
 
 let engine: BoostEngine | undefined;
 

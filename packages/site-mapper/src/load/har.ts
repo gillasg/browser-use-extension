@@ -1,6 +1,6 @@
 import type { Exchange, Frame, Initiator, SseMessage } from "../types.js";
 
-// HAR 1.2 from any tool (DevTools, proxies, browser-use-extension), plus the private
+// HAR 1.2 from any tool (DevTools, proxies, browserkit), plus the private
 // fields the recorders add: _resourceType, _initiator, _webSocketMessages, _eventSourceMessages.
 
 type HarHeader = { name: string; value: string };

@@ -1,4 +1,4 @@
-// End to end in real Chrome through the Browser Use Extension: rendering, the page's own JSON,
+// End to end in real Chrome through browserkit: rendering, the page's own JSON,
 // infinite scroll, actions, screenshots and PDFs, parallel workers, and mixed crawling.
 import assert from "node:assert/strict";
 import test from "node:test";
