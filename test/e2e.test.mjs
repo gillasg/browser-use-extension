@@ -471,6 +471,35 @@ test(
           const output = String(missing.stdout ?? "") + String(missing.stderr ?? "");
           assert.match(output, /nothing called text exists here/, output);
           assert.doesNotMatch(output, /WebGL/, output);
+          // A cell that works but goes the long way gets one tip, once per session.
+          const tipCode = "await page.evaluate(() => localStorage.length)";
+          const tipped = await run(process.execPath, [cli, "repl", "--session", "lists", tipCode], {
+            env,
+          });
+          assert.match(tipped.stdout, /Tip: never read sign-in data/, tipped.stdout);
+          const again = await run(process.execPath, [cli, "repl", "--session", "lists", tipCode], {
+            env,
+          });
+          assert.doesNotMatch(again.stdout, /Tip:/, again.stdout);
+          // A tab another session is driving: attaching gives this session its own copy.
+          const copy = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "lists-other",
+              `const [held] = await browser.tabs(${JSON.stringify(siteUrl + "virtual")});
+            const mine = await browser.attachTab(held);
+            console.log("COPY " + JSON.stringify({other: mine.target.tabId !== held.id, url: mine.url()}));`,
+            ],
+            { env },
+          );
+          assert.match(copy.stdout, /in use by another Aeon chat/, copy.stdout);
+          assert.deepEqual(JSON.parse(/COPY (.*)/.exec(copy.stdout)[1]), {
+            other: true,
+            url: siteUrl + "virtual",
+          });
         },
       );
 

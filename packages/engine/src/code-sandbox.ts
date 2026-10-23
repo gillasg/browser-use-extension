@@ -143,10 +143,21 @@ async function run(message: Record<string, unknown>): Promise<void> {
     print("Final observation unavailable:", String(caught));
   }
   error ??= asynchronousError;
+  if (!error) tip(String(message.code));
   parent.postMessage(
     { kind: "done", cellId, value: portable(value), output, ...(error ? { error } : {}) },
     "*",
   );
+}
+
+/** Adds a one-line "Tip:" to the output when the cell took the long way to something. */
+function tip(code: string): void {
+  try {
+    const text = String((scope.__tip as (code: string) => string)(code) || "");
+    if (text) print("Tip: " + text);
+  } catch {
+    // No tip.
+  }
 }
 
 /** The error with a "did you mean" from the realm's real API, when one applies. */

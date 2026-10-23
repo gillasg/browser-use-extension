@@ -111,10 +111,28 @@ function __unknownMembers(code) {
   }
   return found;
 }
+// After a cell that worked but went the long way round: one line pointing at the shorter way,
+// at the moment it matters (models follow results better than guidance read long before).
+// Each tip shows once per session.
+var __tipsShown = new Set();
+var __TIPS = [
+  [/localStorage|sessionStorage|document\\.cookie|\\bcookieStore\\b/, 'never read sign-in data (cookies, storage, tokens): the page and siteApi already act as the signed-in user'],
+  [/(scrollTop|scrollBy|scrollTo|scrollIntoView)[\\s\\S]*(querySelectorAll|\\$\\$eval|data-index)|(querySelectorAll|\\$\\$eval|data-index)[\\s\\S]*(scrollTop|scrollBy|scrollTo)/, 'page.list(rowCss?) reads every row of a list in one call, including lists that only draw what is on screen'],
+  [/querySelector(All)?\\([^)]*\\)[^;\\n]*\\.click\\(|dispatchEvent\\(new MouseEvent/, 'click by visible text, role or bu id (page.getByText(text).click(), bu.click(id)): raw DOM clicks miss on apps that redraw themselves'],
+  [/performance\\.getEntries/, 'page.network.list(match) lists the site\\'s own requests, and siteApi calls what was learned from them'],
+  [/document\\.body\\.innerText|document\\.body\\.textContent/, 'page.markdown() or bu.state({query}) reads the page cleanly; page.data() has its embedded data'],
+];
+function __tip(code) {
+  for (var [pattern, text] of __TIPS)
+    if (pattern.test(String(code || '')) && !__tipsShown.has(text)) { __tipsShown.add(text); return text; }
+  return '';
+}
 // "page.playwright.click is not a function", "foo is not defined", "reading 'x'".
 function __hint(message, code) {
   try {
     var text = String(message || '');
+    if (/CLAIM_CONFLICT/.test(text))
+      return 'another Aeon chat is using that tab; browser.attachTab(tab) gives this chat its own copy, or browser.openTab(url, {newTab: true})';
     if (/is not a function|is not defined|Cannot read properties/.test(text)) {
       var unknown = __unknownMembers(code);
       if (unknown.length) return unknown.join('; ');

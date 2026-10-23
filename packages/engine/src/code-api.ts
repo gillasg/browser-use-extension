@@ -174,10 +174,21 @@ var browser = Object.freeze({
   // Agents sometimes ask for a tab object by id: browser.tab(tabId or a listed tab).
   tab: async (tab) => bu.use(typeof tab === 'object' && tab ? (tab.target || tab) : tab),
   getTab: async (tab) => browser.tab(tab),
+  // A tab another Aeon chat is driving can't be shared; the agent gets its own copy of the page
+  // instead (the conflict only shows on first use, hence the tiny read).
   attachTab: async (target) => {
     target = await __tabTarget(target);
-    await __step({op:'attachTab', target});
-    return bu.use(target);
+    try {
+      await __step({op:'attachTab', target});
+      var attached = await bu.use(target);
+      await attached.inspect(() => 1);
+      return attached;
+    } catch (error) {
+      var url = [...__tabs.values()].find(tab => __key(tab.target) === __key(target))?.url;
+      if (!/CLAIM_CONFLICT/.test(String(error && error.message || error)) || !url) throw error;
+      console.log('That tab is in use by another Aeon chat, so this chat opened its own copy: ' + url);
+      return browser.openTab(url, {newTab: true});
+    }
   },
   page: (target) => (__lastTarget = target, Object.freeze(__extendPage(target, {
     target,
