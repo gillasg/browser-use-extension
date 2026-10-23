@@ -13,6 +13,15 @@ import { executeLocalBrowserStep } from "./native-browser-executor.js";
 import { browserSessionOwner } from "./native-browser-session.js";
 import { currentInventoryTabs } from "./native-inventory-client.js";
 import { notePreviewActivity } from "./native-browser-preview.js";
+import { signInToPage } from "./native-browser-signin.js";
+import {
+  NO_RULES,
+  assertAllowed,
+  combinedRules,
+  guardTab,
+  releaseTabs,
+  type SiteRules,
+} from "./native-browser-site-rules.js";
 import { handOffToUser } from "./native-browser-handoff.js";
 import { presentBrowserTask } from "./native-browser-layout.js";
 import { networkCall } from "./native-browser-network.js";
@@ -41,6 +50,10 @@ interface Cell {
   progressTimer: ReturnType<typeof setTimeout> | undefined;
   waitingForUser: boolean;
   done: boolean;
+  /** Sites the machine says are off limits for this cell, asked once. */
+  siteRules?: Promise<SiteRules>;
+  /** Tabs holding a block rule for this cell, lifted when it finishes. */
+  guarded: Set<number>;
 }
 const cells = new Map<string, Cell>();
 let offscreen: Promise<void> | undefined;
@@ -100,6 +113,7 @@ async function startCell(identity: BrowserIdentity, socket: WebSocket, run: Brow
     operationId: crypto.randomUUID(),
     allowed,
     opened: new Map(),
+    guarded: new Set(),
     steps: [],
     count: 0,
     calls: new Map(),
@@ -143,6 +157,7 @@ function finish(
   if (cell.done) return;
   cell.done = true;
   cells.delete(cell.run.cellId);
+  void releaseTabs(cell.guarded);
   if (cell.progressTimer) clearTimeout(cell.progressTimer);
   for (const waiter of cell.calls.values()) waiter.reject(new Error("Browser cell finished"));
   send(cell.socket, {
@@ -175,6 +190,10 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
 
 // Non-step requests: browser info and hand-off stay local, everything else goes to Core.
 function serveCall(cell: Cell, value: Record<string, unknown> | null): Promise<unknown> {
+  const signIn = serveSignIn(cell, value);
+  if (signIn) return signIn;
+  const guarded = guardedCall(cell, value);
+  if (guarded) return guarded;
   if (value?.browserInfo === true)
     return Promise.resolve({ clientInstanceIds: [cell.identity.clientInstanceId] });
   if (value && typeof value.handoff === "object" && value.handoff)
@@ -191,11 +210,69 @@ function serveCall(cell: Cell, value: Record<string, unknown> | null): Promise<u
   return callCore(cell, value);
 }
 
+// Passwords and one-time codes travel only between the machine and the engine: agent code may
+// ask to sign in, never for the login itself.
+function serveSignIn(
+  cell: Cell,
+  value: Record<string, unknown> | null,
+): Promise<unknown> | undefined {
+  if (value && "credential" in value)
+    return Promise.reject(new Error("FORBIDDEN: use bu.signIn() to sign in"));
+  if (!value || typeof value.signIn !== "object" || !value.signIn) return undefined;
+  const request = value.signIn as { target?: unknown; account?: unknown };
+  const target = authorizedTarget(cell, request.target);
+  void notePreviewActivity(cell.run.chatId, target.tabId);
+  return guardCellTab(cell, target.tabId).then(() => {
+    setWaiting(cell, true);
+    return signInToPage(
+      target.tabId,
+      { account: request.account },
+      (ask) => callCore(cell, ask),
+      () => !cell.done,
+    ).finally(() => setWaiting(cell, false));
+  });
+}
+
+function siteRulesFor(cell: Cell): Promise<SiteRules> {
+  cell.siteRules ??= callCore(cell, { siteRules: true })
+    .catch(() => NO_RULES)
+    .then(combinedRules);
+  return cell.siteRules;
+}
+
+async function guardCellTab(cell: Cell, tabId: number): Promise<void> {
+  await guardTab(tabId, await siteRulesFor(cell));
+  cell.guarded.add(tabId);
+}
+
+/** browser.fetch and site API calls name their site up front: refuse blocked ones. */
+function guardedCall(
+  cell: Cell,
+  value: Record<string, unknown> | null,
+): Promise<unknown> | undefined {
+  if (!value) return undefined;
+  const fetch = isFetchRequest(value);
+  if (!fetch && typeof value.siteMapper !== "string") return undefined;
+  return siteRulesFor(cell).then((rules) => {
+    assertAllowed(rules, fetch ? (value.fetch as { url?: unknown }).url : value.site);
+    return fetch ? fetchCall(value) : callCore(cell, value);
+  });
+}
+
+/** A step that goes somewhere, or acts in a tab, stays off blocked sites. */
+async function enforceSites(cell: Cell, step: BrowserStep): Promise<void> {
+  const rules = await siteRulesFor(cell);
+  assertAllowed(rules, (step as { url?: unknown }).url);
+  const target = (step as { target?: { tabId?: unknown } }).target;
+  if (typeof target?.tabId === "number") await guardCellTab(cell, target.tabId);
+}
+
 async function serve(cell: Cell, request: unknown): Promise<unknown> {
   const value = request as Record<string, unknown> | null;
   if (!value || typeof value.op !== "string") return serveCall(cell, value);
   const step = await prepare(cell, value);
   authorize(cell, step);
+  await enforceSites(cell, step);
   const entry: Record<string, unknown> = {
     index: cell.steps.length,
     action: step,
@@ -216,6 +293,7 @@ async function serve(cell: Cell, request: unknown): Promise<unknown> {
       step,
     );
     if (result.kind === "tab") {
+      await guardCellTab(cell, result.tab.target.tabId);
       const key = targetIdentity(result.tab.target);
       cell.allowed.set(key, result.tab.target);
       cell.opened.set(key, result.tab.target);
