@@ -1,0 +1,6 @@
+packages:
+  - .
+# Provider SDK install scripts are not needed: everything runs from the published JavaScript.
+allowBuilds:
+  "@google/genai": false
+  protobufjs: false

@@ -1,0 +1,69 @@
+{
+  "name": "browser-crawl",
+  "version": "0.2.2",
+  "description": "Crawl anything, including behind logins: sitemaps and links, Markdown, JSON and page data, through your own browser or plain HTTP.",
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.4.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "browser-crawl": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "crawler",
+    "scraper",
+    "markdown",
+    "sitemap",
+    "rag",
+    "browser",
+    "mcp"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" \"*.{json,yaml,mjs}\" \".github/**/*.yml\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" \"*.{json,yaml,mjs}\" \".github/**/*.yml\"",
+    "test": "node --test --test-timeout=120000 test/*.test.mjs",
+    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm build && pnpm test",
+    "links": "node scripts/link-repos.mjs"
+  },
+  "dependencies": {
+    "@mozilla/readability": "0.6.0",
+    "exceljs": "4.4.0",
+    "linkedom": "0.18.13",
+    "mammoth": "1.13.0",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "1.0.2",
+    "undici": "7.10.0",
+    "unpdf": "1.8.1",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.3",
+    "@types/turndown": "5.0.6",
+    "@types/ws": "8.18.1",
+    "eslint": "10.11.0",
+    "jszip": "3.10.1",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1"
+  }
+}
