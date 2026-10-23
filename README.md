@@ -23,7 +23,7 @@ Most browser-automation tools start a separate, empty browser. This one runs ins
 Requires Node.js 22+ and Chrome, Edge or Brave.
 
 ```sh
-node scripts/link-repos.mjs   # fetches and builds site-to-api, browser-crawl, site-boosts and pi-ai-login next to this folder
+node scripts/link-repos.mjs   # fetches and builds browser-crawl next to this folder
 pnpm install
 pnpm build
 node apps/bridge/dist/cli.js setup
@@ -79,12 +79,9 @@ browser-use-extension repl "page = await browser.openTab('https://example.com');
 browser-use-extension repl --session research "page.url"
 browser-use-extension tabs
 browser-use-extension status
-browser-use-extension login     # sign in to an AI model, for features that use one
 ```
 
-`login` opens a sign-in page in your browser for Claude, ChatGPT, GitHub Copilot, OpenRouter and 40+ other providers (subscriptions or API keys). The extension's popup has the same **Connect a model** button. Logins are shared with [pi-ai-login](https://github.com/gillasg/pi-ai-login) and every app built on Pi.
-
-Other extensions can borrow that model too: [Site Boosts](https://github.com/gillasg/site-boosts) uses it to write boosts. Chrome asks you once per extension before it is allowed.
+Agents bring their own model: this extension does not sign in to model providers and does not provide a model to other extensions. A companion asking for one is told that none is available.
 
 ## How it fits together
 
@@ -93,16 +90,20 @@ agent ──MCP/CLI──▶ bridge (local, 127.0.0.1) ◀──WebSocket── 
 ```
 
 - `packages/engine`: the browser engine: code runtime, tab ownership, input, observation, hand-off, network recording. It can be embedded in other extensions.
+- `packages/boosts`: the Site Boosts engine, with its own extension build, embedded in the engine as `browser.boosts`.
 - `apps/extension`: the extension that connects Chrome to the bridge.
 - `apps/bridge`: the bridge, native messaging host, CLI and MCP server.
 - `packages/protocol`: the messages the engine speaks.
-- `packages/tools`: site-to-api and browser-crawl, for the bridge and for apps built on the engine.
+- `packages/tools`: the `crawl` and `site_api` tools built on the packages below.
+- `packages/site-api`: the site mapping and calling library (a snapshot of site-to-api, now maintained here).
 
-site-to-api, browser-crawl and Site Boosts are their own projects, each usable alone. This repo links to them in sibling folders (`link:../site-to-api`) instead of copying them, so a change there is used here on the next build. `node scripts/link-repos.mjs --revisions` prints the revision of each linked repo.
+browser-crawl is its own project, linked from a sibling folder (`link:../browser-crawl`) instead of being copied, so a change there is used here on the next build. `node scripts/link-repos.mjs --revisions` prints the revision of each linked repo.
 
 ## Development
 
 ```sh
-node scripts/link-repos.mjs   # once, and after pulling the linked repos
+node scripts/link-repos.mjs   # once, and after pulling browser-crawl
 pnpm check                    # format, types, and an end-to-end test in real Chrome (set CHROME_PATH)
+pnpm test:boosts              # Site Boosts unit tests
+CHROME_PATH=... pnpm test:boosts:e2e   # Site Boosts in headless Chrome for Testing
 ```

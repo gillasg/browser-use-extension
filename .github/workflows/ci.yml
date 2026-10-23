@@ -30,13 +30,16 @@ jobs:
         run: |
           line=$(npx -y @puppeteer/browsers@2.10.5 install chrome@stable --path "$RUNNER_TEMP/cft" | tail -1)
           echo "chrome-path=${line#* }" >> "$GITHUB_OUTPUT"
-      # site-to-api, browser-crawl, site-boosts and pi-ai-login, next to this checkout.
+      # browser-crawl, next to this checkout.
       - name: Set up linked repos
         run: node scripts/link-repos.mjs
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm format:check
       - run: pnpm typecheck
+      - run: pnpm lint
       - run: pnpm build
+      - run: pnpm test:boosts
+      - run: pnpm test:site-api
       - run: node --test --test-timeout=180000 test/*.test.mjs
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}

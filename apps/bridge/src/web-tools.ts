@@ -68,7 +68,7 @@ export const webTools = [
   },
   {
     name: "site_api",
-    description: `Call the APIs of sites mapped from this browser's own traffic: one call replaces many page actions and returns JSON, with the user's logins. sites lists mapped sites; operations lists what a site can do; call runs one; watch runs one and returns only items new or changed since the last watch of it. explore maps sites by name (an agent uses each in a background tab, looking only) and needs a connected model. To map a site yourself: in browser_code open it, await tab.network.start({ types: 'all' }), do something that loads new data, then await tab.network.save('<site>.har'); then learn with files ['<site>.har'] (mitmproxy flow files from phone or desktop apps work too). ${SITE_TOOL_HELP.join(" ")} ${HOW_TO_CALL}`,
+    description: `Call the APIs of sites mapped from this browser's own traffic: one call replaces many page actions and returns JSON, with the user's logins. sites lists mapped sites; operations lists what a site can do; call runs one; watch runs one and returns only items new or changed since the last watch of it. explore maps sites by name (an agent uses each in a background tab, looking only); it needs a model supplied by its caller, so this tool answers with an error unless the host provides one. To map a site yourself: in browser_code open it, await tab.network.start({ types: 'all' }), do something that loads new data, then await tab.network.save('<site>.har'); then learn with files ['<site>.har'] (mitmproxy flow files from phone or desktop apps work too). ${SITE_TOOL_HELP.join(" ")} ${HOW_TO_CALL}`,
     inputSchema: {
       type: "object",
       properties: {

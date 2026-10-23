@@ -10,7 +10,6 @@
     "dist"
   ],
   "dependencies": {
-    "pi-ai-login": "link:../../../pi-ai-login",
     "ws": "8.22.0",
     "@browser-use-extension/tools": "workspace:*"
   },

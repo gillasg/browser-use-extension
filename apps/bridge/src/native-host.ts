@@ -1,4 +1,4 @@
-import { BridgeClient, ensureBridge } from "./client.js";
+import { ensureBridge } from "./client.js";
 
 // Chrome native messaging host. The extension sends one bootstrap message; the host makes sure
 // the bridge is running and answers with its local endpoint and connection grant.
@@ -7,14 +7,6 @@ type Json = Record<string, unknown>;
 export async function runNativeHost(): Promise<void> {
   const request = await readFrame();
   const version = request?.protocolVersion ?? { major: 1, minor: 6 };
-  if (request?.kind === "model.status" || request?.kind === "model.login") {
-    writeFrame(await modelRequest(String(request.kind)));
-    return;
-  }
-  if (request?.kind === "model.complete") {
-    writeFrame(await completeRequest(request));
-    return;
-  }
   if (request?.kind !== "native.bootstrap") {
     writeFrame({
       kind: "native.bootstrap.result",
@@ -42,38 +34,6 @@ export async function runNativeHost(): Promise<void> {
       ok: false,
       code: "DAEMON_OFFLINE",
     });
-  }
-}
-
-/** The extension popup's "AI model" section: what is connected, and opening the sign-in page. */
-async function modelRequest(kind: string): Promise<Json> {
-  try {
-    if (kind === "model.status") {
-      const { modelStatus } = await import("./model-login.js");
-      return { ok: true, ...(await modelStatus()) };
-    }
-    const bridge = await BridgeClient.connect();
-    try {
-      const reply = await bridge.request("model.login");
-      return reply.url ? { ok: true, url: reply.url } : { ok: false, error: String(reply.error) };
-    } finally {
-      bridge.close();
-    }
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-/** A completion for another extension the user allowed (see the extension's companion.ts). */
-async function completeRequest(request: Json): Promise<Json> {
-  try {
-    const { modelComplete } = await import("./model-login.js");
-    const messages = Array.isArray(request.messages)
-      ? (request.messages as { role: string; content: string }[])
-      : [];
-    return { ok: true, text: await modelComplete(String(request.system ?? ""), messages) };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

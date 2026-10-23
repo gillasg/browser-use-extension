@@ -1,8 +1,8 @@
 name: Release
 
-# A release whenever this repo or a linked one (site-to-api, browser-crawl, site-boosts,
-# pi-ai-login) has changed on main since the last one. Each release is tagged and lists the
-# revision of every linked repo it was built from, so any release can be rebuilt or rolled back to.
+# A release whenever this repo or a linked one (browser-crawl) has changed on main since the
+# last one. Each release is tagged and lists the revision of every linked repo it was built
+# from, so any release can be rebuilt or rolled back to.
 on:
   push:
     branches: [main]

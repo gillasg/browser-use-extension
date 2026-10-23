@@ -31,12 +31,9 @@ test(
   },
   async (t) => {
     const home = await mkdtemp(join(tmpdir(), "bue-home-"));
-    // A throwaway Pi folder: model sign-in tests never touch real logins.
-    const piHome = await mkdtemp(join(tmpdir(), "bue-pi-"));
     const env = {
       ...process.env,
       BROWSER_USE_EXTENSION_HOME: home,
-      PI_CODING_AGENT_DIR: piHome,
       SITE_TO_API_HOME: join(home, "site-to-api"),
     };
     const site = createServer((request, response) => {
@@ -132,25 +129,6 @@ test(
         assert.equal(reply.ok, true);
         assert.equal(reply.endpoint, `ws://127.0.0.1:${state.port}/aeon/v1`);
         assert.equal(reply.connectionGrant, state.token);
-      });
-
-      await t.test("the popup can check models and open the model sign-in page", async () => {
-        const status = await nativeBootstrap(env, { kind: "model.status" });
-        assert.equal(status.ok, true);
-        assert.deepEqual(status.connected, []);
-        const login = await nativeBootstrap(env, { kind: "model.login" });
-        assert.equal(login.ok, true, JSON.stringify(login));
-        assert.match(login.url, /^http:\/\/127\.0\.0\.1:\d+\/#token=/);
-        const page = await fetch(login.url.replace(/#.*/, ""));
-        assert.match(await page.text(), /Connect an AI model/);
-        // Other extensions can borrow the model; with none signed in, they are told so.
-        const completion = await nativeBootstrap(env, {
-          kind: "model.complete",
-          system: "Be brief.",
-          messages: [{ role: "user", content: "Hi" }],
-        });
-        assert.equal(completion.ok, false);
-        assert.match(completion.error, /No AI model is connected/);
       });
 
       chrome = spawn(

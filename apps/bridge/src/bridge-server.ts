@@ -235,15 +235,7 @@ export class Bridge {
         const session = sessionId(String(request.session ?? "default"));
         const limit = Number(request.limit ?? 50);
         void readJournalEntries(session, limit).then((entries) => respond({ entries }));
-      } else if (request.kind === "model.login")
-        // Loaded on first use: the model providers are only needed for signing in.
-        void import("./model-login.js")
-          .then(({ openModelLogin }) => openModelLogin())
-          .then(
-            (url) => respond({ url }),
-            (error: unknown) => respond({ error: String(error) }),
-          );
-      else if (request.kind === "run")
+      } else if (request.kind === "run")
         void this.run(request, (event) => send(socket, { id: request.id, ...event })).then(respond);
       else respond({ error: "Unknown request" });
     });
