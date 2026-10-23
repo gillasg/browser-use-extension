@@ -28,10 +28,10 @@ import { exportSession } from "./session-export.js";
 import { docsExpression, docsTargets, type SiteDocs } from "./docs.js";
 import { paginate, type PaginateOptions } from "./paginate.js";
 
-// The runtime: `const api = await siteApi("shop.example")`, then `await api.searchProducts({ q })`
+// The runtime: `const api = await siteMapper("shop.example")`, then `await api.searchProducts({ q })`
 // or `for await (const item of api.paginate.searchProducts({ q }))`.
 
-export interface SiteApiOptions {
+export interface SiteMapperOptions {
   /** auto (default): direct when nothing needs the browser, else the page. */
   transport?: "auto" | "page" | "direct";
   model?: SiteModel;
@@ -74,7 +74,7 @@ export class SignedOut extends HttpError {
   }
 }
 
-/** A write reached the API runtime. Writes go through the site's page UI, never through SiteApi. */
+/** A write reached the API runtime. Writes go through the site's page UI, never through SiteMapper. */
 export class WriteThroughApi extends Error {
   constructor(operationId: string) {
     super(`${operationId} changes state; writes go through the site's page UI`);
@@ -108,7 +108,7 @@ export class SiteClient {
 
   constructor(
     readonly model: SiteModel,
-    private readonly options: Omit<SiteApiOptions, "session"> & { session?: SessionFile },
+    private readonly options: Omit<SiteMapperOptions, "session"> & { session?: SessionFile },
   ) {
     this.site = model.site;
     this.limiter = new RateLimiter(
@@ -509,7 +509,7 @@ export class SiteClient {
   }
 }
 
-export type SiteApi = SiteClient &
+export type SiteMapper = SiteClient &
   Record<string, unknown> & {
     paginate: Record<
       string,
@@ -519,7 +519,7 @@ export type SiteApi = SiteClient &
 
 async function initialSession(
   model: SiteModel,
-  options: SiteApiOptions,
+  options: SiteMapperOptions,
 ): Promise<SessionFile | undefined> {
   if (options.session === false) return undefined;
   return options.session ?? (await readSession(model.site));
@@ -528,7 +528,7 @@ async function initialSession(
 /** A session the user exported is renewed from their browser when it expires or is refused. */
 function sessionRefresher(
   model: SiteModel,
-  options: SiteApiOptions,
+  options: SiteMapperOptions,
 ): (() => Promise<SessionFile | undefined>) | undefined {
   if (options.refreshSession === false) return undefined;
   return (
@@ -537,7 +537,10 @@ function sessionRefresher(
 }
 
 /** Opens a mapped site from the registry (or a given model) as a callable API. */
-export async function siteApi(site: string, options: SiteApiOptions = {}): Promise<SiteApi> {
+export async function siteMapper(
+  site: string,
+  options: SiteMapperOptions = {},
+): Promise<SiteMapper> {
   const model = options.model ?? (await loadModel(site));
   if (!model)
     throw new Error(
@@ -559,7 +562,7 @@ export async function siteApi(site: string, options: SiteApiOptions = {}): Promi
 }
 
 /** Operations, page endpoints and actions as methods: api.searchProducts({ q }). */
-function callable(client: SiteClient): SiteApi {
+function callable(client: SiteClient): SiteMapper {
   // api.paginate("listItems", params) and api.paginate.listItems(params) both work.
   const pagers = new Proxy(
     (id: string, params?: Params, opts?: PaginateOptions) => client.paginate(id, params, opts),
@@ -580,5 +583,5 @@ function callable(client: SiteClient): SiteApi {
       }
       return Reflect.get(target, name, receiver);
     },
-  }) as SiteApi;
+  }) as SiteMapper;
 }

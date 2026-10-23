@@ -1,4 +1,4 @@
-# @browser-use-extension/site-api
+# @browser-use-extension/site-mapper
 
 Parse any site into a typed API: use it once in your own browser, then call its recorded
 endpoints from code, from an agent, or over MCP.
@@ -8,7 +8,7 @@ This package began as a snapshot of the standalone
 Browser Use Extension now: capabilities are ported into it on purpose, and changes belong here.
 
 - `dist/index.js` is the library, including the mapping pipeline, OpenAPI/client emitters, the
-  runtime `siteApi` and `federate`.
+  runtime `siteMapper` and `federate`.
 - `dist/runtime/index.js` is the runtime client.
 - `dist/cli.js` is the `site-to-api` command line (`record`, `build`, `call`, `watch`, `serve`,
   `mcp`, `export`, `heal`, ...).
@@ -18,8 +18,8 @@ pass a `ModelLike` (`{ complete(context) }`) in their options. Nothing in this p
 to a model, and calling those features without one fails with a clear error.
 
 ```sh
-pnpm --filter @browser-use-extension/site-api build
-node packages/site-api/dist/cli.js sites
+pnpm --filter @browser-use-extension/site-mapper build
+node packages/site-mapper/dist/cli.js sites
 ```
 
 MIT.

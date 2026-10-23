@@ -20,7 +20,7 @@ export interface PageContext {
   selection?: string;
 }
 
-export interface SiteApiSummary {
+export interface SiteMapperSummary {
   site: string;
   operations: { id: string; summary?: string; method: string; path: string }[];
 }
@@ -33,7 +33,7 @@ export interface AuthorRequest {
   history?: ChatTurn[];
   /** For repairs: what broke. */
   repair?: { last: HealthReport; lastGood?: HealthReport };
-  apis?: SiteApiSummary[];
+  apis?: SiteMapperSummary[];
 }
 
 export interface ModelMessage {
@@ -129,7 +129,7 @@ function repairSection(repair: NonNullable<AuthorRequest["repair"]>): string {
   return lines.join("\n");
 }
 
-function apiSection(apis: SiteApiSummary[]): string {
+function apiSection(apis: SiteMapperSummary[]): string {
   const lines = ["Mapped site APIs you can call with SB.api(site, operationId, params):"];
   for (const api of apis.slice(0, 10)) {
     lines.push(`- ${api.site}`);

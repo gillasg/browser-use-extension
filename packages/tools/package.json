@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "browser-crawl": "link:../../../browser-crawl",
-    "@browser-use-extension/site-api": "workspace:*"
+    "@browser-use-extension/site-mapper": "workspace:*"
   },
   "files": [
     "dist"

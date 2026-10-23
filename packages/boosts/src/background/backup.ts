@@ -14,11 +14,11 @@ import {
 
 /** Settings without secrets: keys and passwords never leave in a backup. */
 function shareableSettings(settings: Settings): Partial<Settings> {
-  const { model, siteApi, webdav, ...rest } = settings;
+  const { model, siteMapper, webdav, ...rest } = settings;
   return {
     ...rest,
     model: model ? { ...model, apiKey: undefined } : undefined,
-    siteApi: siteApi ? { ...siteApi, token: "" } : undefined,
+    siteMapper: siteMapper ? { ...siteMapper, token: "" } : undefined,
     webdav: webdav ? { url: webdav.url, user: webdav.user } : undefined,
   };
 }

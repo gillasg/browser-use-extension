@@ -156,7 +156,7 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
-  packages/site-api:
+  packages/site-mapper:
     devDependencies:
       "@eslint/js":
         specifier: 10.0.1
@@ -185,9 +185,9 @@ importers:
 
   packages/tools:
     dependencies:
-      "@browser-use-extension/site-api":
+      "@browser-use-extension/site-mapper":
         specifier: workspace:*
-        version: link:../site-api
+        version: link:../site-mapper
       browser-crawl:
         specifier: link:../../../browser-crawl
         version: link:../../../browser-crawl

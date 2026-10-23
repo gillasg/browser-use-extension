@@ -22,7 +22,7 @@ import {
 } from "./registry.js";
 import { closeSharedBridge } from "./runtime/bridge.js";
 import { exportSession } from "./runtime/session-export.js";
-import { errorKind, siteApi } from "./runtime/site-api.js";
+import { errorKind, siteMapper } from "./runtime/site-mapper.js";
 import { serve } from "./serve.js";
 import { explore } from "./explore.js";
 import { readDocs } from "./docs.js";
@@ -170,7 +170,7 @@ async function call(args: Args): Promise<void> {
   const [, site, operation] = args.positional;
   if (!site || !operation) throw new Error("Usage: site-to-api call <site> <operation> [json]");
   const transport = flag(args, "transport") as "page" | "direct" | undefined;
-  const api = await siteApi(site, transport ? { transport } : {});
+  const api = await siteMapper(site, transport ? { transport } : {});
   const params = callParams(args);
   if (args.flags.all === true || flag(args, "max-items")) {
     const items: unknown[] = [];
@@ -225,7 +225,7 @@ async function exportSessionCommand(site: string): Promise<void> {
 
 async function actionCommand(args: Args, site: string): Promise<void> {
   const [, , name, json] = args.positional;
-  const api = await siteApi(site);
+  const api = await siteMapper(site);
   if (!name) {
     for (const [id, action] of Object.entries(api.actions))
       out(
@@ -253,7 +253,7 @@ async function actionCommand(args: Args, site: string): Promise<void> {
 
 async function channelCommand(args: Args, site: string): Promise<void> {
   const [, , id] = args.positional;
-  const api = await siteApi(site);
+  const api = await siteMapper(site);
   if (!id) {
     for (const channel of api.model.channels) out(`${channel.id}\t${channel.kind}\t${channel.url}`);
     return;

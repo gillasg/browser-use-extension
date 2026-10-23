@@ -768,7 +768,7 @@ test(
           const listed = await mcp.call("tools/list", {});
           assert.deepEqual(
             listed.tools.map((tool) => tool.name),
-            ["browser_code", "browser_tabs", "crawl", "site_api"],
+            ["browser_code", "browser_tabs", "crawl", "site_mapper"],
           );
           const crawled = await mcp.call("tools/call", {
             name: "crawl",
@@ -819,16 +819,16 @@ test(
         },
       );
 
-      await t.test("browser code reaches mapped site APIs through siteApi", async () => {
+      await t.test("browser code reaches mapped site APIs through siteMapper", async () => {
         const { stdout } = await run(
           process.execPath,
           [
             cli,
             "repl",
             "--session",
-            "site-api",
-            `const sites = await siteApi.sites();
-            const missing = await siteApi.call("nope.example", "x").then(() => "called", (e) => String(e.message));
+            "site-mapper",
+            `const sites = await siteMapper.sites();
+            const missing = await siteMapper.call("nope.example", "x").then(() => "called", (e) => String(e.message));
             console.log("RESULT " + JSON.stringify({ sites, missing }))`,
           ],
           { env },

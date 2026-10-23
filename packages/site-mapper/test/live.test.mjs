@@ -67,7 +67,7 @@ test("a write the page made is learned, named after its control and proven", asy
   assert.equal(learned.kind, "routine");
   assert.equal(learned.proven, true);
   assert.equal(learned.step, 'click "Remove from Watch later"');
-  assert.match(learned.how, /siteApi\.write\('videos\.example', 'removeFromWatchLater'/);
+  assert.match(learned.how, /siteMapper\.write\('videos\.example', 'removeFromWatchLater'/);
   assert.ok(learned.params.includes("setVideoId"));
   const model = await loadModel(SITE);
   const operation = model.operations.find((item) => item.id === "removeFromWatchLater");

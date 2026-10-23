@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import {
   buildSiteModel,
   parseCapture,
-  siteApi,
+  siteMapper,
   PageTransport,
   DirectTransport,
   MissingParams,
@@ -28,7 +28,7 @@ async function shop(t, extra) {
 
 test("direct calls: typed operations, query and path parameters", async (t) => {
   const { model } = await shop(t);
-  const api = await siteApi(model.site, { model, transport: "direct", session: false });
+  const api = await siteMapper(model.site, { model, transport: "direct", session: false });
   const page = await api.listProducts({ limit: 2 });
   assert.equal(page.items.length, 2);
   const product = await api.getProduct({ productId: 1005 });
@@ -39,14 +39,14 @@ test("direct calls: typed operations, query and path parameters", async (t) => {
 
 test("missing inputs are resolved from the operations that produce them", async (t) => {
   const { model } = await shop(t);
-  const api = await siteApi(model.site, { model, transport: "direct", session: false });
+  const api = await siteMapper(model.site, { model, transport: "direct", session: false });
   const product = await api.getProduct();
   assert.equal(product.product.id, 1000, "the first id from listProducts");
   const reviews = await api.listProductsReviews();
   assert.equal(reviews.reviews.length, 3, "chained: listProducts → getProduct → reviews");
   const bare = structuredClone(model);
   bare.operations.find((o) => o.id === "getProduct").dependencies = [];
-  const unresolved = await siteApi(model.site, {
+  const unresolved = await siteMapper(model.site, {
     model: bare,
     transport: "direct",
     session: false,
@@ -59,7 +59,7 @@ test("missing inputs are resolved from the operations that produce them", async 
 
 test("async iterators walk cursor and page-number pagination", async (t) => {
   const { model, site } = await shop(t);
-  const api = await siteApi(model.site, { model, transport: "direct", session: false });
+  const api = await siteMapper(model.site, { model, transport: "direct", session: false });
   const all = [];
   for await (const item of api.paginate.listProducts({ limit: 5 })) all.push(item.id);
   assert.equal(all.length, site.products.length);
@@ -76,7 +76,7 @@ test("async iterators walk cursor and page-number pagination", async (t) => {
 
 test("GraphQL and JSON-RPC calls take variables and params", async (t) => {
   const { model } = await shop(t);
-  const api = await siteApi(model.site, { model, transport: "direct", session: false });
+  const api = await siteMapper(model.site, { model, transport: "direct", session: false });
   const search = await api.searchProducts({ variables: { term: "Product 2" } });
   assert.ok(search.data.search.edges.every((edge) => edge.node.name.includes("Product 2")));
   const category = await api.graphqlabc123de({ variables: { slug: "bags" } });
@@ -90,7 +90,7 @@ test("429s are retried with back-off", async (t) => {
     await r.request("GET", "/api/flaky");
     await r.request("GET", "/api/flaky");
   });
-  const api = await siteApi(model.site, { model, transport: "direct", session: false });
+  const api = await siteMapper(model.site, { model, transport: "direct", session: false });
   const id = model.operations.find((o) => o.path === "/api/flaky").id;
   assert.deepEqual(await api.call(id), { ok: true });
 });
@@ -98,7 +98,7 @@ test("429s are retried with back-off", async (t) => {
 test("in-page calls: the site's cookies apply, and its own fetch signs requests", async (t) => {
   const { model } = await shop(t);
   const browser = new FakeBrowser();
-  const api = await siteApi(model.site, {
+  const api = await siteMapper(model.site, {
     model,
     transport: "page",
     bridge: async () => browser,
@@ -119,7 +119,7 @@ test("in-page calls: the site's cookies apply, and its own fetch signs requests"
 test("auto transport: public calls go direct, signed calls go through the page", async (t) => {
   const { model } = await shop(t);
   const browser = new FakeBrowser();
-  const api = await siteApi(model.site, { model, bridge: async () => browser, session: false });
+  const api = await siteMapper(model.site, { model, bridge: async () => browser, session: false });
   assert.equal((await api.getSigned({ q: "x" })).secret, "signed-ok");
   assert.ok(browser.calls.some((c) => c.url.includes("/api/signed")));
 });
@@ -161,7 +161,7 @@ test("JSON sent with a form label is replayed as the same JSON, under the same l
   });
   const operation = model.operations.find((o) => o.path === "/1/indexes/items/query");
   assert.ok(operation, model.operations.map((o) => o.path).join(", "));
-  const api = await siteApi(model.site, { model, transport: "direct", session: false });
+  const api = await siteMapper(model.site, { model, transport: "direct", session: false });
   const result = await api.call(operation.id, { query: "python", page: 0 });
   assert.equal(result.hits[0].title, "python");
   assert.match(received.at(-1).type, /x-www-form-urlencoded/);
@@ -173,7 +173,7 @@ test("useBrowser routes every browser call through another app's connection", as
   const browser = new FakeBrowser();
   useBrowser(browser);
   t.after(() => useBrowser(undefined));
-  const api = await siteApi(model.site, { model, session: false });
+  const api = await siteMapper(model.site, { model, session: false });
   assert.equal((await api.getSigned({ q: "y" })).secret, "signed-ok");
   assert.ok(browser.calls.some((c) => c.url.includes("/api/signed")));
 });

@@ -5,7 +5,12 @@ import { generateClient } from "./emit/client.js";
 import { toAsyncApi, toOpenApi } from "./emit/openapi.js";
 import { toYaml } from "./emit/yaml.js";
 import { listSites, loadModel, readOverrides, siteName } from "./registry.js";
-import { HttpError, siteApi, type SiteApi, type SiteApiOptions } from "./runtime/site-api.js";
+import {
+  HttpError,
+  siteMapper,
+  type SiteMapper,
+  type SiteMapperOptions,
+} from "./runtime/site-mapper.js";
 import type { Operation, Overrides, SiteModel } from "./types.js";
 
 // A local REST server for every mapped site, on 127.0.0.1 only:
@@ -16,7 +21,7 @@ import type { Operation, Overrides, SiteModel } from "./types.js";
 //   ANY  /sites/<site>/api/<original path>   the site's own paths, proxied through the runtime
 // Calls need the token printed at start (header x-site-to-api-token): they act as the user.
 
-export interface ServeOptions extends SiteApiOptions {
+export interface ServeOptions extends SiteMapperOptions {
   port?: number;
   token?: string;
 }
@@ -118,7 +123,7 @@ function publicFile(ctx: SiteCtx): boolean {
   return true;
 }
 
-async function callOperation(ctx: SiteCtx, client: SiteApi, id: string): Promise<void> {
+async function callOperation(ctx: SiteCtx, client: SiteMapper, id: string): Promise<void> {
   const params =
     ctx.request.method === "GET"
       ? Object.fromEntries(ctx.url.searchParams)
@@ -130,7 +135,7 @@ async function callOperation(ctx: SiteCtx, client: SiteApi, id: string): Promise
 }
 
 /** The site's own paths under /api, mapped onto its operations. */
-async function proxyPath(ctx: SiteCtx, client: SiteApi): Promise<boolean> {
+async function proxyPath(ctx: SiteCtx, client: SiteMapper): Promise<boolean> {
   const method = ctx.request.method ?? "GET";
   const path = "/" + ctx.parts.slice(3).map(encodeURIComponent).join("/");
   for (const operation of ctx.model.operations) {
@@ -165,10 +170,10 @@ function allowedHost(request: IncomingMessage): boolean {
 
 export async function serve(options: ServeOptions = {}): Promise<Server> {
   const token = options.token ?? randomBytes(24).toString("base64url");
-  const apis = new Map<string, Promise<SiteApi>>();
+  const apis = new Map<string, Promise<SiteMapper>>();
   const api = (site: string) => {
-    if (!apis.has(site)) apis.set(site, siteApi(site, options));
-    return apis.get(site) as Promise<SiteApi>;
+    if (!apis.has(site)) apis.set(site, siteMapper(site, options));
+    return apis.get(site) as Promise<SiteMapper>;
   };
   let base = "";
   const authorized = (request: IncomingMessage) => {

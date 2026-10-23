@@ -1,6 +1,6 @@
 import type { Boost, HealthReport } from "../shared/types.js";
 import { errorText } from "../shared/messages.js";
-import { callCompanion, callSiteApi } from "./integrations.js";
+import { callCompanion, callSiteMapper } from "./integrations.js";
 import { recordHealth } from "./health.js";
 import { copyToClipboard } from "./offscreen.js";
 import { syncSoon } from "./scripts.js";
@@ -253,7 +253,7 @@ const handlers: Record<string, Handler> = {
   "menu.unregister": (ctx, { id }) =>
     menus.get(ctx.tabId ?? -1)?.delete(`${ctx.boost.id}:${String(id)}`),
   api: (_ctx, { site, operation, params }) =>
-    callSiteApi(String(site), String(operation), (params as Record<string, unknown>) ?? {}),
+    callSiteMapper(String(site), String(operation), (params as Record<string, unknown>) ?? {}),
   companion: (ctx, { kind, data }) =>
     callCompanion(String(kind), data, { boost: ctx.boost.name, url: ctx.url }),
 };

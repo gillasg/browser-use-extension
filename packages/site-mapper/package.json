@@ -1,5 +1,5 @@
 {
-  "name": "@browser-use-extension/site-api",
+  "name": "@browser-use-extension/site-mapper",
   "version": "0.2.1",
   "description": "Parse any site into a typed API: record it in your own browser, get an OpenAPI spec, a typed client, REST and MCP.",
   "type": "module",
@@ -22,7 +22,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "site-to-api": "./dist/cli.js"
+    "site-mapper": "./dist/cli.js"
   },
   "files": [
     "dist",

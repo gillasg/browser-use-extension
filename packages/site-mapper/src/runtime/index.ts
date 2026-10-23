@@ -1,4 +1,4 @@
-// The runtime, importable on its own: `import { siteApi } from "@browser-use-extension/site-api/runtime"`.
+// The runtime, importable on its own: `import { siteMapper } from "@browser-use-extension/site-mapper/runtime"`.
 export {
   docsExpression,
   docsTargets,
@@ -7,15 +7,15 @@ export {
   type SiteDocs,
 } from "./docs.js";
 export {
-  siteApi,
+  siteMapper,
   SiteClient,
   HttpError,
   SignedOut,
   errorKind,
   type ErrorKind,
-  type SiteApi,
-  type SiteApiOptions,
-} from "./site-api.js";
+  type SiteMapper,
+  type SiteMapperOptions,
+} from "./site-mapper.js";
 export { runAction, acceptedInputs, type SiteAction, type ActionResult } from "./actions.js";
 export {
   channelStartExpression,

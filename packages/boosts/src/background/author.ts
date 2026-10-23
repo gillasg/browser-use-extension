@@ -8,7 +8,7 @@ import { unifiedDiff, boostText } from "../shared/diff.js";
 import { boostMatches, siteRuleFor } from "../shared/match.js";
 import { errorText, sendToTab } from "../shared/messages.js";
 import type { Boost, ChatTurn } from "../shared/types.js";
-import { listSiteApis } from "./integrations.js";
+import { listSiteMappers } from "./integrations.js";
 import { complete } from "./models.js";
 import { runOnce, userScriptsAvailable } from "./scripts.js";
 import { getBoost, getHealth, getSettings, log, putBoost, setHealth } from "./store.js";
@@ -77,7 +77,7 @@ export async function author(
   const page = await sendToTab<PageContext>(tabId, "context.get");
   const start = await startingPoint(tabId, boostId);
   const current = start.current;
-  const input = { request, page, current, history: start.history, apis: await listSiteApis() };
+  const input = { request, page, current, history: start.history, apis: await listSiteMappers() };
   const answer = await complete(settings.model, SYSTEM_PROMPT, authorMessages(input));
   const result = parseAuthorAnswer(answer, input, siteRuleFor(page.url));
   if (!result.boost) return { reply: result.reply };
@@ -157,7 +157,7 @@ export async function repair(
       current: boost,
       history: [],
       repair: { last: health.last, lastGood: health.lastGood },
-      apis: await listSiteApis(),
+      apis: await listSiteMappers(),
     };
     const answer = await complete(settings.model, SYSTEM_PROMPT, authorMessages(input));
     const result = parseAuthorAnswer(answer, input, siteRuleFor(page.url));

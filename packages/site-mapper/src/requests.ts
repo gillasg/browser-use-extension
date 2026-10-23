@@ -1,15 +1,15 @@
 import { listSites, loadModel, siteName } from "./registry.js";
 import type { Params } from "./runtime/request.js";
-import { siteApi } from "./runtime/site-api.js";
+import { siteMapper } from "./runtime/site-mapper.js";
 import { watch } from "./watch.js";
 import { learnLive, undoLive, writeLive } from "./live.js";
 
-// Requests from browser code (the `siteApi` global in the Browser Use Extension's runtime): a
+// Requests from browser code (the `siteMapper` global in the Browser Use Extension's runtime): a
 // browser cell, or a watcher's check, can list mapped sites, call or watch their operations, run
 // their saved actions and listen on their live channels.
 
-export interface SiteApiRequest {
-  siteApi:
+export interface SiteMapperRequest {
+  siteMapper:
     | "sites"
     | "operations"
     | "call"
@@ -31,16 +31,16 @@ export interface SiteApiRequest {
   approved?: boolean;
 }
 
-export function isSiteApiRequest(value: unknown): value is SiteApiRequest {
+export function isSiteMapperRequest(value: unknown): value is SiteMapperRequest {
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as { siteApi?: unknown }).siteApi === "string"
+    typeof (value as { siteMapper?: unknown }).siteMapper === "string"
   );
 }
 
 function required(value: unknown, what: string): string {
-  if (typeof value !== "string" || !value) throw new Error(`siteApi: give the ${what}`);
+  if (typeof value !== "string" || !value) throw new Error(`siteMapper: give the ${what}`);
   return value;
 }
 
@@ -58,14 +58,14 @@ async function operations(site: string): Promise<unknown> {
   }));
 }
 
-type Handler = (site: string, request: SiteApiRequest) => Promise<unknown>;
+type Handler = (site: string, request: SiteMapperRequest) => Promise<unknown>;
 
-const HANDLERS: Record<Exclude<SiteApiRequest["siteApi"], "sites">, Handler> = {
+const HANDLERS: Record<Exclude<SiteMapperRequest["siteMapper"], "sites">, Handler> = {
   operations,
   action: async (site, request) =>
-    (await siteApi(site)).action(required(request.name, "action name"), request.params ?? {}),
+    (await siteMapper(site)).action(required(request.name, "action name"), request.params ?? {}),
   channel: async (site, request) =>
-    (await siteApi(site)).channel(required(request.name, "channel id"), request.params ?? {}),
+    (await siteMapper(site)).channel(required(request.name, "channel id"), request.params ?? {}),
   watch: (site, request) =>
     watch(site, required(request.operation, "operation"), request.params ?? {}, {
       ...(request.key ? { key: request.key } : {}),
@@ -79,12 +79,12 @@ const HANDLERS: Record<Exclude<SiteApiRequest["siteApi"], "sites">, Handler> = {
   undo: (site, request) =>
     undoLive(site, required(request.operation, "operation"), request.params ?? {}),
   call: async (site, request) =>
-    (await siteApi(site)).call(required(request.operation, "operation"), request.params ?? {}),
+    (await siteMapper(site)).call(required(request.operation, "operation"), request.params ?? {}),
 };
 
-export async function handleSiteApiRequest(request: SiteApiRequest): Promise<unknown> {
-  if (request.siteApi === "sites") return listSites();
-  const handler = HANDLERS[request.siteApi] as Handler | undefined;
-  if (!handler) throw new Error(`siteApi: unknown request ${String(request.siteApi)}`);
+export async function handleSiteMapperRequest(request: SiteMapperRequest): Promise<unknown> {
+  if (request.siteMapper === "sites") return listSites();
+  const handler = HANDLERS[request.siteMapper] as Handler | undefined;
+  if (!handler) throw new Error(`siteMapper: unknown request ${String(request.siteMapper)}`);
   return handler(siteName(required(request.site, "site")), request);
 }

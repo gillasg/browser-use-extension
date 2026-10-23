@@ -2,11 +2,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { siteDir, siteName } from "./registry.js";
 import { summarizeDocs, type DocsSummary } from "./runtime/docs.js";
-import { siteApi } from "./runtime/site-api.js";
+import { siteMapper } from "./runtime/site-mapper.js";
 
 /** Finds a mapped site's published API documents and GraphQL schemas, saves them, and lists them. */
 export async function readDocs(site: string): Promise<DocsSummary & { saved: string[] }> {
-  const docs = await (await siteApi(site)).docs();
+  const docs = await (await siteMapper(site)).docs();
   const folder = join(siteDir(siteName(site)), "docs");
   await mkdir(folder, { recursive: true });
   const saved: string[] = [];

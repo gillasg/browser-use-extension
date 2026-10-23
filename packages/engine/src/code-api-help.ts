@@ -12,7 +12,7 @@ const TOPICS: Record<string, string> = {
     "page.overlays.dismiss() closes cookie notices (rejecting when it can) and promotions or newsletter pop-ups covering the page, and returns what it clicked; {accept: true} accepts cookies when that is the only way through. Dialogs that are neither are left alone. page.challenges() names a bot check, captcha, block, rate limit or sign-in wall on the page, with what to do (bu.state() also notes them).",
   history:
     "browser.history.search(text, {days, max}) returns visited pages {url, title, lastVisit, visits}. browser.bookmarks.search(text) / tree() / children(id) / create({title, url, parentId}) / update(id, {title, url}) / move(id, {parentId, index}) / remove(id). browser.downloads.list(text?) returns recent downloads with filename and state.",
-  api: "siteApi.sites() and siteApi.operations(site) list what sites learned. siteApi.call(site, operation, params) reads; siteApi.watch(site, operation, params, {key}) returns only items new or changed since the last watch (also in routine checks). Writes: do one in the page; once the output says it was learned and proven, siteApi.write(site, operation, params) repeats it and siteApi.batch(site, operation, items, {perSecond, verify, label}) runs it over many items (paced, checks the first with verify(result, item), stops at the first error; continue what is left in the page, which repairs the operation). Paying, ordering, sending, posting, deleting and account changes stay in the page. siteApi.action(site, name, inputs) runs a saved multi-step action; siteApi.undo(site, operation, params) reverses a proven write whose opposite was learned; siteApi.channel(site, id, {send, seconds}) listens on a live channel.",
+  api: "siteMapper.sites() and siteMapper.operations(site) list what sites learned. siteMapper.call(site, operation, params) reads; siteMapper.watch(site, operation, params, {key}) returns only items new or changed since the last watch (also in routine checks). Writes: do one in the page; once the output says it was learned and proven, siteMapper.write(site, operation, params) repeats it and siteMapper.batch(site, operation, items, {perSecond, verify, label}) runs it over many items (paced, checks the first with verify(result, item), stops at the first error; continue what is left in the page, which repairs the operation). Paying, ordering, sending, posting, deleting and account changes stay in the page. siteMapper.action(site, name, inputs) runs a saved multi-step action; siteMapper.undo(site, operation, params) reverses a proven write whose opposite was learned; siteMapper.channel(site, id, {send, seconds}) listens on a live channel.",
   network:
     "Every tab you act in is recorded for learning automatically. For a full capture: page.network.start({types: 'all', dryRun?}) then do the flow; dryRun blocks requests that would change something (send, post, buy), answering {} so the page goes on. page.network.list('/api' | {match, method}) summarizes, page.network.get(id) the full request and response, page.network.body(id) the parsed response, page.network.failures() groups failed requests with statuses, sizes, block headers and the last success, page.network.save(name) a HAR file. page.replay(id, {query, json, headers}) re-sends a recorded call from the page with its cookies, signatures and CSRF; page.request(url, {method, json, csrf: true}) makes a new one. page.session() returns cookies and storage.",
   skills:
@@ -29,7 +29,7 @@ const TOPICS: Record<string, string> = {
     "Per-tab network rules: page.rules.block({ads, trackers, banners, images, media, fonts, urls}) for faster reading, page.rules.headers({...}), page.rules.mock(urlFilter, json), page.rules.clear(). Permission prompts cannot be clicked, so preset them: page.permissions.allow('location' | 'notifications' | 'camera' | 'microphone' | 'popups' | 'downloads') or block; page.setLocation(lat, lng). page.emulate({device: 'iPhone' | 'android' | 'ipad', colorScheme: 'dark', timezone, locale}) or {reset: true}.",
   media:
     "page.saveMedia(selectorOrUrl, {all?, name?, folder?}) saves images, videos or files with the user's cookies into the workspace; page.upload(selector, files) fills a file input (finds the hidden input behind a drop zone; workspace paths or URLs); page.download(url); page.pdf(name) saves the page as PDF; page.recordMedia(selector?, {seconds}) records a playing video or audio element (up to 50 s a call); page.media.inspect() says what is playing (position, duration, muted, title), embedded players included.",
-  live: "page.waitForChange(selector?, {timeoutMs}) resolves when that part changes; page.waitForResponse(urlPart) with the next matching response; page.waitForMessage(textOrRegex) with the next WebSocket or event-stream message. siteApi.channel(site, id, {send, seconds}) for a mapped channel.",
+  live: "page.waitForChange(selector?, {timeoutMs}) resolves when that part changes; page.waitForResponse(urlPart) with the next matching response; page.waitForMessage(textOrRegex) with the next WebSocket or event-stream message. siteMapper.channel(site, id, {send, seconds}) for a mapped channel.",
   visual:
     "Only for canvases, maps, sliders, drag handles or controls without ids: page.screenshot({labels: true}) draws bu ids, then page.clickAt(x, y) / page.drag(x1, y1, x2, y2) in viewport coordinates; check with a fresh screenshot, then go back to bu.state().",
   debugging:
@@ -88,11 +88,11 @@ function __nearest(name, names) {
   var scored = names.map(candidate => [candidate, candidate.toLowerCase().includes(lower) || lower.includes(candidate.toLowerCase()) ? 1 : __distance(lower, candidate.toLowerCase())]);
   return scored.filter(([, score]) => score <= Math.max(2, Math.floor(name.length / 3))).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([candidate]) => candidate);
 }
-var __roots = {page: () => globalThis.page, browser: () => browser, bu: () => bu, siteApi: () => siteApi, skills: () => skills};
+var __roots = {page: () => globalThis.page, browser: () => browser, bu: () => bu, siteMapper: () => siteMapper, skills: () => skills};
 var __helpers = ['help', 'artifact', 'checkpoint', 'loadCheckpoint', 'saveHelper', 'loadHelper', 'showImage', 'google'];
 // Names the cell used that the real objects don't have: page.playwright, browser.history.find.
 function __unknownMembers(code) {
-  var found = [], seen = new Set(), pattern = /\\b(page|browser|bu|siteApi|skills)((?:\\.[A-Za-z_$][\\w$]*)+)/g, match;
+  var found = [], seen = new Set(), pattern = /\\b(page|browser|bu|siteMapper|skills)((?:\\.[A-Za-z_$][\\w$]*)+)/g, match;
   while ((match = pattern.exec(String(code || ''))) && found.length < 3) {
     var owner = __roots[match[1]](), path = [match[1]];
     for (var name of match[2].slice(1).split('.')) {
@@ -116,10 +116,10 @@ function __unknownMembers(code) {
 // Each tip shows once per session.
 var __tipsShown = new Set();
 var __TIPS = [
-  [/localStorage|sessionStorage|document\\.cookie|\\bcookieStore\\b/, 'never read sign-in data (cookies, storage, tokens): the page and siteApi already act as the signed-in user'],
+  [/localStorage|sessionStorage|document\\.cookie|\\bcookieStore\\b/, 'never read sign-in data (cookies, storage, tokens): the page and siteMapper already act as the signed-in user'],
   [/(scrollTop|scrollBy|scrollTo|scrollIntoView)[\\s\\S]*(querySelectorAll|\\$\\$eval|data-index)|(querySelectorAll|\\$\\$eval|data-index)[\\s\\S]*(scrollTop|scrollBy|scrollTo)/, 'page.list(rowCss?) reads every row of a list in one call, including lists that only draw what is on screen'],
   [/querySelector(All)?\\([^)]*\\)[^;\\n]*\\.click\\(|dispatchEvent\\(new MouseEvent/, 'click by visible text, role or bu id (page.getByText(text).click(), bu.click(id)): raw DOM clicks miss on apps that redraw themselves'],
-  [/performance\\.getEntries/, 'page.network.list(match) lists the site\\'s own requests, and siteApi calls what was learned from them'],
+  [/performance\\.getEntries/, 'page.network.list(match) lists the site\\'s own requests, and siteMapper calls what was learned from them'],
   [/document\\.body\\.innerText|document\\.body\\.textContent/, 'page.markdown() or bu.state({query}) reads the page cleanly; page.data() has its embedded data'],
 ];
 function __tip(code) {

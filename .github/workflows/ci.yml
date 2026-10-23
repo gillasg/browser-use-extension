@@ -39,7 +39,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm test:boosts
-      - run: pnpm test:site-api
+      - run: pnpm test:site-mapper
       - run: node --test --test-timeout=180000 test/*.test.mjs
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}

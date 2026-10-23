@@ -13,11 +13,11 @@ import { loadModel, readOverrides, siteName, writeOverrides } from "./registry.j
 import type { ChannelOptions } from "./runtime/channels.js";
 import type { Params } from "./runtime/request.js";
 import { exportSession } from "./runtime/session-export.js";
-import { siteApi } from "./runtime/site-api.js";
+import { siteMapper } from "./runtime/site-mapper.js";
 import { loadFlows } from "./workflow.js";
 
-// The site_api actions beyond sites/operations/call/watch/learn/explore, shared by every host
-// (this package's MCP server, the Browser Use Extension's MCP tools, Aeon's site_api tool).
+// The site_mapper actions beyond sites/operations/call/watch/learn/explore, shared by every host
+// (this package's MCP server, the Browser Use Extension's MCP tools, Aeon's site_mapper tool).
 
 export const SITE_TOOL_ACTIONS = [
   "docs",
@@ -149,7 +149,7 @@ async function savedActions(input: SiteToolInput): Promise<unknown> {
 }
 
 async function channel(input: SiteToolInput): Promise<unknown> {
-  const api = await siteApi(input.site);
+  const api = await siteMapper(input.site);
   if (!input.name) return api.model.channels.map((c) => ({ id: c.id, kind: c.kind, url: c.url }));
   return api.channel(input.name, (input.params ?? {}) as ChannelOptions);
 }
@@ -172,7 +172,7 @@ const HANDLERS: Record<SiteToolAction, (input: SiteToolInput) => Promise<unknown
   docs: (input) => readDocs(input.site),
   actions: savedActions,
   action: async (input) =>
-    (await siteApi(input.site)).action(
+    (await siteMapper(input.site)).action(
       require(input.name, "name: the action to run"),
       (input.params ?? {}) as Params,
     ),
@@ -209,7 +209,7 @@ export function isSiteToolAction(action: unknown): action is SiteToolAction {
   return SITE_TOOL_ACTIONS.includes(action as SiteToolAction);
 }
 
-/** Runs one of the extra site_api actions. */
+/** Runs one of the extra site_mapper actions. */
 export function runSiteToolAction(action: SiteToolAction, input: SiteToolInput): Promise<unknown> {
   return HANDLERS[action]({ ...input, site: siteName(input.site) });
 }

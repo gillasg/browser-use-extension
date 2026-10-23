@@ -8,11 +8,11 @@ import { appendEvent, listFlows, siteDir, siteName } from "./registry.js";
 import type { Bridge } from "./runtime/bridge.js";
 import { SET, type Params } from "./runtime/request.js";
 import {
-  siteApi,
+  siteMapper,
   WriteThroughApi,
-  type SiteApiOptions,
+  type SiteMapperOptions,
   type SiteClient,
-} from "./runtime/site-api.js";
+} from "./runtime/site-mapper.js";
 import type { Operation } from "./types.js";
 import { rebuild, saveRecording } from "./workflow.js";
 
@@ -102,13 +102,13 @@ async function probe(client: SiteClient, operation: Operation): Promise<HealthRe
   }
 }
 
-export interface CheckOptions extends SiteApiOptions {
+export interface CheckOptions extends SiteMapperOptions {
   includeActions?: boolean;
   operations?: string[];
 }
 
 export async function checkHealth(site: string, options: CheckOptions = {}): Promise<HealthReport> {
-  const client = await siteApi(site, options);
+  const client = await siteMapper(site, options);
   const results: HealthResult[] = [];
   for (const operation of client.operations) {
     if (options.operations && !options.operations.includes(operation.id)) continue;
@@ -202,7 +202,7 @@ export async function repair(
   options: RepairOptions = {},
 ): Promise<{ rerecorded: string[]; after: HealthReport }> {
   const name = siteName(site);
-  const client = await siteApi(name, options);
+  const client = await siteMapper(name, options);
   const rerecorded: string[] = [];
   for (const target of await repairTargets(client, failing))
     rerecorded.push(await rerecord(name, target, options));

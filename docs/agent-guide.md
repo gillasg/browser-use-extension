@@ -265,16 +265,19 @@ Saving with an existing `id` replaces that boost. Scripts (`js`) need **Allow Us
 
 ## Mapped site APIs in code
 
-Sites mapped with `site_api` (site-to-api) can be called from browser code too:
+Sites mapped with `site_mapper` (site-to-api) can be called from browser code too:
 
 ```js
-await siteApi.sites();
-await siteApi.call("shop.example", "searchProducts", { q: "lamp" });
+await siteMapper.sites();
+await siteMapper.call("shop.example", "searchProducts", { q: "lamp" });
 // Only what is new or changed since the last watch of the same call:
-const { new: fresh } = await siteApi.watch("shop.example", "searchProducts", { q: "lamp" });
+const { new: fresh } = await siteMapper.watch("shop.example", "searchProducts", { q: "lamp" });
 // A saved multi-step action, and a live channel (WebSocket or event stream):
-await siteApi.action("shop.example", "bookSlot", { date: "2026-11-02" });
-await siteApi.channel("shop.example", "liveFeed", { send: [{ type: "subscribe" }], seconds: 15 });
+await siteMapper.action("shop.example", "bookSlot", { date: "2026-11-02" });
+await siteMapper.channel("shop.example", "liveFeed", {
+  send: [{ type: "subscribe" }],
+  seconds: 15,
+});
 ```
 
 ## Waiting, live data and dry runs

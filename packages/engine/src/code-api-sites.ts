@@ -54,16 +54,16 @@ var skills = Object.freeze({
 });
 // Mapped site APIs (site-to-api): call an operation, or watch it for items new or changed since the last watch.
 // write repeats a routine write the page has proven; batch runs one over many items, paced.
-var siteApi=Object.freeze({
-  sites:()=>__call({siteApi:'sites'}),
-  operations:site=>__call({siteApi:'operations',site}),
-  call:(site,operation,params={})=>__call({siteApi:'call',site,operation,params}),
-  undo:(site,operation,params={})=>__call({siteApi:'undo',site,operation,params}),
-  write:(site,operation,params={})=>__call({siteApi:'write',site,operation,params}),
+var siteMapper=Object.freeze({
+  sites:()=>__call({siteMapper:'sites'}),
+  operations:site=>__call({siteMapper:'operations',site}),
+  call:(site,operation,params={})=>__call({siteMapper:'call',site,operation,params}),
+  undo:(site,operation,params={})=>__call({siteMapper:'undo',site,operation,params}),
+  write:(site,operation,params={})=>__call({siteMapper:'write',site,operation,params}),
   batch:(site,operation,items,options={})=>__writeBatch(site,operation,items,options),
-  watch:(site,operation,params={},options={})=>__call({siteApi:'watch',site,operation,params,...options}),
-  action:(site,name,inputs={})=>__call({siteApi:'action',site,name,params:inputs}),
-  channel:(site,id,options={})=>__call({siteApi:'channel',site,name:id,params:options}),
+  watch:(site,operation,params={},options={})=>__call({siteMapper:'watch',site,operation,params,...options}),
+  action:(site,name,inputs={})=>__call({siteMapper:'action',site,name,params:inputs}),
+  channel:(site,id,options={})=>__call({siteMapper:'channel',site,name:id,params:options}),
 });
 // The here: line at the top of bu.state(): what already exists for this page and site (its
 // embedded data, the API the site learned, its boosts), printed only when it changes, so the
@@ -75,14 +75,14 @@ async function __here(target, url) {
   if (data) parts.push(data);
   var facts = __siteFacts.get(host);
   if (!facts || Date.now() - facts.at > 60000) {
-    var operations = await __call({siteApi: 'operations', site: host}).catch(() => []);
+    var operations = await __call({siteMapper: 'operations', site: host}).catch(() => []);
     var boosts = await browser.boosts.list(String(url)).catch(() => []);
     facts = {at: Date.now(), operations: Array.isArray(operations) ? operations : [], boosts: Array.isArray(boosts) ? boosts : []};
     __siteFacts.set(host, facts);
   }
   if (facts.operations.length) {
     var reads = facts.operations.filter(op => !op.writes).map(op => op.id), writes = facts.operations.filter(op => op.writes).map(op => op.id);
-    parts.push('site API (siteApi.call): ' + reads.slice(0, 6).join(', ') + (reads.length > 6 ? ' +' + (reads.length - 6) : '') + (writes.length ? ' · writes: ' + writes.slice(0, 4).join(', ') : ''));
+    parts.push('site API (siteMapper.call): ' + reads.slice(0, 6).join(', ') + (reads.length > 6 ? ' +' + (reads.length - 6) : '') + (writes.length ? ' · writes: ' + writes.slice(0, 4).join(', ') : ''));
   }
   if (facts.boosts.length) parts.push('boosts: ' + facts.boosts.slice(0, 3).map(b => b.name).join(', '));
   var text = parts.length ? 'here: ' + parts.join(' · ') : '';
@@ -168,7 +168,7 @@ async function __learnFromCell() {
         if (cause) entry._step = cause.label;
       }
       var url = (__tabs.get(key) && __tabs.get(key).url) || entries[0].request.url;
-      var result = await __call({siteApi: 'learn-live', site: new URL(String(url)).hostname, har, approved});
+      var result = await __call({siteMapper: 'learn-live', site: new URL(String(url)).hostname, har, approved});
       for (var op of (result && result.learned) || []) {
         var seen = result.site + '|' + op.id + '|' + (op.proven ? 'proven' : '');
         if (__announced.has(seen)) continue;
@@ -181,7 +181,7 @@ async function __learnFromCell() {
   __learnTouched.clear();
   if (!lines.length) return;
   var shown = lines.slice(0, 3);
-  if (lines.length > 3) shown.push('(+' + (lines.length - 3) + ' more: siteApi.operations(site))');
+  if (lines.length > 3) shown.push('(+' + (lines.length - 3) + ' more: siteMapper.operations(site))');
   console.log(shown.join('\\n'));
 }
 function __learnedLine(site, op) {
@@ -194,14 +194,14 @@ function __learnedLine(site, op) {
 // options.verify(result, item) when given, stopping at the first error or rate limit. What is
 // left continues in the page, and that run repairs the operation.
 async function __writeBatch(site, operation, items, options = {}) {
-  if (!Array.isArray(items)) throw Error('siteApi.batch(site, operation, items): items is an array of params objects');
+  if (!Array.isArray(items)) throw Error('siteMapper.batch(site, operation, items): items is an array of params objects');
   var gap = 1000 / Math.max(0.2, Math.min(10, Number(options.perSecond) || 3));
   var label = options.label || operation, results = [], stopped;
   bu.progress(0, items.length, label);
   for (var index = 0; index < items.length; index++) {
     var started = Date.now();
     try {
-      var value = await siteApi.write(site, operation, items[index]);
+      var value = await siteMapper.write(site, operation, items[index]);
       if (index === 0 && typeof options.verify === 'function' && !(await options.verify(value, items[0])))
         throw Error('the first write did not do what the page does (verify returned false)');
       results.push({ok: true});

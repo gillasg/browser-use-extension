@@ -144,15 +144,15 @@ function modelSection(providers: Providers, status: Status): HTMLElement {
   return box;
 }
 
-function siteApiSection(): HTMLElement {
+function siteMapperSection(): HTMLElement {
   const url = h("input", {
     type: "url",
-    value: settings.siteApi?.url ?? "",
+    value: settings.siteMapper?.url ?? "",
     placeholder: "http://127.0.0.1:4100",
   });
   const token = h("input", {
     type: "password",
-    value: settings.siteApi?.token ?? "",
+    value: settings.siteMapper?.token ?? "",
     placeholder: "The token site-to-api serve prints",
   });
   return h(
@@ -171,7 +171,7 @@ function siteApiSection(): HTMLElement {
       textContent: "Save",
       onclick: () =>
         void saveSettings({
-          siteApi: url.value ? { url: url.value.trim(), token: token.value.trim() } : undefined,
+          siteMapper: url.value ? { url: url.value.trim(), token: token.value.trim() } : undefined,
         }),
     }),
   );
@@ -388,7 +388,7 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
           h("a", { href: "setup.html", textContent: "Set it up" }),
         ),
     modelSection(providers, status),
-    siteApiSection(),
+    siteMapperSection(),
     behaviourSection(),
     backupSection(),
     h("div", {

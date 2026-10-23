@@ -49,7 +49,11 @@ export {
   type SiteToolAction,
   type SiteToolInput,
 } from "./tool.js";
-export { isSiteApiRequest, handleSiteApiRequest, type SiteApiRequest } from "./requests.js";
+export {
+  isSiteMapperRequest,
+  handleSiteMapperRequest,
+  type SiteMapperRequest,
+} from "./requests.js";
 export {
   learnLive,
   writeLive,

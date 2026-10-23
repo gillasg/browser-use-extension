@@ -13,7 +13,7 @@
 
 import { getPointer } from "../infer/schema.js";
 import type { Params } from "./request.js";
-import { errorKind, siteApi, type ErrorKind, type SiteApi } from "./site-api.js";
+import { errorKind, siteMapper, type ErrorKind, type SiteMapper } from "./site-mapper.js";
 
 /** One site's question: what to call, and with which inputs. */
 export interface FederateTarget {
@@ -86,7 +86,7 @@ export interface FederateOptions {
   firstWins?: boolean;
   /** Called as each site answers, for live progress. */
   onAnswer?: (answer: FederateAnswer, items: FederatedItem[]) => void;
-  /** The client for a target; default: `siteApi(site)`, one per site and reused across the call. */
+  /** The client for a target; default: `siteMapper(site)`, one per site and reused across the call. */
   client?: (target: FederateTarget) => Promise<FederateClient>;
 }
 
@@ -167,11 +167,11 @@ function clientFactory(
   options: FederateOptions,
 ): (target: FederateTarget) => Promise<FederateClient> {
   if (options.client) return options.client;
-  const clients = new Map<string, Promise<SiteApi>>();
+  const clients = new Map<string, Promise<SiteMapper>>();
   return (target) => {
     const existing = clients.get(target.site);
     if (existing) return existing;
-    const created = siteApi(target.site);
+    const created = siteMapper(target.site);
     clients.set(target.site, created);
     return created;
   };

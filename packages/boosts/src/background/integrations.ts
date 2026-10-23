@@ -1,4 +1,4 @@
-import type { SiteApiSummary } from "../shared/ai.js";
+import type { SiteMapperSummary } from "../shared/ai.js";
 import { getSettings, setSettings } from "./store.js";
 
 // Optional integrations:
@@ -87,38 +87,38 @@ export async function companionComplete(
 
 // ---- site-to-api ------------------------------------------------------------------------
 
-async function siteApi(): Promise<{ url: string; token: string }> {
+async function siteMapper(): Promise<{ url: string; token: string }> {
   const settings = await getSettings();
-  if (!settings.siteApi?.url)
+  if (!settings.siteMapper?.url)
     throw new Error("Connect a site-to-api server in the settings to use site APIs");
-  return { ...settings.siteApi, url: settings.siteApi.url.replace(/\/+$/, "") };
+  return { ...settings.siteMapper, url: settings.siteMapper.url.replace(/\/+$/, "") };
 }
 
-type SiteApiHandler = (
+type SiteMapperHandler = (
   site: string,
   operation: string,
   params: Record<string, unknown>,
 ) => Promise<unknown>;
-let hostSiteApi: SiteApiHandler | undefined;
+let hostSiteMapper: SiteMapperHandler | undefined;
 /** A host extension that embeds the engine answers site API calls itself. */
-export function useHostSiteApi(handler: SiteApiHandler): void {
-  hostSiteApi = handler;
+export function useHostSiteMapper(handler: SiteMapperHandler): void {
+  hostSiteMapper = handler;
 }
 
 /** A mapped site's operation: through the host, else the site-to-api server in the settings,
  * else a companion extension that has site APIs (Aeon does). */
-export async function callSiteApi(
+export async function callSiteMapper(
   site: string,
   operation: string,
   params: Record<string, unknown>,
 ): Promise<unknown> {
-  if (hostSiteApi) return hostSiteApi(site, operation, params);
-  if (!(await getSettings()).siteApi?.url) {
+  if (hostSiteMapper) return hostSiteMapper(site, operation, params);
+  if (!(await getSettings()).siteMapper?.url) {
     const companion = await findCompanion();
-    if (companion?.features.includes("siteApi"))
-      return ask(companion.id, "siteApi", { site, operation, params });
+    if (companion?.features.includes("siteMapper"))
+      return ask(companion.id, "siteMapper", { site, operation, params });
   }
-  const { url, token } = await siteApi();
+  const { url, token } = await siteMapper();
   const response = await fetch(
     `${url}/sites/${encodeURIComponent(site)}/ops/${encodeURIComponent(operation)}`,
     {
@@ -137,10 +137,10 @@ interface OpenApi {
 }
 
 /** The mapped sites and their operations, for the model. Empty when no server is connected. */
-export async function listSiteApis(): Promise<SiteApiSummary[]> {
+export async function listSiteMappers(): Promise<SiteMapperSummary[]> {
   let server: { url: string; token: string };
   try {
-    server = await siteApi();
+    server = await siteMapper();
   } catch {
     return [];
   }

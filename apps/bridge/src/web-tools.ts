@@ -18,13 +18,13 @@ import {
   listSites,
   loadModel,
   rebuild,
-  siteApi,
+  siteMapper,
   siteName,
   watch,
 } from "@browser-use-extension/tools/site-to-api";
 import { dataDirectory } from "./paths.js";
 
-// crawl and site_api for MCP clients: browser-crawl reads pages and sites, site-to-api turns
+// crawl and site_mapper for MCP clients: browser-crawl reads pages and sites, site-to-api turns
 // sites mapped from captures into APIs. Both reach this browser through the bridge themselves.
 
 type Json = Record<string, unknown>;
@@ -67,7 +67,7 @@ export const webTools = [
     },
   },
   {
-    name: "site_api",
+    name: "site_mapper",
     description: `Call the APIs of sites mapped from this browser's own traffic: one call replaces many page actions and returns JSON, with the user's logins. sites lists mapped sites; operations lists what a site can do; call runs one; watch runs one and returns only items new or changed since the last watch of it. explore maps sites by name (an agent uses each in a background tab, looking only); it needs a model supplied by its caller, so this tool answers with an error unless the host provides one. To map a site yourself: in browser_code open it, await tab.network.start({ types: 'all' }), do something that loads new data, then await tab.network.save('<site>.har'); then learn with files ['<site>.har'] (mitmproxy flow files from phone or desktop apps work too). ${SITE_TOOL_HELP.join(" ")} ${HOW_TO_CALL}`,
     inputSchema: {
       type: "object",
@@ -167,7 +167,7 @@ async function learn(site: string, files: unknown): Promise<unknown> {
   return { site, howToCall: HOW_TO_CALL, operations: result.model.operations.map(describe) };
 }
 
-async function runSiteApi(args: Json): Promise<unknown> {
+async function runSiteMapper(args: Json): Promise<unknown> {
   if (args.action === "sites") return { sites: await listSites() };
   if (args.action === "explore") {
     const sites = Array.isArray(args.sites) ? (args.sites as string[]) : [args.site as string];
@@ -192,15 +192,15 @@ async function runSiteApi(args: Json): Promise<unknown> {
   const params = (args.params ?? {}) as Json;
   if (args.action === "watch")
     return watch(site, operation, params, typeof args.key === "string" ? { key: args.key } : {});
-  const api = await siteApi(site);
+  const api = await siteMapper(site);
   return api.call(operation, params as never);
 }
 
-/** Runs crawl or site_api; undefined when the tool is neither. */
+/** Runs crawl or site_mapper; undefined when the tool is neither. */
 export async function callWebTool(name: unknown, args: Json): Promise<unknown> {
-  if (name !== "crawl" && name !== "site_api") return undefined;
+  if (name !== "crawl" && name !== "site_mapper") return undefined;
   try {
-    const value = name === "crawl" ? await runCrawl(args) : await runSiteApi(args);
+    const value = name === "crawl" ? await runCrawl(args) : await runSiteMapper(args);
     return { content: [{ type: "text", text: text(value) }] };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

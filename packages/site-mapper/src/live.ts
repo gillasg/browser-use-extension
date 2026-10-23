@@ -4,7 +4,7 @@ import { filterExchanges } from "./filter.js";
 import { parseCapture } from "./load/index.js";
 import { learnedNoise, loadModel, saveFlow, siteDir, siteName, writeAtomic } from "./registry.js";
 import type { Params, RuntimeResponse } from "./runtime/request.js";
-import { HttpError, siteApi } from "./runtime/site-api.js";
+import { HttpError, siteMapper } from "./runtime/site-mapper.js";
 import type { Exchange, Operation } from "./types.js";
 import { rebuild } from "./workflow.js";
 
@@ -24,7 +24,7 @@ export interface LearnedOperation {
   kind?: WriteKind;
   /** The page step that sent it. */
   step?: string;
-  /** A write the page has just made successfully: siteApi.write may repeat it. */
+  /** A write the page has just made successfully: siteMapper.write may repeat it. */
   proven?: boolean;
   params: string[];
   /** Inputs that change per item, and where their values came from. */
@@ -170,12 +170,12 @@ function describe(site: string, operation: Operation, state: LiveState): Learned
     varies,
     how:
       operation.role === "read"
-        ? `await siteApi.call('${site}', '${operation.id}', ${example})`
+        ? `await siteMapper.call('${site}', '${operation.id}', ${example})`
         : proven
-          ? `await siteApi.write('${site}', '${operation.id}', ${example}); many items: await siteApi.batch('${site}', '${operation.id}', items)`
+          ? `await siteMapper.write('${site}', '${operation.id}', ${example}); many items: await siteMapper.batch('${site}', '${operation.id}', items)`
           : kind === "consequential"
             ? "consequential: keep doing it in the page, where the user approves it"
-            : "do it once in the page; when that works, siteApi.write can repeat it",
+            : "do it once in the page; when that works, siteMapper.write can repeat it",
   };
 }
 
@@ -210,7 +210,7 @@ export async function writeLive(
   const model = await loadModel(name);
   const operation = model?.operations.find((item) => item.id === operationId);
   if (!model || !operation) throw new Error(`${name} has no operation ${operationId}`);
-  const api = await siteApi(name, { model, transport: "page" });
+  const api = await siteMapper(name, { model, transport: "page" });
   if (operation.role === "read") return api.call(operationId, params);
   const state = await readState(name);
   assertWritable(operation, state);
@@ -237,7 +237,7 @@ export async function undoLive(
   params: Params = {},
 ): Promise<unknown> {
   const { name, model, state, reverseId } = await undoTarget(site, operationId);
-  const api = await siteApi(name, { model, transport: "page" });
+  const api = await siteMapper(name, { model, transport: "page" });
   const response = await api.write(reverseId, params);
   if (response.status === 429) throw new HttpError(reverseId, response);
   if (response.status >= 400 || response.status === 0)
@@ -384,7 +384,7 @@ function assertWritable(operation: Operation, state: LiveState): void {
   if (!proof || proof.shape !== requestShape(operation))
     throw new NotProven(
       operation.id,
-      "not proven yet: do it once in the page; when that works, the recording proves it and siteApi.write can repeat it",
+      "not proven yet: do it once in the page; when that works, the recording proves it and siteMapper.write can repeat it",
     );
 }
 

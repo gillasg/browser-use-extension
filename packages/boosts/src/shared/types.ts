@@ -259,7 +259,7 @@ export interface Settings {
   /** Another extension that can lend its model and receive requests, by id. */
   companionId?: string;
   /** A local site-to-api server, for API boosts. */
-  siteApi?: { url: string; token: string };
+  siteMapper?: { url: string; token: string };
   autoRepair: boolean;
   showChip: boolean;
   /** Pause everything. */

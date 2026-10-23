@@ -2,14 +2,14 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { siteDir, siteName } from "./registry.js";
-import { siteApi, type SiteApiOptions } from "./runtime/site-api.js";
+import { siteMapper, type SiteMapperOptions } from "./runtime/site-mapper.js";
 import type { Params } from "./runtime/request.js";
 
 // Watching an operation: call it again and report only the items that are new or changed since
 // the last check (new listings, price drops, new messages). What was seen is kept per watch in
 // the site's folder, so a schedule or a trigger can call watch() and act on the difference.
 
-export interface WatchOptions extends SiteApiOptions {
+export interface WatchOptions extends SiteMapperOptions {
   /** Field that identifies an item (default: id, url, link, href, or a hash of the item). */
   key?: string;
   /** Dot path to the list in the result (default: the result itself, or its largest list). */
@@ -118,7 +118,10 @@ export async function watch(
   const previous = await readFile(file, "utf8")
     .then((text) => JSON.parse(text) as Seen)
     .catch(() => undefined);
-  const list = listIn(await (await siteApi(name, apiOptions)).call(operation, params), itemsPath);
+  const list = listIn(
+    await (await siteMapper(name, apiOptions)).call(operation, params),
+    itemsPath,
+  );
   const { now, fresh, changed } = compare(list, previous, key);
   const removed = (previous?.last ?? []).filter((k) => !(k in now));
   // Items seen before stay remembered for a while, so one that drops out and comes back is not new.

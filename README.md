@@ -16,7 +16,7 @@ Most browser-automation tools start a separate, empty browser. This one runs ins
 - **Many agents, one browser.** Each session owns the tabs it opens; sessions do not interfere with each other or with your own tabs.
 - **Visible work.** An on-page cursor shows where the agent clicks.
 - **Boosts.** `browser.boosts.save({ name, sites, css, zaps, actions, network, js })` saves a lasting change to a site that applies on every visit, from the [Site Boosts](https://github.com/gillasg/site-boosts) engine built in.
-- **Crawling and site APIs.** The `crawl` tool reads pages and whole sites as Markdown ([browser-crawl](https://github.com/gillasg/browser-crawl)); `site_api` turns sites mapped from your own traffic into APIs (the site-to-api engine, built in).
+- **Crawling and site APIs.** The `crawl` tool reads pages and whole sites as Markdown ([browser-crawl](https://github.com/gillasg/browser-crawl)); `site_mapper` turns sites mapped from your own traffic into APIs (the site-to-api engine, built in).
 
 ## Setup
 
@@ -66,7 +66,7 @@ It exposes four tools:
 | `browser_code` | `code` (required), `session`, `timeoutMs` | Runs JavaScript in a persistent REPL inside the browser. The last expression is returned; `console.log` output is included. |
 | `browser_tabs` | none                                      | Lists open tabs.                                                                                                            |
 | `crawl`        | `action`, `url`, `query`, `limit`, …      | Scrapes a page, crawls a site or section, maps a site's URLs, or searches Google, as Markdown and data.                     |
-| `site_api`     | `action`, `site`, `operation`, `params`   | Lists mapped sites and their operations, calls one, or maps a site from captures saved with `page.network.save()`.          |
+| `site_mapper`  | `action`, `site`, `operation`, `params`   | Lists mapped sites and their operations, calls one, or maps a site from captures saved with `page.network.save()`.          |
 
 The tool description carries the full API, so agents can use it without extra setup. [docs/agent-guide.md](docs/agent-guide.md) is the longer reference with examples, for agents and people writing prompts.
 
@@ -94,8 +94,8 @@ agent ──MCP/CLI──▶ bridge (local, 127.0.0.1) ◀──WebSocket── 
 - `apps/extension`: the extension that connects Chrome to the bridge.
 - `apps/bridge`: the bridge, native messaging host, CLI and MCP server.
 - `packages/protocol`: the messages the engine speaks.
-- `packages/tools`: the `crawl` and `site_api` tools built on the packages below.
-- `packages/site-api`: the site mapping and calling library (the site-to-api engine, maintained here).
+- `packages/tools`: the `crawl` and `site_mapper` tools built on the packages below.
+- `packages/site-mapper`: the site mapping and calling library (the site-to-api engine, maintained here).
 
 browser-crawl is its own project, linked from a sibling folder (`link:../browser-crawl`) instead of being copied, so a change there is used here on the next build. `node scripts/link-repos.mjs --revisions` prints the revision of each linked repo.
 

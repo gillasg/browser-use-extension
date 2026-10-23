@@ -3,7 +3,7 @@ import { explore } from "./explore.js";
 import { readDocs } from "./docs.js";
 import { watch } from "./watch.js";
 import { listSites, loadModel, readOverrides, siteName } from "./registry.js";
-import { siteApi, type SiteApi, type SiteApiOptions } from "./runtime/site-api.js";
+import { siteMapper, type SiteMapper, type SiteMapperOptions } from "./runtime/site-mapper.js";
 import type { SiteAction } from "./runtime/actions.js";
 import type { ChannelOptions } from "./runtime/channels.js";
 import { isDerived } from "./params.js";
@@ -199,7 +199,7 @@ const GENERAL_TOOLS: Json[] = [
   },
 ];
 
-async function callTool(api: SiteApi, operation: string, params: Json): Promise<unknown> {
+async function callTool(api: SiteMapper, operation: string, params: Json): Promise<unknown> {
   if (api.pageEndpoint(operation))
     return api.fetchPage(operation, params as Record<string, string>);
   const { maxItems, ...rest } = params;
@@ -234,12 +234,12 @@ function initializeResult(params: Json, model: SiteModel | undefined): Json {
   };
 }
 
-export async function runMcpServer(site?: string, options: SiteApiOptions = {}): Promise<void> {
-  const apis = new Map<string, Promise<SiteApi>>();
+export async function runMcpServer(site?: string, options: SiteMapperOptions = {}): Promise<void> {
+  const apis = new Map<string, Promise<SiteMapper>>();
   const api = (name: string) => {
     const key = siteName(name);
-    if (!apis.has(key)) apis.set(key, siteApi(key, options));
-    return apis.get(key) as Promise<SiteApi>;
+    if (!apis.has(key)) apis.set(key, siteMapper(key, options));
+    return apis.get(key) as Promise<SiteMapper>;
   };
   const model = site ? await loadModel(site) : undefined;
   if (site && !model) throw new Error(`${siteName(site)} is not mapped yet.`);

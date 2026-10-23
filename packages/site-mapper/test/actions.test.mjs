@@ -8,7 +8,7 @@ import {
   MissingParams,
   parseCapture,
   SignedOut,
-  siteApi,
+  siteMapper,
   summarizeDocs,
   docsTargets,
 } from "../dist/index.js";
@@ -27,7 +27,7 @@ async function shop(t) {
 
 test("a multi-step action runs its operations in order, each fed by the last", async (t) => {
   const { model } = await shop(t);
-  const api = await siteApi(model.site, {
+  const api = await siteMapper(model.site, {
     model,
     transport: "direct",
     session: false,
@@ -52,7 +52,7 @@ test("a multi-step action runs its operations in order, each fed by the last", a
 
 test("a failing step names the step", async (t) => {
   const { model } = await shop(t);
-  const api = await siteApi(model.site, {
+  const api = await siteMapper(model.site, {
     model,
     transport: "direct",
     session: false,

@@ -1,4 +1,4 @@
-import { useHostSiteApi } from "../background/integrations.js";
+import { useHostSiteMapper } from "../background/integrations.js";
 import { normalizeBoost } from "../shared/bundle.js";
 import { errorText, type Reply } from "../shared/messages.js";
 import { boostMatches } from "../shared/match.js";
@@ -33,7 +33,11 @@ export interface BoostEngineOptions {
    * Answers boosts' site API calls (sb.api) itself, e.g. through the host's own site-to-api.
    * Without it they go to a site-to-api server set in the settings, or to a companion extension.
    */
-  siteApi?: (site: string, operation: string, params: Record<string, unknown>) => Promise<unknown>;
+  siteMapper?: (
+    site: string,
+    operation: string,
+    params: Record<string, unknown>,
+  ) => Promise<unknown>;
 }
 
 export interface BoostSummary {
@@ -145,7 +149,7 @@ export function startBoostEngine(options: BoostEngineOptions): BoostEngine {
   };
 
   listenToScripts();
-  if (options.siteApi) useHostSiteApi(options.siteApi);
+  if (options.siteMapper) useHostSiteMapper(options.siteMapper);
   chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender, reply) => {
     const kind = typeof message?.kind === "string" ? message.kind : "";
     if (!kind.startsWith(MESSAGE_PREFIX) || sender.id !== chrome.runtime.id || !sender.tab)

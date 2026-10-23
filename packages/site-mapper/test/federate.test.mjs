@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSiteModel, federate, parseCapture, siteApi, SignedOut } from "../dist/index.js";
+import { buildSiteModel, federate, parseCapture, siteMapper, SignedOut } from "../dist/index.js";
 import { startFixtureSite } from "./fixture-site.mjs";
 import { browseShop } from "./helpers.mjs";
 
@@ -12,7 +12,7 @@ async function mapped(t) {
   const { model } = await buildSiteModel(parseCapture(JSON.stringify(recorder.har()), "flow"), {
     site: new URL(site.origin).host,
   });
-  const api = await siteApi(model.site, { model, transport: "direct", session: false });
+  const api = await siteMapper(model.site, { model, transport: "direct", session: false });
   return { site, model, api };
 }
 

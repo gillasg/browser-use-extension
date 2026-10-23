@@ -12,7 +12,11 @@ export interface BoostEngineOptions {
    * Answers boosts' site API calls (sb.api) itself, e.g. through the host's own site-to-api.
    * Without it they go to a site-to-api server set in the settings, or to a companion extension.
    */
-  siteApi?: (site: string, operation: string, params: Record<string, unknown>) => Promise<unknown>;
+  siteMapper?: (
+    site: string,
+    operation: string,
+    params: Record<string, unknown>,
+  ) => Promise<unknown>;
 }
 
 export interface BoostSummary {

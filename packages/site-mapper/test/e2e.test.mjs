@@ -35,7 +35,7 @@ test(
     await t.test("a recorded session becomes an API", () => recordAndBuild(api, name, site));
 
     await t.test("calls run inside the page with the site's own signing and CSRF", async () => {
-      const shop = await api.siteApi(name, { transport: "page" });
+      const shop = await api.siteMapper(name, { transport: "page" });
       assert.deepEqual(await shop.getSigned({ q: "live" }), { secret: "signed-ok", q: "live" });
       // A write is never a plain call; the caller sends it on purpose, from the site's page.
       await assert.rejects(
