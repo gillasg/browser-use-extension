@@ -22,6 +22,12 @@ export const BrowserStepSchema = z.discriminatedUnion("op", [
       clientInstanceId: z.string().uuid(),
       url: HttpUrlSchema,
       foreground: z.boolean().default(false),
+      /** Park popups, mute media and block ad hosts while the agent uses this tab. */
+      quiet: z.boolean().optional(),
+      /** false for a background read pool: open without changing the Split View pair. */
+      present: z.boolean().optional(),
+      /** What the host calls the owner's tab group (a chat title, "Routine · …", "Mapping"). */
+      ownerTitle: z.string().min(1).max(120).optional(),
       // A separate, visible window of this size (e.g. for recording); otherwise a tab in the current window.
       window: z
         .object({
@@ -186,7 +192,14 @@ export const BrowserExecutorResultSchema = z.discriminatedUnion("kind", [
       trust: z.literal("untrusted"),
     })
     .strict(),
-  z.object({ kind: z.literal("tabs"), tabs: z.array(BrowserTabSchema).max(256) }).strict(),
+  z
+    .object({
+      kind: z.literal("tabs"),
+      tabs: z.array(BrowserTabSchema).max(256),
+      /** The window the user last focused; its active tab is the one activeTab() returns. */
+      focusedWindowId: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
   z.object({ kind: z.literal("tab"), tab: BrowserTabSchema }).strict(),
   SemanticObservationSchema,
   ScreenshotObservationSchema,

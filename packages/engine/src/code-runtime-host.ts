@@ -9,6 +9,8 @@ import {
   type BrowserTargetKey,
 } from "@browserkit/protocol";
 import { browserErrorDetail, errorCode, targetIdentity } from "./native-browser-common.js";
+import { stepFailure } from "./code-step-errors.js";
+import { jobCode, jobOptions } from "./code-job-code.js";
 import { executeLocalBrowserStep } from "./native-browser-executor.js";
 import { browserSessionOwner } from "./native-browser-session.js";
 import { currentInventoryTabs } from "./native-inventory-client.js";
@@ -23,7 +25,10 @@ import {
   type SiteRules,
 } from "./native-browser-site-rules.js";
 import { handOffToUser } from "./native-browser-handoff.js";
-import { presentBrowserTask } from "./native-browser-layout.js";
+import { presentBrowserTask, presentsBrowserTask } from "./native-browser-layout.js";
+import { resetChatTabs, agentTabSummary } from "./native-browser-tab-cleanup.js";
+import { setOwnerTitle } from "./native-browser-owner.js";
+import { disableQuietTab, enableQuietTab } from "./native-browser-quiet.js";
 import { networkCall } from "./native-browser-network.js";
 import { isLibraryRequest, libraryCall } from "./native-browser-library.js";
 import { rulesCall } from "./native-browser-rules.js";
@@ -54,9 +59,25 @@ interface Cell {
   siteRules?: Promise<SiteRules>;
   /** Tabs holding a block rule for this cell, lifted when it finishes. */
   guarded: Set<number>;
+  /** Popup count when the cell started, so its tab line says what this cell parked. */
+  popupsAtStart: number;
 }
 const cells = new Map<string, Cell>();
+const jobs = new Map<string, Job>();
 let offscreen: Promise<void> | undefined;
+const JOB_STORAGE = "aeon-code-jobs";
+const MAX_JOB_ITEM_CHARS = 200_000;
+
+interface Job extends Cell {
+  status: "running" | "complete" | "failed" | "cancelled";
+  startedAt: number;
+  finishedAt?: number;
+  total: number;
+  results?: unknown[];
+  progress?: { done: number; total: number; label?: string };
+  error?: string;
+  artifact?: string;
+}
 
 /** Handles browser.code.* frames from Core. Returns false for anything else. */
 export function handleBrowserCodeMessage(
@@ -71,8 +92,9 @@ export function handleBrowserCodeMessage(
   }
   const reply = BrowserCodeReplySchema.safeParse(candidate);
   if (reply.success) {
-    const waiter = cells.get(reply.data.cellId)?.calls.get(reply.data.callId);
-    cells.get(reply.data.cellId)?.calls.delete(reply.data.callId);
+    const owner = cells.get(reply.data.cellId) ?? jobs.get(reply.data.cellId);
+    const waiter = owner?.calls.get(reply.data.callId);
+    owner?.calls.delete(reply.data.callId);
     if (reply.data.error !== undefined) waiter?.reject(new Error(reply.data.error));
     else waiter?.resolve(reply.data.value);
     return true;
@@ -95,6 +117,7 @@ export function handleBrowserCodeMessage(
 
 /** Drops a chat's REPL realm (session closed or runtime reset). */
 export async function resetRealm(chatId: string): Promise<void> {
+  cancelJobs(chatId);
   if (!(await chrome.offscreen.hasDocument())) return;
   const reset = chrome.runtime
     .sendMessage({ target: "aeon-code-offscreen", kind: "reset", chatId })
@@ -111,6 +134,7 @@ export async function resetRealm(chatId: string): Promise<void> {
 }
 
 async function startCell(identity: BrowserIdentity, socket: WebSocket, run: BrowserCodeRun) {
+  setOwnerTitle(run.chatId, run.ownerTitle);
   const allowed = new Map(run.targets.map((target) => [targetIdentity(target), target]));
   const cell: Cell = {
     run,
@@ -127,6 +151,7 @@ async function startCell(identity: BrowserIdentity, socket: WebSocket, run: Brow
     progressTimer: undefined,
     waitingForUser: false,
     done: false,
+    popupsAtStart: agentTabSummary(run.chatId).popups,
   };
   cells.set(run.cellId, cell);
   try {
@@ -175,14 +200,24 @@ function finish(
     ...(result.reset ? { reset: true } : {}),
     steps: cell.steps.slice(-MAX_TRACE),
     opened: [...cell.opened.values()],
+    tabStats: (() => {
+      const summary = agentTabSummary(cell.run.chatId);
+      return { ...summary, popups: Math.max(0, summary.popups - cell.popupsAtStart) };
+    })(),
   });
 }
 
 // Offscreen relays calls from the sandboxed realm. Only that document may send them.
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (message?.target !== "aeon-code-host" || message.kind !== "call") return;
+  if (message?.target !== "aeon-code-host") return;
   if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL(OFFSCREEN)) return;
-  const cell = cells.get(message.cellId);
+  if (message.kind === "jobDone") {
+    finishJob(message as Record<string, unknown>);
+    reply({ ok: true });
+    return true;
+  }
+  if (message.kind !== "call") return;
+  const cell = cells.get(message.cellId) ?? jobs.get(message.cellId);
   if (!cell) {
     reply({ error: "Browser cell is no longer active" });
     return;
@@ -202,8 +237,23 @@ function serveCall(cell: Cell, value: Record<string, unknown> | null): Promise<u
   if (guarded) return guarded;
   if (value?.browserInfo === true)
     return Promise.resolve({ clientInstanceIds: [cell.identity.clientInstanceId] });
+  if (value && typeof value.job === "object" && value.job)
+    return jobCall(cell, value.job as Record<string, unknown>);
+  if (value && typeof value.progress === "object" && jobs.get(cell.run.cellId) === cell) {
+    const job = jobs.get(cell.run.cellId);
+    const progress = value.progress as { done?: unknown; total?: unknown; label?: unknown };
+    if (job)
+      job.progress = {
+        done: Math.max(0, Number(progress.done) || 0),
+        total: Math.max(0, Number(progress.total) || 0),
+        ...(typeof progress.label === "string" ? { label: progress.label.slice(0, 200) } : {}),
+      };
+    return Promise.resolve({ ok: true });
+  }
   if (value && typeof value.handoff === "object" && value.handoff)
     return handoff(cell, value.handoff);
+  if (value && typeof value.quiet === "object" && value.quiet) return quietCall(cell, value.quiet);
+  if (value && value.tabs === "reset") return resetCall(cell);
   if (value && typeof value.network === "string")
     return networkCall(authorizedTarget(cell, value.target).tabId, value.network, value);
   if (value && typeof value.rules === "string")
@@ -244,6 +294,226 @@ function siteRulesFor(cell: Cell): Promise<SiteRules> {
     .catch(() => NO_RULES)
     .then(combinedRules);
   return cell.siteRules;
+}
+
+async function quietCall(cell: Cell, request: object): Promise<unknown> {
+  const value = request as { target?: unknown; enabled?: unknown };
+  const target = authorizedTarget(cell, value.target);
+  const enabled = value.enabled !== false;
+  if (enabled) await enableQuietTab(target.tabId);
+  else await disableQuietTab(target.tabId);
+  return { quiet: enabled };
+}
+
+async function resetCall(cell: Cell): Promise<unknown> {
+  cancelJobs(cell.run.chatId);
+  await toOffscreen({
+    target: "aeon-code-offscreen",
+    kind: "stopJobs",
+    chatId: cell.run.chatId,
+  }).catch(() => undefined);
+  return resetChatTabs(cell.run.chatId);
+}
+
+async function jobCall(cell: Cell, request: Record<string, unknown>): Promise<unknown> {
+  const action = String(request.action ?? "status");
+  if (action === "start") return startJob(cell, request);
+  await restoreJobs();
+  const job = jobs.get(String(request.id ?? ""));
+  if (!job) throw new Error("TARGET_LOST: no browser job " + String(request.id ?? ""));
+  if (action === "artifact") {
+    if (typeof request.path === "string") job.artifact = request.path;
+    else delete job.artifact;
+    await saveJobs();
+    return { ok: true, artifact: job.artifact };
+  }
+  if (action === "status")
+    return {
+      jobId: job.run.cellId,
+      status: job.status,
+      total: job.total,
+      done: job.progress?.done ?? job.results?.filter(Boolean).length ?? 0,
+      ...(job.progress ? { progress: job.progress } : {}),
+      startedAt: job.startedAt,
+      ...(job.finishedAt ? { finishedAt: job.finishedAt } : {}),
+      ...(job.artifact ? { artifact: job.artifact } : {}),
+      ...(job.error ? { error: job.error } : {}),
+    };
+  if (action === "result")
+    return {
+      jobId: job.run.cellId,
+      status: job.status,
+      total: job.total,
+      results: job.results ?? [],
+      ...(job.error ? { error: job.error } : {}),
+      ...(job.artifact ? { artifact: job.artifact } : {}),
+    };
+  throw new Error("UNSUPPORTED: browser.job." + action);
+}
+
+async function startJob(cell: Cell, request: Record<string, unknown>): Promise<unknown> {
+  const items = request.items;
+  const source = request.fn;
+  if (!Array.isArray(items) || !items.length || items.length > 500)
+    throw new Error("browser.job takes 1–500 items");
+  if (typeof source !== "string" || !source.trim())
+    throw new Error("browser.job needs a function (items, page, index) => …");
+  if (source.length > MAX_JOB_ITEM_CHARS) throw new Error("browser.job's function is too large");
+  const options = jobOptions(request.options);
+  const jobId = crypto.randomUUID();
+  const job: Job = {
+    run: {
+      kind: "browser.code.run",
+      cellId: jobId,
+      chatId: cell.run.chatId,
+      toolCallId: "job-" + jobId,
+      code: "browser.job",
+      targets: [],
+      timeoutMs: 600_000,
+    },
+    socket: cell.socket,
+    identity: cell.identity,
+    operationId: crypto.randomUUID(),
+    allowed: new Map(),
+    opened: new Map(),
+    guarded: new Set(),
+    steps: [],
+    count: 0,
+    calls: new Map(),
+    sequence: 0,
+    progressTimer: undefined,
+    waitingForUser: false,
+    done: false,
+    popupsAtStart: agentTabSummary(cell.run.chatId).popups,
+    status: "running",
+    startedAt: Date.now(),
+    total: items.length,
+  };
+  jobs.set(jobId, job);
+  await saveJobs();
+  const code = jobCode({ jobId, items, fn: source, options });
+  try {
+    await toOffscreen({
+      target: "aeon-code-offscreen",
+      kind: "job",
+      jobId,
+      chatId: cell.run.chatId,
+      code,
+    });
+  } catch (error) {
+    job.status = "failed";
+    job.error = String(error);
+    await saveJobs();
+    throw error;
+  }
+  return { jobId, status: "running", total: items.length };
+}
+
+function finishJob(message: Record<string, unknown>): void {
+  const job = jobs.get(String(message.jobId ?? ""));
+  if (!job) return;
+  job.done = true;
+  job.finishedAt = Date.now();
+  const value = message.value as { results?: unknown[] } | undefined;
+  if (Array.isArray(value?.results)) job.results = value.results;
+  else delete job.results;
+  const error = typeof message.error === "string" ? message.error : undefined;
+  job.status = error ? "failed" : "complete";
+  if (error) job.error = error;
+  else delete job.error;
+  job.calls.clear();
+  void saveJobs();
+}
+
+function cancelJobs(chatId: string): void {
+  for (const job of jobs.values())
+    if (job.run.chatId === chatId && job.status === "running") {
+      job.status = "cancelled";
+      job.finishedAt = Date.now();
+      job.error = "Browser job cancelled";
+    }
+  void saveJobs();
+}
+
+let jobsRestored: Promise<void> | undefined;
+function restoreJobs(): Promise<void> {
+  jobsRestored ??= chrome.storage.session
+    .get(JOB_STORAGE)
+    .then((stored) => {
+      const saved = stored[JOB_STORAGE];
+      if (!Array.isArray(saved)) return;
+      for (const item of saved as Record<string, unknown>[]) {
+        if (typeof item.jobId !== "string" || jobs.has(item.jobId)) continue;
+        jobs.set(item.jobId, {
+          ...emptyJob(item.jobId, String(item.chatId ?? ""), Number(item.total ?? 0)),
+          status:
+            item.status === "complete" || item.status === "failed" || item.status === "cancelled"
+              ? item.status
+              : "failed",
+          startedAt: Number(item.startedAt ?? Date.now()),
+          ...(item.finishedAt ? { finishedAt: Number(item.finishedAt) } : {}),
+          ...(Array.isArray(item.results) ? { results: item.results } : {}),
+          ...(typeof item.error === "string" ? { error: item.error } : {}),
+          ...(typeof item.artifact === "string" ? { artifact: item.artifact } : {}),
+        });
+      }
+    })
+    .catch(() => undefined);
+  return jobsRestored;
+}
+
+function emptyJob(jobId: string, chatId: string, total: number): Job {
+  return {
+    run: {
+      kind: "browser.code.run",
+      cellId: jobId,
+      chatId,
+      toolCallId: "job-" + jobId,
+      code: "browser.job",
+      targets: [],
+      timeoutMs: 600_000,
+    },
+    socket: undefined as unknown as WebSocket,
+    identity: undefined as unknown as BrowserIdentity,
+    operationId: crypto.randomUUID(),
+    allowed: new Map(),
+    opened: new Map(),
+    guarded: new Set(),
+    steps: [],
+    count: 0,
+    calls: new Map(),
+    sequence: 0,
+    progressTimer: undefined,
+    waitingForUser: false,
+    done: true,
+    popupsAtStart: 0,
+    status: "complete",
+    startedAt: Date.now(),
+    total,
+  };
+}
+
+let jobsWriting = Promise.resolve();
+function saveJobs(): Promise<void> {
+  const saved = [...jobs.values()].map((job) => {
+    const text = JSON.stringify(job.results) ?? "";
+    return {
+      jobId: job.run.cellId,
+      chatId: job.run.chatId,
+      status: job.status,
+      total: job.total,
+      startedAt: job.startedAt,
+      ...(job.finishedAt ? { finishedAt: job.finishedAt } : {}),
+      ...(job.results && text.length <= 1_000_000 ? { results: job.results } : {}),
+      ...(job.error ? { error: job.error } : {}),
+      ...(job.artifact ? { artifact: job.artifact } : {}),
+    };
+  });
+  jobsWriting = jobsWriting
+    .catch(() => undefined)
+    .then(() => chrome.storage.session.set({ [JOB_STORAGE]: saved }))
+    .catch(() => undefined);
+  return jobsWriting;
 }
 
 async function guardCellTab(cell: Cell, tabId: number): Promise<void> {
@@ -313,15 +583,15 @@ async function serve(cell: Cell, request: unknown): Promise<unknown> {
           : undefined);
     if (tabId !== undefined) {
       void notePreviewActivity(cell.run.chatId, tabId);
-      // Whatever the step (reading, navigating, opening), the tab being worked on joins its chat in
-      // Split View, as the view setting allows.
-      void presentBrowserTask(cell.run.chatId, tabId);
+      // Only work in a tab (not reads) brings its chat and the tab together in Split View.
+      if (presentsBrowserTask(step.op) && !("present" in step && step.present === false))
+        void presentBrowserTask(cell.run.chatId, tabId);
     }
     recordScreenshot(cell, step, result);
     return result;
   } catch (error) {
     Object.assign(entry, { disposition: "failed", code: describe(error) });
-    throw error;
+    throw await stepFailure(step, error);
   } finally {
     entry.tEnd = Date.now();
     const tabId = resultTab ?? stepTab;

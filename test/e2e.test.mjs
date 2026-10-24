@@ -115,6 +115,29 @@ test(
         response.end(JSON.stringify({ items: ["a", "b", "c"] }));
         return;
       }
+      if (request.url?.startsWith("/popunder")) {
+        response.setHeader("content-type", "text/html");
+        response.end(
+          `<title>Popunder</title><button onclick="window.open('/catalog?popup', '_blank')">open</button>`,
+        );
+        return;
+      }
+      if (request.url?.startsWith("/autoplay")) {
+        response.setHeader("content-type", "text/html");
+        response.end(
+          `<title>Autoplay</title><video id="v" autoplay loop></video><audio id="a" autoplay loop></audio>
+          <script>for (const m of document.querySelectorAll('video,audio')) m.play().catch(() => {});</script>`,
+        );
+        return;
+      }
+      if (request.url?.startsWith("/job")) {
+        const number = new URL(request.url, "http://localhost").searchParams.get("i") ?? "0";
+        setTimeout(() => {
+          response.setHeader("content-type", "text/html");
+          response.end(`<title>Job ${number}</title><h1>Job ${number}</h1><p>done</p>`);
+        }, 250);
+        return;
+      }
       if (dataRoutes(request, response)) return;
       if (loginRoutes(request, response)) return;
       response.setHeader("content-type", "text/html");
@@ -255,7 +278,7 @@ test(
           awaitPromise: true,
           returnByValue: true,
         });
-        assert.equal(grouped.result.result.value, "Agent");
+        assert.equal(String(grouped.result.result.value).replace(/\u2063.*$/, ""), "Agent");
 
         const { stdout } = await cell(`
           await page.rules.block({ urls: ["/api/items"] });
@@ -282,6 +305,167 @@ test(
           visited: true,
           found: 1,
         });
+      });
+
+      await t.test(
+        "browser results count the tabs a run owns, and reset keeps only kept tabs",
+        async () => {
+          const cell = (code) =>
+            run(process.execPath, [cli, "repl", "--session", "tabs-reset", code], { env });
+          const opened = await cell(
+            `page = await browser.openTab(${JSON.stringify(siteUrl + "?tab-line")}); page.target.tabId`,
+          );
+          assert.match(
+            opened.stdout,
+            /tabs: opened \d+, closed \d+, mine \d+ \(\d+\), total \d+/,
+            opened.stdout,
+          );
+          const reset = await cell(`
+          const kept = await browser.openTab(${JSON.stringify(siteUrl + "?kept")}, { newTab: true });
+          await kept.keep();
+          await browser.openTab(${JSON.stringify(siteUrl + "?discard")}, { newTab: true });
+          const result = await browser.reset();
+          ({ result, urls: (await browser.tabs()).map((tab) => tab.url) });`);
+          const parsed = JSON.parse(
+            reset.stdout
+              .slice(reset.stdout.indexOf("→ ") + 2, reset.stdout.lastIndexOf("\ntabs:"))
+              .trim(),
+          );
+          const value = parsed.result;
+          assert.ok(value.closed.length >= 1, reset.stdout);
+          const urls = parsed.urls;
+          assert.ok(
+            urls.some((url) => url.endsWith("?kept")),
+            reset.stdout,
+          );
+          assert.ok(!urls.some((url) => url.endsWith("?discard")), reset.stdout);
+        },
+      );
+
+      await t.test("popups park in the run's group, and a quiet tab blocks them", async () => {
+        const cell = (code) =>
+          run(process.execPath, [cli, "repl", "--session", "popups", code], { env });
+        const parked = await cell(`
+          page = await browser.openTab(${JSON.stringify(siteUrl + "popunder")}, { newTab: true });
+          await page.getByRole("button", { name: "open" }).click();
+          await new Promise((done) => setTimeout(done, 1200));
+          const popups = (await page.popups()).data.tabs;
+          const tabs = await browser.tabs();
+          console.log("POPUPS " + JSON.stringify({
+            popups: popups.map((tab) => ({ id: tab.target.tabId, url: tab.url, groupId: tab.groupId, active: tab.active })),
+            active: tabs.filter((tab) => tab.active).map((tab) => tab.url),
+          }));`);
+        const seen = JSON.parse(/POPUPS (.*)/.exec(parked.stdout)[1]);
+        assert.equal(seen.popups.length, 1, parked.stdout);
+        assert.match(seen.popups[0].url, /popup/, parked.stdout);
+        assert.equal(seen.popups[0].active, false, parked.stdout);
+        assert.ok(seen.popups[0].groupId >= 0, parked.stdout);
+
+        const quiet = await cell(`
+          page = await browser.openTab(${JSON.stringify(siteUrl + "popunder")}, { newTab: true, quiet: true });
+          await page.getByRole("button", { name: "open" }).click();
+          await new Promise((done) => setTimeout(done, 800));
+          const popups = (await page.popups()).data.tabs;
+          const media = await page.evaluate(() => Array.from(document.querySelectorAll("video,audio")).map((item) => ({
+            paused: item.paused, muted: item.muted, autoplay: item.autoplay,
+          })));
+          console.log("QUIET " + JSON.stringify({ popups: popups.length, media }));`);
+        const quietSeen = JSON.parse(/QUIET (.*)/.exec(quiet.stdout)[1]);
+        assert.equal(quietSeen.popups, 0, quiet.stdout);
+      });
+
+      await t.test("a quiet autoplay page is paused and muted", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "quiet-media",
+            `page = await browser.openTab(${JSON.stringify(siteUrl + "autoplay")}, { newTab: true, quiet: true });
+            await new Promise((done) => setTimeout(done, 500));
+            console.log("MEDIA " + JSON.stringify(await page.evaluate(() => Array.from(document.querySelectorAll("video,audio")).map((item) => ({ paused: item.paused, muted: item.muted, autoplay: item.autoplay })))));`,
+          ],
+          { env },
+        );
+        const media = JSON.parse(/MEDIA (.*)/.exec(stdout)[1]);
+        assert.deepEqual(
+          media.map((item) => [item.paused, item.muted, item.autoplay]),
+          [
+            [true, true, false],
+            [true, true, false],
+          ],
+          stdout,
+        );
+      });
+
+      await t.test("browser.job outlives the cell and reports per-item results", async () => {
+        const cell = (code) =>
+          run(process.execPath, [cli, "repl", "--session", "jobs", code], { env });
+        const started = await cell(`
+          job = await browser.job([
+            ${JSON.stringify(siteUrl + "job?i=1")},
+            ${JSON.stringify(siteUrl + "job?i=2")}
+          ], async (tab, item) => ({ item, title: await tab.title() }), { concurrency: 1, timeoutMs: 15000 });
+          console.log("JOB " + JSON.stringify(job));`);
+        const job = JSON.parse(/JOB (.*)/.exec(started.stdout)[1]);
+        assert.equal(job.status, "running", started.stdout);
+        await sleep(4000);
+        const result = await cell(`
+          const state = await browser.job.status(job.jobId);
+          const done = await browser.job.result(job.jobId);
+          console.log("JOBRESULT " + JSON.stringify({ state, done }));`);
+        const seen = JSON.parse(/JOBRESULT (.*)/.exec(result.stdout)[1]);
+        assert.equal(seen.state.status, "complete", result.stdout);
+        assert.equal(seen.done.results.length, 2, result.stdout);
+        assert.deepEqual(
+          seen.done.results.map((item) => item.value.title),
+          ["Job 1", "Job 2"],
+          result.stdout,
+        );
+      });
+
+      await t.test("a tab the user closed is not reopened by itself", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "closed-tab",
+            `page = await browser.openTab(${JSON.stringify(siteUrl + "?closed")}, { newTab: true });
+            await page.close();
+            const message = await browser.openTab(${JSON.stringify(siteUrl + "?closed")}).then(() => "reopened", (error) => error.message);
+            console.log("CLOSED " + JSON.stringify(message));`,
+          ],
+          { env },
+        );
+        const message = JSON.parse(/CLOSED (.*)/.exec(stdout)[1]);
+        assert.match(message, /was closed/);
+        assert.match(message, /newTab: true/);
+      });
+
+      await t.test("activeTab returns a live active tab", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "active-window",
+            `const first = await browser.openTab(${JSON.stringify(siteUrl + "?window-one")}, { newTab: true, foreground: true });
+            const active = await browser.activeTab();
+            const tabs = await browser.tabs();
+            console.log("ACTIVE " + JSON.stringify({
+              active: active.target.tabId,
+              live: tabs.some((tab) => tab.target.tabId === active.target.tabId && tab.active),
+              first: first.target.tabId,
+            }));`,
+          ],
+          { env },
+        );
+        const seen = JSON.parse(/ACTIVE (.*)/.exec(stdout)[1]);
+        assert.equal(seen.live, true, stdout);
       });
 
       await t.test("tabs are reused, permissions preset, and the cursor shows", async () => {

@@ -7,6 +7,9 @@ import {
 } from "./native-browser-session.js";
 import { publishBrowserEvent } from "./native-browser-events.js";
 import { engineConfig } from "./engine-config.js";
+import { groupAgentTab } from "./native-browser-groups.js";
+import { markAgentTabGrouped, trackAgentTab } from "./native-browser-tab-cleanup.js";
+import { isQuietTab } from "./native-browser-quiet.js";
 import { onEngineInstall } from "./native-engine-install.js";
 const children = new Map<number, Set<number>>();
 const active = new Map<number, number>(),
@@ -52,11 +55,21 @@ async function adopt(tabId: number, openerId: number): Promise<void> {
       return;
     handled.add(tabId);
     const tab = await chrome.tabs.get(tabId);
+    // Quiet work never lets a page open a tab of its own, not even parked.
+    if (isQuietTab(openerId)) {
+      await chrome.tabs.remove(tabId).catch(() => undefined);
+      return;
+    }
     await restoreForeground(tab, tabId, openerId);
     const set = children.get(openerId) ?? new Set<number>();
     set.add(tabId);
     children.set(openerId, set);
     bindBrowserSession(tabId, owner);
+    trackAgentTab(tabId, owner, { popup: true, url: tab.url ?? "" });
+    if (tab.windowId !== undefined) {
+      markAgentTabGrouped(tabId);
+      await groupAgentTab(tabId, tab.windowId, owner);
+    }
     publishBrowserEvent(openerId, "popup", { tabId, openerId });
     await publishPopup(tabId, openerId, owner, connection);
   } catch {
@@ -94,9 +107,13 @@ async function restoreForeground(
   if (await engineConfig.agentInFront().catch(() => false)) return;
   const foreground = active.get(tab.windowId);
   const userTab = foreground === tabId ? previous.get(tab.windowId) : foreground;
-  if (tab.active && userTab !== undefined && userTab !== openerId) {
-    // Do not override a subsequent deliberate user switch.
-    const current = await chrome.tabs.query({ windowId: tab.windowId, active: true });
-    if (current[0]?.id === tabId) await chrome.tabs.update(userTab, { active: true });
+  if (tab.active) {
+    // Park it: the opener (or whatever the user was on) stays in front, never a popunder.
+    const keep = userTab !== undefined && userTab !== tabId ? userTab : openerId;
+    if (keep !== tabId) {
+      const current = await chrome.tabs.query({ windowId: tab.windowId, active: true });
+      if (current[0]?.id === tabId)
+        await chrome.tabs.update(keep, { active: true }).catch(() => undefined);
+    }
   }
 }

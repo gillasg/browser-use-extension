@@ -371,8 +371,8 @@ async function __pool(items, worker, options = {}) {
     var url = urlOf(job.item);
     if (url) {
       await wait(new URL(url).host);
-      if (tab.page) await tab.page.goto(url);
-      else tab.page = await browser.openTab(url, {new: true});
+      if (tab.page) await tab.page.goto(url, {present: false});
+      else tab.page = await browser.openTab(url, {new: true, present: false});
       var status = await tab.page.status().catch(() => null);
       if (status === 429 || status === 503) {
         var host = new URL(url).host;

@@ -114,6 +114,16 @@ export function currentInventoryTabs(): readonly BrowserTab[] {
   return [...(active?.tabs.values() ?? [])];
 }
 
+/** The window the user last focused, whose active tab browser.activeTab() means. */
+export function currentFocusedWindowId(): number | undefined {
+  return focusedWindowId([...(active?.windows.values() ?? [])]);
+}
+
+/** The last focused window's id; a pure selector so the focus rule can be tested. */
+export function focusedWindowId(windows: readonly BrowserWindow[]): number | undefined {
+  return windows.find((window) => window.focused)?.windowId;
+}
+
 export async function refreshInventoryTab(tabId: number): Promise<BrowserTab | undefined> {
   const session = active;
   if (!session) return undefined;

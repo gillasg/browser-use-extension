@@ -8,8 +8,8 @@ export interface EngineConfig {
   notificationIcon: string;
   /** Whether tabs an agent opens are grouped per session. */
   tabGroups: boolean;
-  /** Label of a session's tab group. */
-  tabGroupTitle: (owner: string) => string;
+  /** Label of a session's tab group; the host may pass the chat, routine or session name. */
+  tabGroupTitle: (owner: string, ownerTitle?: string) => string;
   /** How a chat page shows its agent's tabs: Split View beside the chat, or live thumbnails. */
   agentView: () => Promise<"split" | "thumbnails">;
   /**

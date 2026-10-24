@@ -5,10 +5,9 @@ import {
   releaseBrowserEvents,
 } from "./native-browser-events.js";
 import { trackBrowserActivity, forgetBrowserActivity } from "./native-browser-navigation.js";
-import { presentBrowserTask } from "./native-browser-layout.js";
 import { engineConfig } from "./engine-config.js";
 import { currentInventoryTabs } from "./native-inventory-client.js";
-import { tidyChatTabs, touchAgentTab } from "./native-browser-tab-cleanup.js";
+import { tidyAllChatTabs, tidyChatTabs, touchAgentTab } from "./native-browser-tab-cleanup.js";
 import type { BrowserExecutorRequest } from "@browserkit/protocol";
 import { onEngineInstall } from "./native-engine-install.js";
 
@@ -109,7 +108,6 @@ async function runWithBrowserDebugger<T>(
   try {
     await entry.attached;
     touchAgentTab(tabId);
-    await presentBrowserTask(chatId, tabId);
     await ensureBrowserViewport(tabId);
     if (attachments.get(tabId) !== entry) throw new Error("OPERATION_FAILED");
     if (entry.timer !== undefined) clearTimeout(entry.timer);
@@ -286,6 +284,15 @@ export function releaseBrowserExecutor(): void {
   void releaseBrowserSessions();
 }
 export function handleBrowserRelease(candidate: unknown): boolean {
+  if (
+    typeof candidate === "object" &&
+    candidate !== null &&
+    "kind" in candidate &&
+    candidate.kind === "browser.tidy"
+  ) {
+    void tidyAllChatTabs();
+    return true;
+  }
   if (
     typeof candidate !== "object" ||
     candidate === null ||

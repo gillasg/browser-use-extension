@@ -40,6 +40,8 @@ export interface CheckOptions {
   spotChecks?: number;
   /** Use the user's browser for what plain HTTP cannot settle (default true). */
   browser?: boolean;
+  /** "http" never starts Chrome; auto (default) settles uncertain sites there. */
+  via?: "auto" | "http";
   onProgress?(done: number, total: number): void;
 }
 
@@ -48,6 +50,8 @@ export interface CheckReport {
   counts: Partial<Record<SiteVerdict, number>>;
   spotCheck: { checked: number; disagreed: string[] };
   browserUsed: boolean;
+  /** Pages loaded in Chrome, including spot checks. */
+  chromePages: number;
 }
 
 interface Answer {
@@ -84,15 +88,17 @@ export async function checkSites(
     options.onProgress?.(++done, urls.length);
     return result;
   });
-  const browserUsed = options.browser !== false && (await browserAvailable());
+  const browserUsed =
+    options.via !== "http" && options.browser !== false && (await browserAvailable());
   const spotCheck = { checked: 0, disagreed: [] as string[] };
-  if (browserUsed) await settleInChrome(results, options, spotCheck);
+  let chromePages = 0;
+  if (browserUsed) chromePages = await settleInChrome(results, options, spotCheck);
   else
     for (const result of results)
       if (!SETTLED.has(result.verdict)) {
-        result.reason = `${result.reason ?? result.verdict}; not checked in Chrome (no browser)`;
+        result.reason = `${result.reason ?? result.verdict}; not checked in Chrome (${options.via === "http" ? "via http" : "no browser"})`;
       }
-  return { results, counts: countVerdicts(results), spotCheck, browserUsed };
+  return { results, counts: countVerdicts(results), spotCheck, browserUsed, chromePages };
 }
 
 /** "example.com", "https://example.com/x" → "https://example.com/x"; junk → undefined. */
@@ -194,11 +200,12 @@ async function settleInChrome(
   results: SiteCheck[],
   options: CheckOptions,
   spotCheck: { checked: number; disagreed: string[] },
-): Promise<void> {
+): Promise<number> {
   const open = results.filter((result) => !SETTLED.has(result.verdict));
   const fine = results.filter((result) => result.verdict === "ok");
   const sample = pick(fine, options.spotChecks ?? 5);
-  const answers = await askChrome([...open, ...sample].map((result) => result.url));
+  const urls = [...open, ...sample].map((result) => result.url);
+  const answers = await askChrome(urls);
   for (const result of open) {
     const answer = answers.get(result.url);
     if (answer) Object.assign(result, chromeVerdict(result, answer));
@@ -211,6 +218,7 @@ async function settleInChrome(
     if (again.verdict !== "ok" && again.verdict !== "js-shell")
       spotCheck.disagreed.push(`${result.host}: http ok, chrome ${again.verdict}`);
   }
+  return urls.length;
 }
 
 type ChromeAnswer = Answer | { error: string };
@@ -228,7 +236,7 @@ function chromeVerdict(result: SiteCheck, answer: ChromeAnswer): Partial<SiteChe
   return { ...judge(answer), via: "chrome", url: result.url, host: result.host };
 }
 
-const BATCH = 12;
+const BATCH = 4;
 
 async function askChrome(urls: readonly string[]): Promise<Map<string, ChromeAnswer>> {
   const answers = new Map<string, ChromeAnswer>();

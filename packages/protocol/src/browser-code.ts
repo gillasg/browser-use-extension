@@ -12,6 +12,8 @@ export const BrowserCodeRunSchema = z
     code: z.string().min(1).max(16000),
     targets: z.array(BrowserTargetKeySchema).max(64),
     timeoutMs: z.number().int().min(1000).max(600000),
+    /** The chat, routine or session name for its tab group. */
+    ownerTitle: z.string().min(1).max(120).optional(),
   })
   .strict();
 export type BrowserCodeRun = z.infer<typeof BrowserCodeRunSchema>;
@@ -60,6 +62,17 @@ export const BrowserCodeResultSchema = z
     reset: z.boolean().optional(),
     steps: z.array(z.record(z.string(), z.unknown())).max(256),
     opened: z.array(BrowserTargetKeySchema).max(64),
+    /** Tabs this run opened/closed, the ones still open, all tabs, and parked popups. */
+    tabStats: z
+      .object({
+        opened: z.number().int().nonnegative(),
+        closed: z.number().int().nonnegative(),
+        mine: z.array(z.number().int().nonnegative()).max(64),
+        total: z.number().int().nonnegative(),
+        popups: z.number().int().nonnegative().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type BrowserCodeResult = z.infer<typeof BrowserCodeResultSchema>;

@@ -206,11 +206,12 @@ async function exploreCommand(args: Args): Promise<void> {
   await explore(sites, {
     ...(goal ? { goal } : {}),
     ...(args.flags.actions === true ? { actions: true } : {}),
-    parallel: Number(flag(args, "parallel") ?? 3),
+    ...(args.flags.loud === true ? { quiet: false } : {}),
+    ...(flag(args, "parallel") ? { parallel: Number(flag(args, "parallel")) } : {}),
     onSite: (result) =>
       out(
         result.error
-          ? `${result.site}\tfailed: ${result.error}`
+          ? `${result.site}\tfailed (${result.kind ?? "failed"}): ${result.error}`
           : `${result.site}\t${result.operations} operations (version ${result.version})`,
       ),
   });

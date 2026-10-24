@@ -79,6 +79,8 @@ export const browserExtraSteps = [
         .url()
         .max(8192)
         .refine((value) => ["http:", "https:"].includes(new URL(value).protocol)),
+      /** false for parallel reads: navigate without changing the Split View pair. */
+      present: z.boolean().optional(),
     })
     .strict(),
   z.object({ op: z.literal("diagnostics"), target, clear: z.boolean().default(false) }).strict(),

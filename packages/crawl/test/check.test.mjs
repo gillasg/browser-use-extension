@@ -68,10 +68,12 @@ test("checkSites settles what it can over plain HTTP and marks the rest", async 
   try {
     const report = await checkSites(
       [`http://127.0.0.1:${port}/`, `http://127.0.0.1:${port}/reset`, "no-such-host.invalid"],
-      { browser: false, timeoutMs: 3000 },
+      { browser: false, timeoutMs: 3000, via: "http" },
     );
     const verdicts = report.results.map((result) => result.verdict);
     assert.deepEqual(verdicts, ["ok", "refused", "dead"]);
+    assert.equal(report.chromePages, 0);
+    assert.equal(report.browserUsed, false);
     assert.match(report.results[1].reason, /not checked in Chrome/);
   } finally {
     server.close();
