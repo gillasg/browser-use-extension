@@ -16,6 +16,10 @@
     "./browser-crawl": {
       "types": "./dist/browser-crawl.d.ts",
       "import": "./dist/browser-crawl.js"
+    },
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
     }
   },
   "scripts": {
@@ -23,7 +27,8 @@
   },
   "dependencies": {
     "browser-crawl": "workspace:*",
-    "@browserkit/site-mapper": "workspace:*"
+    "@browserkit/site-mapper": "workspace:*",
+    "@browserkit/credentials": "workspace:*"
   },
   "files": [
     "dist"

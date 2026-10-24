@@ -1,11 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { handleSiteMapperRequest, isSiteMapperRequest } from "@browserkit/tools/site-to-api";
+import { createHostHandler } from "@browserkit/tools/host";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { dataDirectory, statePath, type BridgeState } from "./paths.js";
-import { handleCredentialRequest, isCredentialRequest } from "@browserkit/credentials";
-import { isSiteRulesRequest, readSiteRules } from "./site-rules.js";
 import { isSiteSkillRequest, siteSkillCall } from "./site-skills.js";
 import {
   appendJournalEntry,
@@ -326,17 +324,25 @@ export class Bridge {
 /** Workspace files, site skills and upload checks: what a cell asks of the machine. */
 function serveRequest(request: unknown, session: string): Promise<unknown> {
   const workspace = join(dataDirectory(), "workspaces", session);
-  if (isCredentialRequest(request)) return handleCredentialRequest(request, dataDirectory());
-  if (isSiteRulesRequest(request)) return readSiteRules();
-  if (isSiteSkillRequest(request))
-    return siteSkillCall(join(dataDirectory(), "site-skills"), request);
-  if (isWorkspaceRequest(request)) return workspaceCall(workspace, request);
-  if (isSiteMapperRequest(request)) return handleSiteMapperRequest(request);
-  const upload = request as { validateUpload?: unknown } | null;
-  if (Array.isArray(upload?.validateUpload))
-    return validateUploadFiles(upload.validateUpload as string[], workspace);
-  return Promise.reject(new Error("UNSUPPORTED: unknown browser runtime request"));
+  const answer = hostHandler(request, { source: "bridge", scope: session, workspace });
+  return (
+    answer ?? Promise.reject(new Error("UNSUPPORTED: unknown browser runtime request"))
+  );
 }
+
+const hostHandler = createHostHandler({
+  dataDirectory: dataDirectory(),
+  extra: (request, context) => {
+    if (isSiteSkillRequest(request))
+      return siteSkillCall(join(dataDirectory(), "site-skills"), request);
+    if (!context.workspace) return undefined;
+    if (isWorkspaceRequest(request)) return workspaceCall(context.workspace, request);
+    const upload = request as { validateUpload?: unknown } | null;
+    if (Array.isArray(upload?.validateUpload))
+      return validateUploadFiles(upload.validateUpload as string[], context.workspace);
+    return undefined;
+  },
+});
 
 function tabIdOf(tab: Json): number {
   return Number((tab.target as Json | undefined)?.tabId);
