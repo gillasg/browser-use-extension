@@ -70,7 +70,7 @@ browserkit sites                          # which sites are mapped
 browserkit ops shop.example               # what it can do, with inputs and capabilities
 browserkit call shop.example search '{"query":"lamp"}' --param page=2
 browserkit watch shop.example listings '{}' --key id     # only new/changed items since the last watch
-browserkit federate "which has it" --site a.example --site b.example --operation search '{"query":"lamp"}'
+browserkit federate shop.example:listProducts other.example:searchProducts --params '{"query":"lamp"}'
 browserkit heal shop.example              # drift, breakage, sign-out, bot walls
 browserkit export shop.example --out ./shop-api           # OpenAPI, typed client, reports
 ```
@@ -99,16 +99,16 @@ browserkit blocked
 ## Browser code in one minute
 
 `browserkit repl "<code>"` (or `browser_code`) runs JavaScript in a persistent REPL inside Chrome.
-`browser`, `page`, `bu` and `siteMapper` are globals; variables, tabs and files persist per
-`--session`.
+`browser`, `page`, `bu`, `siteMapper`, `google`, `skills`, `artifact`, `checkpoint` and `help` are
+globals; variables, tabs and files persist per `--session`.
 
 ```js
 const page = await browser.openTab("https://shop.example");
-await bu.state();                        // [id] role "name" = value, plus visible text
-await bu.click(12);                      // act by bu id, role or visible text
+await bu.state(); // [id] role "name" = value, plus visible text
+await bu.click(12); // act by bu id, role or visible text
 await page.locator("input[name=q]").fill("lamp");
 await page.getByRole("button", { name: "Search" }).click();
-const rows = await page.list("tr");      // every row, scrolling lists that draw lazily
+const rows = await page.list("tr"); // every row, scrolling lists that draw lazily
 ```
 
 - One `page` per site: `browser.openTab` on a site you already have a tab for navigates it.
@@ -122,8 +122,8 @@ const rows = await page.list("tr");      // every row, scrolling lists that draw
 If a page shows a sign-in wall, try `await bu.signIn()` before asking the user:
 
 ```js
-await bu.signIn();                 // {signedIn, site, provider, account, reason}
-await bu.signIn({account: "me@example.com"});
+await bu.signIn(); // {signedIn, site, provider, account, reason}
+await bu.signIn({ account: "me@example.com" });
 ```
 
 It fills the username, password and, when the password manager has one, the one-time code, across
@@ -144,8 +144,7 @@ Sites the user blocked are off limits in every way: no tab opens them, `browser.
 calls refuse them, and clicks, redirects or scripts inside a working tab cannot reach them. A call
 that touches one fails with `SITE_BLOCKED`: stop, and tell the user if the task needs it.
 
-A site the user names in their own request is allowed for that run only. Keep the list with
-`browserkit block|unblock|blocked`.
+Only the user changes the list, with `browserkit block|unblock|blocked`.
 
 ## Sessions and files
 

@@ -5,7 +5,7 @@ import type { Command } from "../usage.js";
 
 // Sites the agent may not use at all, kept on this machine and enforced in the browser: no tab
 // can open one, browser.fetch and site API calls refuse it, and a click or redirect inside a
-// working tab cannot reach it either. A site the user names in a request is allowed for that run.
+// working tab cannot reach it either. Only the user changes the list.
 // This is separate from `browserkit sites`, which lists mapped sites.
 
 function requiredSite(args: Args, usage: string): string {
@@ -46,7 +46,7 @@ export const blockCommand: Command = {
 
 Puts the site (and its subdomains) off limits for every agent: no tab opens it, browser.fetch
 and site API calls refuse it, and requests a working tab makes to it (clicks, redirects,
-scripts) are blocked. A site the user names in their own request is allowed for that run only.
+scripts) are blocked. Only the user changes the list, with \`browserkit unblock\`.
 The list lives in site-rules.json in browserkit's data folder; the extension's own block list
 adds to it. \`browserkit sites\` lists mapped sites, which is a different thing.`,
   run: block,
