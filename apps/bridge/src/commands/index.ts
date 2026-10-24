@@ -11,6 +11,7 @@ import {
 } from "./crawl.js";
 import { mapGroup } from "./site-map.js";
 import { keepGroup } from "./site-keep.js";
+import { blockGroup } from "./block-sites.js";
 import { signinCommand } from "./signin.js";
 import { useGroup } from "./site-use.js";
 
@@ -26,6 +27,7 @@ export const COMMANDS: Command[] = [
   ...mapGroup,
   ...useGroup,
   ...keepGroup,
+  ...blockGroup,
   signinCommand,
   boostsCommand,
 ];

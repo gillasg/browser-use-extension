@@ -91,9 +91,9 @@ browserkit boosts list                          # lasting CSS/zaps/actions/netwo
 browserkit boosts save boost.json
 browserkit signin setup bitwarden               # or: signin setup proton
 browserkit signin status
-browserkit sites block bank.example             # agents may never open it
-browserkit sites unblock bank.example
-browserkit sites blocked
+browserkit block bank.example                   # agents may never open it
+browserkit unblock bank.example
+browserkit blocked
 ```
 
 ## Browser code in one minute
@@ -145,7 +145,7 @@ calls refuse them, and clicks, redirects or scripts inside a working tab cannot 
 that touches one fails with `SITE_BLOCKED`: stop, and tell the user if the task needs it.
 
 A site the user names in their own request is allowed for that run only. Keep the list with
-`browserkit sites block|unblock|blocked`.
+`browserkit block|unblock|blocked`.
 
 ## Sessions and files
 

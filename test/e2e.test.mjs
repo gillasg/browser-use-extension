@@ -496,7 +496,7 @@ test(
             ],
             { env },
           );
-          assert.match(copy.stdout, /in use by another Aeon chat/, copy.stdout);
+          assert.match(copy.stdout, /in use by another chat/, copy.stdout);
           assert.deepEqual(JSON.parse(/COPY (.*)/.exec(copy.stdout)[1]), {
             other: true,
             url: siteUrl + "virtual",

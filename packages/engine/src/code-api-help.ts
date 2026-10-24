@@ -134,7 +134,7 @@ function __hint(message, code) {
   try {
     var text = String(message || '');
     if (/CLAIM_CONFLICT/.test(text))
-      return 'another Aeon chat is using that tab; browser.attachTab(tab) gives this chat its own copy, or browser.openTab(url, {newTab: true})';
+      return 'another chat is using that tab; browser.attachTab(tab) gives this chat its own copy, or browser.openTab(url, {newTab: true})';
     if (/is not a function|is not defined|Cannot read properties/.test(text)) {
       var unknown = __unknownMembers(code);
       if (unknown.length) return unknown.join('; ');

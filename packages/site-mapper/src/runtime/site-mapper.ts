@@ -71,7 +71,7 @@ export class SignedOut extends HttpError {
     super(operationId, response);
     this.name = "SignedOut";
     // A 401/403 also comes back when the site wants a sign-in header its own code adds; say both.
-    this.message = `The site refused the call as not signed in: ${this.message}. Either the browser is signed out of it (sign in, then call again), or the site adds a sign-in header Aeon has not seen yet: use the site in a tab once so its header can be borrowed, or read the page instead.`;
+    this.message = `The site refused the call as not signed in: ${this.message}. Either the browser is signed out of it (sign in, then call again), or the site adds a sign-in header browserkit has not seen yet: use the site in a tab once so its header can be borrowed, or read the page instead.`;
   }
 }
 

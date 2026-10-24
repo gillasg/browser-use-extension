@@ -142,6 +142,10 @@ test("help lists every command, and each command has its own help", async () => 
       "boosts",
       "rest",
       "session",
+      "signin",
+      "block",
+      "unblock",
+      "blocked",
     ])
       assert.match(usage.stdout, new RegExp(`\\b${command}\\b`), `${command} in the help`);
 
@@ -152,6 +156,38 @@ test("help lists every command, and each command has its own help", async () => 
     const unknown = await browserkit(home, ["nonsense"]);
     assert.equal(unknown.code, 1);
     assert.match(unknown.stdout, /browserkit <command>/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("blocked sites are their own command, apart from mapped sites", async () => {
+  const home = await mkdtemp(join(tmpdir(), "browserkit-block-"));
+  try {
+    const empty = await browserkit(home, ["blocked", "--json"]);
+    assert.equal(empty.code, 0, empty.stderr);
+    assert.deepEqual(JSON.parse(empty.stdout), { blocked: [] });
+
+    const blocked = await browserkit(home, ["block", "https://www.bank.example/login"]);
+    assert.equal(blocked.code, 0, blocked.stderr);
+    assert.match(blocked.stdout, /Blocked bank\.example/);
+    assert.deepEqual(JSON.parse((await browserkit(home, ["blocked", "--json"])).stdout), {
+      blocked: ["bank.example"],
+    });
+
+    const unblocked = await browserkit(home, ["unblock", "bank.example"]);
+    assert.equal(unblocked.code, 0, unblocked.stderr);
+    assert.match(unblocked.stdout, /Unblocked bank\.example/);
+    assert.deepEqual(JSON.parse((await browserkit(home, ["blocked", "--json"])).stdout), {
+      blocked: [],
+    });
+
+    // `sites` is mapped sites only: a site named "block" is not an action.
+    const listed = await browserkit(home, ["sites", "--json"]);
+    assert.equal(listed.code, 0, listed.stderr);
+    assert.ok(Array.isArray(JSON.parse(listed.stdout)));
+    const usage = await browserkit(home, ["sites", "--help"]);
+    assert.doesNotMatch(usage.stdout, /sites block </);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
