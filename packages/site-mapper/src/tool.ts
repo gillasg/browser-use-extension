@@ -14,7 +14,8 @@ import type { ChannelOptions } from "./runtime/channels.js";
 import type { Params } from "./runtime/request.js";
 import { exportSession } from "./runtime/session-export.js";
 import { siteMapper } from "./runtime/site-mapper.js";
-import { loadFlows } from "./workflow.js";
+import type { ModelLike } from "./agent.js";
+import { loadFlows, rebuild } from "./workflow.js";
 
 // The site_mapper actions beyond sites/operations/call/watch/learn/explore, shared by every host
 // (this package's MCP server, browserkit's MCP tools, Aeon's site_mapper tool).
@@ -30,6 +31,7 @@ export const SITE_TOOL_ACTIONS = [
   "coverage",
   "edit",
   "name",
+  "describe",
   "signing",
 ] as const;
 export type SiteToolAction = (typeof SITE_TOOL_ACTIONS)[number];
@@ -46,10 +48,15 @@ export interface SiteToolInput {
   description?: string;
   /** edit: the change in plain English. */
   change?: string;
+  /** describe: the flow to perform in plain English; url: where to start it. */
+  flow?: string;
+  url?: string;
   /** export: folder to write into. */
   folder?: string;
   /** heal: re-record the flows behind failing operations. */
   repair?: boolean;
+  /** The model AI actions (edit, name, describe) use; the host supplies its own. */
+  model?: ModelLike | (() => Promise<ModelLike>);
 }
 
 /** Plain-language guidance for each extra action, for tool descriptions. */
@@ -58,7 +65,7 @@ export const SITE_TOOL_HELP = [
   "actions: list saved multi-step actions, or save one with name, steps (operation ids in order) and description. action runs one by name with params as inputs; each step's result feeds the next.",
   "channel: the site's live WebSocket/event streams (operations lists them); with name, listens on one from the site's page (params: send [messages], seconds, match) and returns what arrived.",
   "session: export the user's session so calls run without the browser (renewed from the browser when it expires). export: OpenAPI, AsyncAPI, a typed client and reports into folder.",
-  "heal: probe every read operation and report broken or drifted ones (repair: true re-records them). coverage: what to capture next to widen the API. edit: change the API in plain English (change). name: AI names and descriptions. signing: how a signed operation is signed.",
+  "heal: probe every read operation and report broken or drifted ones (repair: true re-records them). coverage: what to capture next to widen the API. edit: change the API in plain English (change). name: AI names and descriptions. describe: an agent performs a flow in plain English (flow, url) while it is recorded, then rebuilds. signing: how a signed operation is signed.",
   "Mapping actions (like, send, post, buy) without doing them: explore with actions: true, or in browser code page.network.start({ types: 'all', dryRun: true }): requests that would change something are recorded and blocked, never sent.",
 ];
 
@@ -168,6 +175,9 @@ const require = (value: string | undefined, what: string): string => {
   return value;
 };
 
+const modelFor = async (input: SiteToolInput): Promise<ModelLike | undefined> =>
+  typeof input.model === "function" ? input.model() : input.model;
+
 const HANDLERS: Record<SiteToolAction, (input: SiteToolInput) => Promise<unknown>> = {
   docs: (input) => readDocs(input.site),
   actions: savedActions,
@@ -192,12 +202,29 @@ const HANDLERS: Record<SiteToolAction, (input: SiteToolInput) => Promise<unknown
     if (!model) throw new Error(`${input.site} is not mapped yet.`);
     return coverage(model, (await loadFlows(input.site)).exchanges).map((s) => s.message);
   },
-  edit: async (input) =>
-    (await import("./agent.js")).editApi(
+  edit: async (input) => {
+    const { editApi, requireModel } = await import("./agent.js");
+    return editApi(input.site, require(input.change, "change: what to change"), {
+      model: requireModel(await modelFor(input)),
+    });
+  },
+  name: async (input) => {
+    const { nameOperations, requireModel } = await import("./agent.js");
+    return nameOperations(input.site, { model: requireModel(await modelFor(input)) });
+  },
+  describe: async (input) => {
+    const { performFlow, requireModel } = await import("./agent.js");
+    const flow = await performFlow(
       input.site,
-      require(input.change, "change: what to change"),
-    ),
-  name: async (input) => (await import("./agent.js")).nameOperations(input.site),
+      require(input.flow ?? input.change, "flow: what to do on the site"),
+      {
+        model: requireModel(await modelFor(input)),
+        ...(input.url ? { startUrl: input.url } : {}),
+      },
+    );
+    const built = await rebuild(input.site);
+    return { ...flow, version: built.version, operations: built.model.operations.length };
+  },
   signing: (input) =>
     signingInfo(
       input.site,

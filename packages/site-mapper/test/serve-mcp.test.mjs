@@ -59,6 +59,24 @@ test("the REST server: docs, spec, operation calls, the site's own paths, and a 
   assert.equal(fromExtension.status, 200, "browser extensions may call, with the token");
 });
 
+test("the REST server can serve one mapped site only", async (t) => {
+  const { name } = await mapped(t);
+  const server = await serve({ transport: "direct", session: false, site: name });
+  t.after(() => server.close());
+  const home = await (await fetch(server.url + "/")).text();
+  assert.match(home, new RegExp(name.replace(/\./g, "\\.")));
+  assert.equal((await fetch(`${server.url}/sites/other.example/docs`)).status, 404);
+  const spec = await (
+    await fetch(`${server.url}/sites/${encodeURIComponent(name)}/openapi.json`)
+  ).json();
+  assert.ok(spec.paths, JSON.stringify(spec).slice(0, 200));
+  const listed = await (await fetch(`${server.url}/sites`)).json();
+  assert.deepEqual(
+    listed.map((item) => item.site),
+    [name],
+  );
+});
+
 function mcp(env, args) {
   const child = spawn(process.execPath, [resolve("dist/cli.js"), "mcp", ...args], {
     env: { ...process.env, ...env },

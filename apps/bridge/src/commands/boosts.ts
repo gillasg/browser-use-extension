@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { BridgeClient } from "../client.js";
+import { cliHost } from "../host.js";
 import { has, type Args } from "../args.js";
 import { printJson, printRows } from "../output.js";
 import type { Command } from "../usage.js";
@@ -10,6 +11,8 @@ import type { Command } from "../usage.js";
 const SESSION = "browserkit-cli";
 
 async function runInBrowser(code: string): Promise<unknown> {
+  const host = cliHost();
+  if (host) return host.runInBrowser(code, { session: SESSION });
   const bridge = await BridgeClient.connect();
   try {
     const reply = await bridge.request("run", { code, session: SESSION });

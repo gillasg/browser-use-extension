@@ -24,6 +24,8 @@ import type { Operation, Overrides, SiteModel } from "./types.js";
 export interface ServeOptions extends SiteMapperOptions {
   port?: number;
   token?: string;
+  /** Serve only this mapped site (default: every mapped site). */
+  site?: string;
 }
 
 export interface Server {
@@ -202,9 +204,23 @@ export async function serve(options: ServeOptions = {}): Promise<Server> {
     const url = new URL(request.url ?? "/", base);
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
     const ctx: Ctx = { request, response, url, parts, base };
-    if (!parts.length) return send(response, 200, indexPage(await listSites()), "text/html");
+    const only = options.site ? siteName(options.site) : undefined;
+    if (!parts.length)
+      return send(
+        response,
+        200,
+        indexPage((await listSites()).filter((item) => !only || item.site === only)),
+        "text/html",
+      );
     if (parts[0] !== "sites") return send(response, 404, { error: "Not found" });
-    if (!parts[1]) return send(response, 200, await listSites());
+    if (!parts[1])
+      return send(
+        response,
+        200,
+        (await listSites()).filter((item) => !only || item.site === only),
+      );
+    if (only && siteName(parts[1]) !== only)
+      return send(response, 404, { error: `${siteName(parts[1])} is not served here` });
     return siteRoute(ctx, parts[1]);
   }
 

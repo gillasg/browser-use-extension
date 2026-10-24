@@ -4,6 +4,7 @@ import {
   listSites,
   serve as serveSites,
   siteMapper,
+  siteName,
   watch as watchOperation,
   type FederateTarget,
 } from "@browserkit/tools/site-to-api";
@@ -132,8 +133,16 @@ async function runFederate(args: Args): Promise<number> {
 
 async function rest(args: Args): Promise<number> {
   const port = flag(args, "port");
-  const server = await serveSites(port ? { port: Number(port) } : {});
-  out(`Serving every mapped site at ${server.url}/#token=${server.token}`);
+  const site = args.positional[0];
+  const server = await serveSites({
+    ...(port ? { port: Number(port) } : {}),
+    ...(site ? { site: siteName(site) } : {}),
+  });
+  out(
+    site
+      ? `Serving ${siteName(site)} at ${server.url}/sites/${encodeURIComponent(siteName(site))}/docs`
+      : `Serving every mapped site at ${server.url}/#token=${server.token}`,
+  );
   out(`Calls need the header x-site-to-api-token: ${server.token}`);
   await new Promise(() => undefined);
   return 0;
@@ -213,10 +222,11 @@ Every item says which site answered it; a site that fails, times out or is signe
 export const restCommand: Command = {
   name: "rest",
   group: "Use a site",
-  summary: "serve a local REST API and docs for every mapped site",
-  help: `Usage: browserkit rest [--port <n>]
+  summary: "serve a local REST API and docs for every mapped site, or one of them",
+  help: `Usage: browserkit rest [site] [--port <n>]
 
-Prints the URL and the token calls need (header x-site-to-api-token).`,
+Prints the URL and the token calls need (header x-site-to-api-token). With a site, only that
+site's routes answer.`,
   run: rest,
 };
 

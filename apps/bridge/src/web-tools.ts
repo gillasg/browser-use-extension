@@ -83,6 +83,11 @@ export const webTools = [
         },
         description: { type: "string" },
         change: { type: "string", description: "For edit: the change in plain English." },
+        flow: {
+          type: "string",
+          description: "For describe: the flow to perform, in plain English.",
+        },
+        url: { type: "string", description: "For describe: the page to start at." },
         folder: { type: "string", description: "For export: the folder to write into." },
         repair: { type: "boolean", description: "For heal: re-record failing operations." },
         actions: { type: "boolean", description: "For explore: also map actions in dry run." },

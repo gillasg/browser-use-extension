@@ -16,10 +16,13 @@ const BOOLEAN = new Set([
   "include-actions",
   "json",
   "no-build",
+  "no-register",
   "off",
+  "quiet",
   "repair",
   "site",
   "status",
+  "unreviewed",
   "verbose",
 ]);
 

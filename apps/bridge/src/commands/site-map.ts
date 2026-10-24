@@ -20,6 +20,7 @@ import {
   type SiteModel,
 } from "@browserkit/tools/site-to-api";
 import { flag, has, list, type Args } from "../args.js";
+import { cliModel } from "../host.js";
 import { out, printJson, printRows } from "../output.js";
 import type { Command } from "../usage.js";
 
@@ -93,9 +94,11 @@ async function exploreSites(args: Args): Promise<void> {
   if (!sites.length)
     throw new Error("explore needs at least one site: browserkit map --explore <site>");
   const goal = flag(args, "goal");
+  const model = await cliModel();
   await explore(sites, {
     ...(goal ? { goal } : {}),
     ...(has(args, "actions") ? { actions: true } : {}),
+    ...(model ? { model } : {}),
     parallel: Number(flag(args, "parallel") ?? 3),
     onSite: (result) =>
       out(
@@ -162,8 +165,10 @@ async function describe(args: Args): Promise<number> {
   const flow = args.positional.slice(1).join(" ");
   if (!site || !flow) throw new Error('Usage: browserkit describe <site> "<flow>" [--url u]');
   const url = flag(args, "url");
+  const model = await cliModel();
   const result = await performFlow(site, flow, {
     ...(url ? { startUrl: url } : {}),
+    ...(model ? { model } : {}),
     onStep: (code) => process.stderr.write(`> ${code.split("\n")[0]?.slice(0, 120)}\n`),
   });
   out(result.summary);
@@ -248,7 +253,8 @@ price". Needs a model from the caller.`,
   run: async (args) => {
     const [site, ...change] = args.positional;
     if (!site || !change.length) throw new Error('Usage: browserkit edit <site> "<change>"');
-    out((await editApi(site, change.join(" "))).note);
+    const model = await cliModel();
+    out((await editApi(site, change.join(" "), model ? { model } : {})).note);
     return 0;
   },
 };
@@ -261,7 +267,8 @@ export const nameCommand: Command = {
   run: async (args) => {
     const site = args.positional[0];
     if (!site) throw new Error("Usage: browserkit name <site>");
-    printJson(await nameOperations(site));
+    const model = await cliModel();
+    printJson(await nameOperations(site, model ? { model } : {}));
     return 0;
   },
 };

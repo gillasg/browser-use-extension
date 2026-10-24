@@ -10,6 +10,7 @@ import {
   type Format,
 } from "@browserkit/tools/browser-crawl";
 import { flag, has, list, type Args } from "../args.js";
+import { cliModel } from "../host.js";
 import { out, printJson, printRows } from "../output.js";
 import type { Command } from "../usage.js";
 
@@ -95,9 +96,11 @@ async function runFind(target: string, args: Args): Promise<number> {
     if (name) columns[name] = what.join("=") || name;
   }
   const criteria = flag(args, "criteria");
+  const model = await cliModel();
   const rows = await findList(target, {
     columns: Object.keys(columns).length ? columns : { name: "name" },
     ...(criteria ? { criteria } : {}),
+    ...(model ? { model } : {}),
   });
   if (has(args, "json")) printJson(rows);
   else printRows(rows.map((row) => [row.url, ...Object.values(row.values).map(String)]));
