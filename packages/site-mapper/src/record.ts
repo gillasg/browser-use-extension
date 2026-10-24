@@ -25,9 +25,39 @@ export interface RecordOptions {
 }
 
 const SESSION = "site-to-api-record";
+// A browser call carries at most ~3.5 MB of result, so a recording is read back in pieces: a
+// full HAR (response bodies included) is routinely larger than one call allows. Half a million
+// characters stays well inside the limit even when every one of them needs escaping.
+const CHUNK_CHARS = 500_000;
 
 function mergeHars(hars: Recording["har"][]): Recording["har"] {
   return { log: { entries: hars.flatMap((har) => har?.log?.entries ?? []) } } as Recording["har"];
+}
+
+/** Reads a string the browser kept in a global, a piece per call, so no cell result is oversized. */
+async function readInChunks(
+  bridge: Bridge,
+  session: string,
+  variable: string,
+  timeoutMs: number,
+): Promise<string> {
+  const length = (await bridge.run(`${variable}?.length`, { session, timeoutMs })) as
+    number | undefined;
+  if (typeof length !== "number" || length < 0)
+    throw new Error("The browser could not read the recording back.");
+  let text = "";
+  while (text.length < length) {
+    const from = text.length;
+    const part = (await bridge.run(`${variable}.slice(${from}, ${from + CHUNK_CHARS})`, {
+      session,
+      timeoutMs,
+    })) as string;
+    if (typeof part !== "string" || part.length === 0)
+      throw new Error("The browser stopped sending the recording.");
+    text += part;
+  }
+  await bridge.run(`${variable} = undefined; 0`, { session }).catch(() => undefined);
+  return text;
 }
 
 export class RecordingSession {
@@ -76,7 +106,7 @@ await globalThis.__recTabs[0].navigate(${JSON.stringify(options.url)});
   }
 
   async stop(options: { close?: boolean } = {}): Promise<Recording> {
-    const result = (await this.bridge.run(
+    await this.bridge.run(
       `const __out = { hars: [], storage: undefined };
 for (const tab of globalThis.__recTabs || []) {
   try { __out.hars.push(await tab.network.har()); } catch {}
@@ -85,9 +115,12 @@ for (const tab of globalThis.__recTabs || []) {
   ${options.close !== false && this.opened ? "try { await tab.close(); } catch {}" : ""}
 }
 globalThis.__recTabs = [];
-__out`,
+globalThis.__recStop = JSON.stringify(__out);
+globalThis.__recStop.length`,
       { session: this.session, timeoutMs: 180_000 },
-    )) as { hars: Recording["har"][]; storage?: Recording["storage"] };
+    );
+    const text = await readInChunks(this.bridge, this.session, "globalThis.__recStop", 180_000);
+    const result = JSON.parse(text) as { hars: Recording["har"][]; storage?: Recording["storage"] };
     const recording: Recording = { har: mergeHars(result.hars), startUrl: this.startUrl };
     if (result.storage) recording.storage = result.storage;
     return recording;
@@ -131,13 +164,23 @@ __recTabs.length`,
 
   async stop(): Promise<Recording> {
     if (this.timer) clearInterval(this.timer);
-    const result = (await this.bridge.run(
+    await this.bridge.run(
       `const __hars = [];
 for (const tab of globalThis.__recTabs || []) { try { __hars.push(await tab.network.har()); await tab.network.stop(); } catch {} }
 globalThis.__recTabs = []; globalThis.__recIds = new Set();
-__hars`,
+globalThis.__recStop = JSON.stringify(__hars);
+globalThis.__recStop.length`,
       { session: SESSION + "-passive", timeoutMs: 180_000 },
-    )) as Recording["har"][];
-    return { har: mergeHars(result), startUrl: `https://${this.domains[0] ?? ""}/` };
+    );
+    const text = await readInChunks(
+      this.bridge,
+      SESSION + "-passive",
+      "globalThis.__recStop",
+      180_000,
+    );
+    return {
+      har: mergeHars(JSON.parse(text) as Recording["har"][]),
+      startUrl: `https://${this.domains[0] ?? ""}/`,
+    };
   }
 }

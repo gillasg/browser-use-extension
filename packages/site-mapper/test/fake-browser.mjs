@@ -105,12 +105,14 @@ class FakeTab {
 }
 
 export class FakeBrowser {
-  constructor() {
+  constructor(options = {}) {
     this.cookies = new Map();
     this.httpOnly = new Set();
     this.localStorage = {};
     this.tabs = [];
     this.calls = [];
+    // The real transport refuses a cell result over ~3.5 MB; tests can lower that.
+    this.maxResultChars = options.maxResultChars ?? Infinity;
   }
 
   async fetch(url, init) {
@@ -180,6 +182,12 @@ export class FakeBrowser {
       Error,
       ...(__call ? { __call } : {}),
     });
-    return vm.runInContext(`(async () => { ${lines.join("\n")} })()`, context);
+    const value = await vm.runInContext(`(async () => { ${lines.join("\n")} })()`, context);
+    const encoded = JSON.stringify(value ?? null) ?? "null";
+    if (encoded.length > this.maxResultChars)
+      throw new Error(
+        `RESULT_TOO_LARGE: the result was ${(encoded.length / 1_000_000).toFixed(1)} MB. Return less, or write it with artifact(name, data) and return a summary.`,
+      );
+    return value;
   }
 }
