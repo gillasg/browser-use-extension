@@ -32,6 +32,8 @@ export const BrowserTabSchema = z
     pinned: z.boolean(),
     groupId: z.number().int().min(-1),
     documentEpoch: z.number().int().nonnegative(),
+    /** Set by browser.tabs(): true only for tabs this chat or session opened. */
+    mine: z.boolean().optional(),
   })
   .strict();
 export type BrowserTab = z.infer<typeof BrowserTabSchema>;

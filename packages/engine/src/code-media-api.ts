@@ -81,4 +81,18 @@ async function __saveMedia(target, what, options = {}) {
   }
   return saved;
 }
+// Forget a tab closed through browser.closeTab, so a later openTab does not try to reuse it.
+function __forgetTab(tabId) {
+  for (var [key, entry] of [...__tabs])
+    if (entry.target?.tabId === tabId) {
+      __tabs.delete(key);
+      __states.delete(key);
+      __dirty.delete(key);
+    }
+  // Keep __opened: a later openTab without {newTab:true} must say the tab was closed instead of
+  // silently opening a new one.
+  __keptTabs.delete(tabId);
+  if (__lastTarget?.tabId === tabId) __lastTarget = undefined;
+  if (__attachedTarget?.tabId === tabId) __attachedTarget = undefined;
+}
 `;

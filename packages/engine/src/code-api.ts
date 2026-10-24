@@ -97,6 +97,15 @@ var browser = Object.freeze({
       return result.tabs.map(tab => __listedTab(__compactTab(tab)));
     },
     {list: async (query) => browser.tabs(query)}),
+  // Close one tab this chat/session opened. A user tab, another session's tab or a hand-off tab
+  // throws instead of doing nothing; a tab in Split View is unsplit first.
+  closeTab: async (tab) => {
+    var id = typeof tab === 'number' ? tab : tab?.tabId ?? tab?.target?.tabId;
+    if (!Number.isSafeInteger(id)) throw Error('INVALID_TARGET: browser.closeTab needs a tab id or a tab from browser.tabs()');
+    var result = await __call({tabs:'close', tabId:id});
+    __forgetTab(id);
+    return result;
+  },
   // The tab the user is looking at: the active tab of the window they last focused, as a page.
   activeTab: async () => {
     var tabs = await browser.tabs();
@@ -361,7 +370,7 @@ var browser = Object.freeze({
     },
     // Hands this tab to the user: it stays open after the run instead of being tidied away.
     keep: () => { __keptTabs.add(target.tabId); return __call({tabs:'keep', tabIds:[target.tabId]}); },
-    close: async () => { await __step({op:'cdp',target,method:'Page.close',params:{}}).catch(() => {}); __states.delete(__key(target)); __tabs.delete(__key(target)); },
+    close: () => browser.closeTab(target),
     waitFor: (fn, options = {}) => __waitCondition(target, typeof fn === 'function' ? '('+fn.toString()+')()' : String(fn), typeof options === 'number' ? options : (options.timeoutMs ?? options.timeout ?? 5000)),
     // Also takes {direction, amount} or a wheel-style {deltaY}.
     scroll: async (direction = 'down', amount = 1200, element) => {
@@ -402,6 +411,7 @@ var __key = target => JSON.stringify(target);
 // leaves printouts and JSON, so listing many tabs costs little context.
 function __compactTab(tab) {
   var entry = {id: tab.target.tabId, title: tab.title, url: tab.url, active: tab.active};
+  if (typeof tab.mine === 'boolean') entry.mine = tab.mine;
   for (var [key, value] of Object.entries({...tab, tabId: tab.target.tabId}))
     if (!(key in entry)) Object.defineProperty(entry, key, {value, enumerable: false});
   return entry;

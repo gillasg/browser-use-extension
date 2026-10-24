@@ -86,6 +86,77 @@ export function isAgentTab(tabId: number): boolean {
   return tracked.has(tabId);
 }
 
+/** A list request must wait for session-storage state before it marks each tab's owner. */
+export function ensureAgentTabsRestored(): Promise<void> {
+  return restore();
+}
+
+/** Tabs this chat or session opened, for browser.tabs().mine. */
+export function mineTabIds(chatId: string): number[] {
+  return chatTabs(chatId).map(([tabId]) => tabId);
+}
+
+/**
+ * Close one explicit tab. Unlike tidy-up, a request to close is not allowed to disappear: a tab
+ * the user owns, another session owns or a hand-off holds throws instead of silently staying.
+ * A tab in Split View is unsplit first, because Chrome refuses to remove a paired tab cleanly.
+ */
+export async function closeChatTab(chatId: string, tabId: number): Promise<{ closed: number }> {
+  await restore();
+  const entry = tracked.get(tabId);
+  if (!entry)
+    throw new Error(
+      `TAB_NOT_YOURS: tab ${tabId} belongs to the user; browser.tabs() marks mine:false`,
+    );
+  if (entry.chatId !== chatId)
+    throw new Error(
+      `TAB_NOT_YOURS: tab ${tabId} belongs to another chat or session; browser.tabs() marks mine:false`,
+    );
+  if (guarded.has(tabId))
+    throw new Error(`TAB_BUSY: tab ${tabId} is in a hand-off or recording; finish it first`);
+  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+  if (!tab) {
+    forgetAgentTab(tabId);
+    throw new Error(`TARGET_LOST: tab ${tabId} is already closed`);
+  }
+  if (tab.pinned) throw new Error(`TAB_NOT_YOURS: tab ${tabId} is pinned by the user`);
+  await unsplitForClose(tab, tabId);
+  closing.add(tabId);
+  const removed = await chrome.tabs.remove(tabId).then(
+    () => true,
+    () => false,
+  );
+  closing.delete(tabId);
+  if (!removed) throw new Error(`TAB_CLOSE_FAILED: Chrome refused to close tab ${tabId}`);
+  tracked.delete(tabId);
+  const count = stats.get(chatId) ?? { opened: 0, closed: 0, popups: 0 };
+  count.closed += 1;
+  stats.set(chatId, count);
+  save();
+  const stillOpen = await chrome.tabs.get(tabId).catch(() => undefined);
+  if (stillOpen) throw new Error(`TAB_CLOSE_FAILED: Chrome did not close tab ${tabId}`);
+  return { closed: tabId };
+}
+
+export async function unsplitForClose(
+  tab: chrome.tabs.Tab,
+  tabId: number,
+  tabsApi: typeof chrome.tabs & { unsplit?: (id: number) => Promise<void> } = chrome.tabs,
+): Promise<void> {
+  const splitId = (tab as chrome.tabs.Tab & { splitViewId?: number }).splitViewId;
+  if (splitId === undefined || splitId < 0) return;
+  const tabs = tabsApi;
+  if (!tabs.unsplit)
+    throw new Error(`TAB_SPLIT: tab ${tabId} is in Split View; this Chrome cannot unsplit it`);
+  try {
+    await tabs.unsplit(splitId);
+  } catch (error) {
+    throw new Error(
+      `TAB_SPLIT: could not unsplit tab ${tabId}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 export async function cleanupAgentTabs(options: { minutes?: number } = {}): Promise<number[]> {
   await restore();
   const idle = (options.minutes ?? DEFAULT_IDLE_MINUTES) * 60_000;

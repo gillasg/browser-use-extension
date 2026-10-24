@@ -342,6 +342,77 @@ test(
         },
       );
 
+      await t.test("closeTab closes this chat's tabs and refuses the user's", async () => {
+        const created = await worker("Runtime.evaluate", {
+          expression: `chrome.tabs.create({ url: ${JSON.stringify(siteUrl + "?user-tab")}, active: false }).then((tab) => tab.id)`,
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        const userTabId = created.result.result.value;
+        const cell = (code) =>
+          run(process.execPath, [cli, "repl", "--session", "close-tabs", code], { env });
+        const closed = await cell(`
+          const mine = await browser.openTab(${JSON.stringify(siteUrl + "?mine")}, { newTab: true });
+          const mineId = mine.target.tabId;
+          const listed = await browser.tabs();
+          const mineIds = listed.filter((tab) => tab.mine).map((tab) => tab.id);
+          const userMine = listed.find((tab) => tab.id === ${userTabId})?.mine;
+          const result = await browser.closeTab(mineId);
+          const gone = !(await browser.tabs()).some((tab) => tab.id === mineId);
+          const userError = await browser.closeTab(${userTabId}).then(() => null, (error) => String(error.message || error));
+          const userStill = (await browser.tabs()).some((tab) => tab.id === ${userTabId});
+          console.log("CLOSE " + JSON.stringify({ mineId, mineIds, userMine, result, gone, userError, userStill }));`);
+        assert.match(closed.stdout, /CLOSE /, closed.stdout);
+        const value = JSON.parse(/CLOSE (.*)/.exec(closed.stdout)[1]);
+        assert.ok(value.mineIds.length >= 1, closed.stdout);
+        assert.equal(value.userMine, false, closed.stdout);
+        assert.deepEqual(value.result, { closed: value.mineId }, closed.stdout);
+        assert.equal(value.gone, true, closed.stdout);
+        assert.match(String(value.userError), /TAB_NOT_YOURS/, closed.stdout);
+        assert.equal(value.userStill, true, closed.stdout);
+
+        const splitSupport = await worker("Runtime.evaluate", {
+          expression: "typeof chrome.tabs.createSplit",
+          returnByValue: true,
+        });
+        if (splitSupport.result.result.value === "function") {
+          const opened = await cell(`
+            const first = await browser.openTab(${JSON.stringify(siteUrl + "?split-a")}, { newTab: true });
+            const second = await browser.openTab(${JSON.stringify(siteUrl + "?split-b")}, { newTab: true });
+            console.log("SPLIT " + JSON.stringify({ first: first.target.tabId, second: second.target.tabId }));`);
+          const splitIds = JSON.parse(/SPLIT (.*)/.exec(opened.stdout)[1]);
+          const split = await worker("Runtime.evaluate", {
+            expression: `chrome.tabs.createSplit([${splitIds.first}, ${splitIds.second}]).then((id) => id)`,
+            awaitPromise: true,
+            returnByValue: true,
+          });
+          assert.equal(typeof split.result.result.value, "number", JSON.stringify(split));
+          const after = await cell(`
+            const result = await browser.closeTab(${splitIds.first});
+            const tabs = await browser.tabs();
+            console.log("SPLITCLOSE " + JSON.stringify({
+              result,
+              firstGone: !tabs.some((tab) => tab.id === ${splitIds.first}),
+              secondThere: tabs.some((tab) => tab.id === ${splitIds.second}),
+            }));`);
+          const splitClosed = JSON.parse(/SPLITCLOSE (.*)/.exec(after.stdout)[1]);
+          assert.deepEqual(splitClosed.result, { closed: splitIds.first }, after.stdout);
+          assert.equal(splitClosed.firstGone, true, after.stdout);
+          assert.equal(splitClosed.secondThere, true, after.stdout);
+          const pair = await worker("Runtime.evaluate", {
+            expression: `chrome.tabs.get(${splitIds.second}).then((tab) => tab.splitViewId)`,
+            awaitPromise: true,
+            returnByValue: true,
+          });
+          assert.equal(pair.result.result.value, -1, JSON.stringify(pair));
+          await cell(`await browser.closeTab(${splitIds.second});`);
+        }
+        await worker("Runtime.evaluate", {
+          expression: `chrome.tabs.remove(${userTabId})`,
+          awaitPromise: true,
+        });
+      });
+
       await t.test("popups park in the run's group, and a quiet tab blocks them", async () => {
         const cell = (code) =>
           run(process.execPath, [cli, "repl", "--session", "popups", code], { env });
@@ -673,7 +744,7 @@ test(
             stdout,
           );
           assert.deepEqual(JSON.parse(/TAB (.*)/.exec(stdout)[1]), {
-            keys: ["id", "title", "url", "active"],
+            keys: ["id", "title", "url", "active", "mine"],
             hasTarget: true,
           });
           const missing = await run(

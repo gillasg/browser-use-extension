@@ -31,6 +31,7 @@ import { setOwnerTitle } from "./native-browser-owner.js";
 import { disableQuietTab, enableQuietTab } from "./native-browser-quiet.js";
 import { networkCall } from "./native-browser-network.js";
 import { isLibraryRequest, libraryCall } from "./native-browser-library.js";
+import { closeTabCall } from "./code-tab-close.js";
 import { rulesCall } from "./native-browser-rules.js";
 import { permissionCall } from "./native-browser-permissions.js";
 import { googleCall } from "./native-browser-google.js";
@@ -254,6 +255,7 @@ function serveCall(cell: Cell, value: Record<string, unknown> | null): Promise<u
     return handoff(cell, value.handoff);
   if (value && typeof value.quiet === "object" && value.quiet) return quietCall(cell, value.quiet);
   if (value && value.tabs === "reset") return resetCall(cell);
+  if (value && value.tabs === "close") return closeTabCall(cell.run.chatId, value);
   if (value && typeof value.network === "string")
     return networkCall(authorizedTarget(cell, value.target).tabId, value.network, value);
   if (value && typeof value.rules === "string")

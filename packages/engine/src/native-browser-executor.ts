@@ -31,7 +31,12 @@ import {
 } from "./native-browser-events.js";
 import { executeDownload } from "./native-browser-downloads.js";
 import { groupAgentTab } from "./native-browser-groups.js";
-import { markAgentTabGrouped, trackAgentTab } from "./native-browser-tab-cleanup.js";
+import {
+  ensureAgentTabsRestored,
+  markAgentTabGrouped,
+  mineTabIds,
+  trackAgentTab,
+} from "./native-browser-tab-cleanup.js";
 import { currentFocusedWindowId } from "./native-inventory-client.js";
 import { ownerTitle } from "./native-browser-owner.js";
 import { enableQuietTab } from "./native-browser-quiet.js";
@@ -400,7 +405,7 @@ async function executeStep(
 ): Promise<BrowserExecutorResult> {
   const step = request.step;
   assertRequestActive(request);
-  if (step.op === "listTabs") return listTabs(step.query);
+  if (step.op === "listTabs") return listTabs(request);
   if (step.op === "openTab") return openTab(identity, request);
   if (step.op === "attachTab") return attachTab(step.target);
   activateClaim(request);
@@ -422,14 +427,17 @@ async function executeStep(
   throw new Error("UNSUPPORTED");
 }
 
-function listTabs(query: string | undefined): BrowserExecutorResult {
+async function listTabs(request: BrowserExecutorRequest): Promise<BrowserExecutorResult> {
+  const query = request.step.op === "listTabs" ? request.step.query : undefined;
+  await ensureAgentTabsRestored();
   const tabs = currentInventoryTabs().filter((tab) => safePage(tab.url));
   const filtered = query
     ? tabs.filter((tab) => `${tab.title} ${tab.url}`.toLowerCase().includes(query.toLowerCase()))
     : tabs;
+  const mine = new Set(mineTabIds(request.chatId));
   return BrowserExecutorResultSchema.parse({
     kind: "tabs",
-    tabs: filtered.slice(0, 256),
+    tabs: filtered.slice(0, 256).map((tab) => ({ ...tab, mine: mine.has(tab.target.tabId) })),
     focusedWindowId: currentFocusedWindowId(),
   });
 }
