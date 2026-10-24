@@ -47,21 +47,43 @@ function __readMetadata() {
 function __readPageData(readMetadata, options) {
   var parse = (text) => { try { return JSON.parse(text); } catch { return undefined; } };
   var plain = (value) => { try { return JSON.parse(JSON.stringify(value)); } catch { return undefined; } };
-  var data = {};
-  var jsonLd = [...document.querySelectorAll('script[type="application/ld+json"]')].map((tag) => parse(tag.textContent)).filter(Boolean);
+  var data = {}, notes = [], partial = false;
+  var jsonLdTags = [...document.querySelectorAll('script[type="application/ld+json"]')];
+  var jsonLd = jsonLdTags.map((tag) => parse(tag.textContent)).filter(Boolean);
   if (jsonLd.length) data.jsonLd = jsonLd;
+  if (jsonLd.length < jsonLdTags.length) {
+    partial = true;
+    notes.push((jsonLdTags.length - jsonLd.length) + ' JSON-LD block(s) were not valid JSON');
+  }
   var next = document.getElementById('__NEXT_DATA__');
-  if (next) data.nextData = parse(next.textContent);
+  if (next) {
+    data.nextData = parse(next.textContent);
+    if (data.nextData === undefined) {
+      partial = true;
+      notes.push('__NEXT_DATA__ was not valid JSON');
+    }
+  }
   for (var name of ['__NUXT__', '__NUXT_DATA__', '__APOLLO_STATE__', '__INITIAL_STATE__', '__PRELOADED_STATE__', '__REDUX_STATE__', '__INITIAL_DATA__', '__DATA__', '__STATE__', '__remixContext', '__staticRouterHydrationData']) {
     var value = window[name];
     if (value && typeof value === 'object') { var copy = plain(value); if (copy !== undefined) data[name] = copy; }
   }
-  if (Array.isArray(window.__next_f))
-    data.nextFlight = window.__next_f.map((chunk) => chunk && chunk[1]).filter((chunk) => typeof chunk === 'string').join('').slice(0, 1000000);
+  if (Array.isArray(window.__next_f)) {
+    var flight = window.__next_f.map((chunk) => chunk && chunk[1]).filter((chunk) => typeof chunk === 'string').join('');
+    data.nextFlight = flight.slice(0, 1000000);
+    if (flight.length > 1000000) {
+      partial = true;
+      notes.push('nextFlight cut at 1,000,000 characters');
+    }
+  }
   var scripts = [...document.querySelectorAll('script[type="application/json"]')]
-    .filter((tag) => tag.id !== '__NEXT_DATA__' && tag.textContent.length < 3000000)
+    .filter((tag) => tag.id !== '__NEXT_DATA__');
+  var kept = scripts.filter((tag) => tag.textContent.length < 3000000)
     .map((tag) => ({id: tag.id || undefined, data: parse(tag.textContent)})).filter((item) => item.data !== undefined);
-  if (scripts.length) data.jsonScripts = scripts;
+  if (kept.length) data.jsonScripts = kept;
+  if (kept.length < scripts.length) {
+    partial = true;
+    notes.push((scripts.length - kept.length) + ' JSON script(s) were too large or not valid JSON');
+  }
   if (options && options.summary) {
     var sources = {};
     for (var source of Object.keys(data)) {
@@ -75,22 +97,40 @@ function __readPageData(readMetadata, options) {
     }
     var params = [];
     try { params = [...new URL(location.href).searchParams.keys()]; } catch {}
-    return {sources: sources, urlParams: params};
+    return {sources: sources, urlParams: params, partial, notes};
   }
   data.metadata = readMetadata();
+  if (partial) { data.partial = true; data.notes = notes; }
   return data;
 }
 
 // HTML to Markdown, in the page: headings, paragraphs, lists, links, emphasis, code, quotes,
-// images and tables. With mainOnly, navigation, headers, footers and asides are skipped.
+// images and tables. With mainOnly, navigation, headers, footers and asides are skipped. The
+// result says when it saw less than the page holds (a feed or replies outside the area, a cut).
 function __readMarkdown(options) {
   var skip = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|CANVAS|IFRAME|OBJECT|SELECT|BUTTON|INPUT|TEXTAREA)$/;
   var chrome = /^(NAV|HEADER|FOOTER|ASIDE|FORM)$/;
   var noise = /(^|[-_ ])(nav|menu|footer|header|sidebar|cookie|consent|banner|share|social|related|newsletter|breadcrumb|advert|promo|popup|modal)([-_ ]|$)/i;
-  var root = options.selector ? document.querySelector(options.selector) : (options.mainOnly === false ? document.body :
-    document.querySelector('main, article, [role="main"], #main, #content, .content') || document.body);
-  if (!root) return '';
+  var main = document.querySelector('main, [role="main"], #main, #content, .content');
+  var articles = [...document.querySelectorAll('article')];
+  var root, outside = 0;
+  if (options.selector) root = document.querySelector(options.selector);
+  else if (options.mainOnly === false) root = document.body;
+  else if (main) root = main;
+  else if (articles.length) root = articles.length === 1 ? articles[0] : (articles[0].parentElement || document.body);
+  else root = document.body;
+  if (!options.selector && options.mainOnly !== false && main && articles.length) {
+    var missing = articles.filter((article) => !main.contains(article));
+    var parent = main.parentElement;
+    if (missing.length && parent && missing.every((article) => parent.contains(article))) root = parent;
+  }
+  if (!root) return {markdown: '', partial: false, notes: [], chars: 0};
+  if (main && options.mainOnly !== false && !options.selector)
+    outside = articles.filter((article) => !root.contains(article)).length;
+  if (!options.selector && options.mainOnly !== false)
+    outside = Math.max(outside, articles.filter((article) => !root.contains(article)).length);
   var hidden = (element) => { var style = getComputedStyle(element); return style.display === 'none' || style.visibility === 'hidden' || element.getAttribute('aria-hidden') === 'true'; };
+  var hiddenArticles = articles.filter((article) => hidden(article) || !!article.closest('[hidden]'));
   var absolute = (url) => { try { return new URL(url, location.href).href; } catch { return url; } };
   var clean = (text) => text.replace(/\\s+/g, ' ');
   function inline(node) {
@@ -141,8 +181,66 @@ function __readMarkdown(options) {
   var title = options.title === false ? '' : '# ' + document.title.trim() + '\\n\\n';
   var markdown = (title + blocks(root)).replace(/\\n{3,}/g, '\\n\\n').trim();
   var max = options.max || 200000;
-  return markdown.length > max ? markdown.slice(0, max) + '\\n\\n[truncated]' : markdown;
+  var notes = [], partial = false;
+  if (outside) {
+    partial = true;
+    notes.push(outside + ' repeated item' + (outside === 1 ? '' : 's') + ' (a feed or replies) outside the read area');
+  }
+  if (hiddenArticles.length) {
+    partial = true;
+    notes.push(hiddenArticles.length + ' repeated item' + (hiddenArticles.length === 1 ? '' : 's') + ' hidden behind Show more/Show replies');
+  }
+  if (markdown.length > max) {
+    markdown = markdown.slice(0, max);
+    partial = true;
+    notes.push('cut at ' + max + ' characters');
+  }
+  return {markdown, partial, notes, chars: markdown.length};
 }
+
+// Puts "Show more", "Show replies", "Read more" and the like back into view, inside the main
+// content only, at most ten times. It never clicks a control that posts, follows, likes, buys or
+// navigates: only buttons whose whole label is one of these expansions.
+function __expandRead(options) {
+  var root = document.querySelector('main, [role="main"], #main, #content, .content') || document.body;
+  var allowed = /^(show more|show replies|show \\d+ more|show more replies|read more|view more|see more|load more|more replies)$/i;
+  var danger = /\\b(post|reply|follow|like|buy|order|purchase|subscribe|send|share|delete|block|report|retweet|repost|message|pay)\\b/i;
+  var clicked = [], skipped = [];
+  var max = Math.max(0, Math.min(10, Number(options.max) || 10));
+  for (var button of root.querySelectorAll('button, [role="button"], a[role="button"]')) {
+    if (clicked.length >= max || button.disabled) break;
+    if (button.tagName === 'A' || button.closest('a[href]')) continue;
+    var text = (button.innerText || button.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim();
+    if (!text) continue;
+    if (!allowed.test(text) && !allowed.test(button.getAttribute('aria-label') || '')) { skipped.push(text.slice(0, 60)); continue; }
+    if (danger.test(text) && !/^(show replies|show more replies|more replies)$/i.test(text)) { skipped.push(text.slice(0, 60)); continue; }
+    try { button.click(); clicked.push(text); } catch {}
+  }
+  return {clicked, skipped};
+}
+
+// Waits for the main content to settle: the text stops growing and no new resources arrive for
+// a short while, capped at five seconds. Called only by page.read.
+function __waitRead(options) {
+  var root = document.querySelector('main, [role="main"], #main, #content, .content') || document.body;
+  var max = Math.max(200, Math.min(5000, Number(options.maxMs) || 5000));
+  var min = Math.min(max, Math.max(0, Number(options.minMs) || 1500));
+  var started = Date.now(), lastText = -1, lastResources = -1, stable = 0;
+  return new Promise((done) => {
+    var finish = (settled) => done({settled, ms: Date.now() - started, chars: root ? root.innerText.length : 0, partial: !settled, ...(settled ? {} : {note: 'content was still changing after ' + max + ' ms'})});
+    var tick = () => {
+      var text = root ? root.innerText.length : 0;
+      var resources = performance.getEntriesByType('resource').length;
+      if (text === lastText && resources === lastResources) stable += 1;
+      else { stable = 0; lastText = text; lastResources = resources; }
+      if (stable >= 2 && Date.now() - started >= min) return finish(true);
+      if (Date.now() - started >= max) return finish(false);
+      setTimeout(tick, 200);
+    };
+    tick();
+  });
+}
+
 
 function __extendPageData(target, base) {
   var inspect = (fn, arg) => base.inspect('(' + fn.toString() + ')(' + JSON.stringify(arg ?? {}) + ')');
@@ -165,7 +263,76 @@ function __extendPageData(target, base) {
     },
     data: (options = {}) => (__noteRead(target), base.inspect('(' + __readPageData.toString() + ')(' + __readMetadata.toString() + ', ' + JSON.stringify(options) + ')')),
     metadata: () => base.inspect('(' + __readMetadata.toString() + ')()'),
-    markdown: (options = {}) => (__noteRead(target), inspect(__readMarkdown, options)),
+    markdown: async (options = {}) => {
+      __noteRead(target);
+      var result = await inspect(__readMarkdown, options);
+      return result.partial
+        ? result.markdown + '\\n\\n[PARTIAL: ' + (result.notes.join('; ') || 'read cut') + ']'
+        : result.markdown;
+    },
+    // One read of the page: data, the main repeated list and Markdown, merged and capped. It
+    // expands "show more" controls and waits for the content to settle; both only here.
+    read: async (options = {}) => {
+      __noteRead(target);
+      var max = Math.max(2000, Math.min(200000, Number(options.max) || 40000));
+      var expanded = options.expand === false
+        ? {clicked: [], skipped: []}
+        : await inspect(__expandRead, {max: options.maxClicks ?? 10}).catch(() => ({clicked: [], skipped: []}));
+      var waited = await inspect(__waitRead, {maxMs: options.waitMs ?? 5000}).catch(() => ({settled: false, partial: true, note: 'the settle wait failed'}));
+      var markdown = await inspect(__readMarkdown, {...options, max});
+      var data = await base.inspect(
+        '(' + __readPageData.toString() + ')(' + __readMetadata.toString() + ', ' + JSON.stringify({...options, summary: options.summary === true}) + ')'
+      );
+      var list = null, listNote;
+      try {
+        list = await __collectList(base, options.list || null, {
+          max: Math.min(500, Number(options.maxItems) || 200),
+          ...(options.maxScrolls ? {maxScrolls: options.maxScrolls} : {}),
+        });
+      } catch (error) {
+        listNote = 'no repeated list: ' + String(error && error.message || error).slice(0, 200);
+      }
+      var notes = [
+        ...(expanded.clicked.length ? ['expanded ' + expanded.clicked.length + ' control(s): ' + expanded.clicked.join(', ')] : []),
+        ...(markdown.notes || []),
+        ...((data && data.notes) || []),
+        ...(waited.note ? [waited.note] : []),
+        ...(listNote ? [listNote] : []),
+      ];
+      var partial = !!(markdown.partial || (data && data.partial) || (list && list.partial) || waited.partial);
+      var result = {
+        url: await base.inspect(() => location.href),
+        title: await base.inspect(() => document.title),
+        data,
+        list,
+        markdown: markdown.markdown,
+        wait: waited,
+        expand: expanded,
+        partial,
+        notes,
+      };
+      var serialized = JSON.stringify(result);
+      if (serialized.length > max) {
+        var saved = 'page-read-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+        await artifact(saved, serialized);
+        result.partial = true;
+        result.artifact = saved;
+        result.notes.push('the full read (' + serialized.length + ' characters) is saved as ' + saved);
+        result.data = {partial: true, note: 'data omitted here; the full read is saved as ' + saved};
+        result.markdown = result.markdown.slice(0, Math.max(500, Math.floor(max * 0.6))) + '\\n\\n[PARTIAL: cut to ' + max + ' characters; full read saved as ' + saved + ']';
+        if (result.list) result.list = {...result.list, items: result.list.items.slice(0, 30), partial: true, note: 'list cut to 30 items; full read saved as ' + saved};
+        serialized = JSON.stringify(result);
+        if (serialized.length > max) {
+          var skeleton = {...result, markdown: '', list: null, data: null};
+          var room = Math.max(0, max - JSON.stringify(skeleton).length - 250);
+          result.markdown = result.markdown.slice(0, room);
+          result.list = null;
+          result.data = {partial: true, note: 'omitted to keep the read under ' + max + ' characters'};
+          result.notes.push('list and data omitted to keep the read under ' + max + ' characters');
+        }
+      }
+      return result;
+    },
     status: async () => {
       var status = await base.inspect(() => performance.getEntriesByType('navigation')[0]?.responseStatus ?? null);
       return status === null || status === undefined || status === '' ? null : Number(status);

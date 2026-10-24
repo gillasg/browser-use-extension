@@ -41,11 +41,78 @@ scroller.addEventListener("scroll", draw);
 draw();
 </script></body></html>`;
 
+const THREAD = `<!doctype html><html><head><title>Thread</title></head><body>
+<main><h1>Thread</h1>
+<article data-testid="tweet" data-id="1"><a href="/rhys/status/1">Rhys</a>
+<p>Main tweet about page reading.</p>
+<button onclick="document.title='liked'">Like</button>
+</article>
+<section id="replies">
+<article data-testid="tweet" data-id="2"><a href="/alice/status/2">Alice</a><p>First reply, with details.</p></article>
+<article data-testid="tweet" data-id="3"><a href="/bob/status/3">Bob</a><p>Second reply, also useful.</p></article>
+</section>
+<button id="more" onclick="document.getElementById('hidden-replies').hidden=false;this.remove()">Show more replies</button>
+<div id="hidden-replies" hidden>
+<article data-testid="tweet" data-id="4"><a href="/carol/status/4">Carol</a><p>Hidden reply, revealed by the button.</p></article>
+</div>
+</main>
+<script>
+setTimeout(function () {
+  var article = document.createElement("article");
+  article.setAttribute("data-testid", "tweet");
+  article.setAttribute("data-id", "5");
+  article.innerHTML = '<a href="/dave/status/5">Dave</a><p>Late reply, after the content settled started.</p>';
+  document.getElementById("replies").append(article);
+}, 1500);
+</script>
+</body></html>`;
+
 export function dataRoutes(request, response) {
   const url = new URL(request.url ?? "/", "http://localhost");
   if (url.pathname === "/virtual") {
     response.setHeader("content-type", "text/html");
     response.end(VIRTUAL);
+    return true;
+  }
+  if (url.pathname === "/thread") {
+    response.setHeader("content-type", "text/html");
+    response.end(THREAD);
+    return true;
+  }
+  if (url.pathname === "/partial-data") {
+    response.setHeader("content-type", "text/html");
+    response.end(
+      `<title>Partial data</title><script type="application/ld+json">{bad json}</script>
+      <script type="application/json">{also bad}</script><p>Readable content.</p>`,
+    );
+    return true;
+  }
+  if (url.pathname === "/learn") {
+    response.setHeader("content-type", "text/html");
+    response.end(
+      `<title>Learn</title><main><h1>Learn</h1>
+      <button onclick="fetch('/learn/search?q=lamp')">Load lamps</button></main>
+      <script>setTimeout(function () {
+        fetch('/learn/checkout', {method: 'POST'});
+        fetch('/learn/animation');
+        window.__loaded = true;
+      }, 1000);</script>`,
+    );
+    return true;
+  }
+  if (url.pathname === "/learn/checkout") {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ cart: [{ id: "c1", total: 10 }] }));
+    return true;
+  }
+  if (url.pathname === "/learn/animation") {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ frames: [{ id: "f1", at: 1 }] }));
+    return true;
+  }
+  if (url.pathname === "/learn/search") {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ items: [{ id: 1, name: "Lamp" }] }));
     return true;
   }
   if (url.pathname === "/deals") {

@@ -264,6 +264,74 @@ test("watch reports only items that are new, changed or gone since the last chec
   assert.equal(fewer.new.length, 0, "an item seen before is not new again");
 });
 
+test("a direct call refused below HTTP retries through the page", async (t) => {
+  const { model } = await shop(t);
+  const publicModel = structuredClone(model);
+  for (const operation of publicModel.operations) operation.security = [];
+  let page = 0;
+  const refused = Object.assign(new Error("fetch failed"), { cause: { code: "ECONNRESET" } });
+  const api = await siteMapper(model.site, {
+    model: publicModel,
+    transport: "auto",
+    session: false,
+    retries: 0,
+    transports: {
+      direct: {
+        name: "direct",
+        async send() {
+          throw refused;
+        },
+      },
+      page: {
+        name: "page",
+        async send() {
+          page += 1;
+          return { status: 200, headers: {}, json: { items: [{ id: 7 }] } };
+        },
+      },
+    },
+  });
+  const response = await api.request("listProducts", { limit: 1 });
+  assert.equal(response.status, 200);
+  assert.equal(page, 1, "the browser got the call");
+  assert.match(response.notes?.[0] ?? "", /went through the browser/);
+});
+
+test("a direct DNS failure is not retried through the page", async (t) => {
+  const { model } = await shop(t);
+  const publicModel = structuredClone(model);
+  for (const operation of publicModel.operations) operation.security = [];
+  let page = 0;
+  const api = await siteMapper(model.site, {
+    model: publicModel,
+    transport: "auto",
+    session: false,
+    retries: 0,
+    transports: {
+      direct: {
+        name: "direct",
+        async send() {
+          throw Object.assign(new Error("getaddrinfo ENOTFOUND nope.example"), {
+            cause: { code: "ENOTFOUND" },
+          });
+        },
+      },
+      page: {
+        name: "page",
+        async send() {
+          page += 1;
+          return { status: 200, headers: {}, json: {} };
+        },
+      },
+    },
+  });
+  await assert.rejects(
+    () => api.request("listProducts", { limit: 1 }),
+    (error) => error.cause?.code === "ENOTFOUND",
+  );
+  assert.equal(page, 0, "no browser for a name that does not resolve");
+});
+
 test("a page fetch blocked by an extension retries directly and says so", async (t) => {
   const { model } = await shop(t);
   let direct = 0;

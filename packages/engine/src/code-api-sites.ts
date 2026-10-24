@@ -176,6 +176,9 @@ async function __learnFromCell() {
       var url = (__tabs.get(key) && __tabs.get(key).url) || entries[0].request.url;
       var result = await __call({siteMapper: 'learn-live', site: new URL(String(url)).hostname, har, approved});
       for (var op of (result && result.learned) || []) {
+        // Only operations this cell's own actions caused (or a write it proved): unrelated
+        // page-load requests (a checkout widget, an animation JSON) stay in siteMapper.operations.
+        if (!op.related && !op.proven) continue;
         var seen = result.site + '|' + op.id + '|' + (op.proven ? 'proven' : '');
         if (__announced.has(seen)) continue;
         __announced.add(seen);

@@ -66,6 +66,10 @@ test("a write the page made is learned, named after its control and proven", asy
   assert.equal(learned.role, "action");
   assert.equal(learned.kind, "routine");
   assert.equal(learned.proven, true);
+  assert.equal(learned.related, true);
+  const listed = result.learned.find((item) => item.role === "read");
+  assert.ok(listed, JSON.stringify(result.learned));
+  assert.equal(listed.related, undefined, "a page-load read is not related to the click");
   assert.equal(learned.step, 'click "Remove from Watch later"');
   assert.match(learned.how, /siteMapper\.write\('videos\.example', 'removeFromWatchLater'/);
   assert.ok(learned.params.includes("setVideoId"));

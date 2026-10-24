@@ -28,9 +28,10 @@ function __listStep(selector, options) {
   if (options.restore) return {selector: chosen};
   return new Promise((done) => setTimeout(() => {
     var items = rowsOf(chosen).map((row) => {
-      var key = row.getAttribute('data-index') ?? row.getAttribute('data-key') ?? row.getAttribute('data-id') ?? (row.id || null);
-      var link = row.querySelector('a[href]') || row.closest('a[href]');
-      return {key, text: clean(row.innerText).slice(0, options.maxText || 500), ...(link ? {href: link.href} : {})};
+      var link = row.querySelector('a[rel="bookmark"], a[href*="/status/"], a[href*="/p/"], a[href*="/post/"], a[href*="/item/"]') || row.querySelector('a[href]');
+      var href = link ? link.href : null;
+      var key = href || row.getAttribute('data-id') || row.getAttribute('data-key') || row.getAttribute('data-index') || row.id || null;
+      return {key, text: clean(row.innerText).slice(0, options.maxText || 500), ...(href ? {href} : {})};
     });
     done({selector: chosen, items, top: before, moved: Math.abs(scroller.scrollTop - before) >= 2});
   }, options.waitMs || 250));
@@ -39,25 +40,38 @@ function __listStep(selector, options) {
 async function __collectList(base, selector, options) {
   if (selector && typeof selector === 'object') { options = selector; selector = null; }
   options = options || {};
-  var max = options.max ?? 1000, seen = new Map(), chosen = selector || null, start = null, ends = 0, complete = false;
+  var max = options.max ?? 1000, seen = new Map(), chosen = selector || null, start = null;
+  var complete = false, partial = false, stable = 0, scrolls = 0;
   var step = (args) => base.inspect('(' + __listStep.toString() + ')(' + JSON.stringify(chosen) + ', ' + JSON.stringify(args) + ')');
   for (var i = 0; i < (options.maxScrolls ?? 300); i++) {
+    scrolls = i + 1;
     // The first read starts at the top; at the end, wait longer once, since lists that
     // load more on scroll need a moment to fetch.
-    var read = await step({maxText: options.maxText, ...(i === 0 ? {scrollTo: 0} : {}), waitMs: ends ? 1500 : 250});
+    var read = await step({maxText: options.maxText, ...(i === 0 ? {scrollTo: 0} : {}), waitMs: stable ? 1500 : 250});
     chosen = read.selector;
     if (start === null) start = read.top;
+    var added = 0;
     for (var item of read.items) {
       var id = item.key ?? item.text + '|' + (item.href || '');
-      if (!seen.has(id)) seen.set(id, item);
+      if (!seen.has(id)) { seen.set(id, item); added += 1; }
     }
-    if (seen.size >= max) break;
-    if (i === 0 || read.moved) { ends = 0; continue; }
-    if (++ends >= 2) { complete = true; break; }
+    if (seen.size >= max) { partial = true; break; }
+    // Only a run where the list did not move and no new key appeared counts as the end.
+    if (!read.moved && added === 0) { if (++stable >= 2) { complete = true; break; } }
+    else stable = 0;
   }
   await step({scrollTo: start, restore: true}).catch(() => {});
   var items = [...seen.values()].slice(0, max);
   if (items.length && items.every((item) => /^\\d+$/.test(item.key ?? ''))) items.sort((a, b) => a.key - b.key);
-  return {count: items.length, complete, selector: chosen, items};
+  if (!complete) partial = true;
+  return {
+    count: items.length,
+    complete,
+    partial,
+    selector: chosen,
+    scrolls,
+    ...(!complete ? {note: 'list is not complete: stopped after ' + items.length + ' rows' + (seen.size >= max ? ' (max reached)' : '') + '; scroll or pass a larger max'} : {}),
+    items,
+  };
 }
 `;

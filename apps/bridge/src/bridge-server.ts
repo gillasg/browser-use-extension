@@ -248,8 +248,11 @@ export class Bridge {
     cell.timer = waiting
       ? undefined
       : setTimeout(() => {
-          send(cell.executor.socket, { kind: "browser.code.cancel", cellId, reset: true });
-          this.end(cellId, { error: "Browser code exceeded its deadline; runtime reset" });
+          send(cell.executor.socket, { kind: "browser.code.cancel", cellId, reset: false });
+          this.end(cellId, {
+            error:
+              "Browser code exceeded its deadline; that cell stopped, and its variables and tabs are still there.",
+          });
         }, cell.timeoutMs + 5000);
   }
 

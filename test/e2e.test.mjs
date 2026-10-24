@@ -176,6 +176,43 @@ test(
         assert.match(stdout, new RegExp("→ " + siteUrl.replaceAll(".", "\\.")));
       });
 
+      await t.test("a timed-out cell keeps its variables and tabs for the next cell", async () => {
+        const timed = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "deadline",
+            "--timeout",
+            "1000",
+            `page = await browser.openTab(${JSON.stringify(siteUrl)});
+            kept = 42;
+            await new Promise((done) => setTimeout(done, 8000));
+            kept`,
+          ],
+          { env },
+        ).catch((error) => error);
+        const output = String(timed.stdout ?? "") + String(timed.stderr ?? "");
+        assert.match(output, /deadline/i, output);
+        const after = await run(
+          process.execPath,
+          [cli, "repl", "--session", "deadline", "kept + 1"],
+          { env },
+        );
+        assert.match(after.stdout, /→ 43/, after.stdout);
+        const pageAfter = await run(
+          process.execPath,
+          [cli, "repl", "--session", "deadline", "page.url"],
+          { env },
+        );
+        assert.match(
+          pageAfter.stdout,
+          new RegExp(siteUrl.replaceAll(".", "\\.")),
+          pageAfter.stdout,
+        );
+      });
+
       await t.test("openTab makes the new tab current and bu.use takes a tab id", async () => {
         const { stdout } = await run(
           process.execPath,
@@ -426,10 +463,12 @@ test(
               `page = await browser.openTab(${JSON.stringify(siteUrl + "virtual")});
             await page.evaluate(() => { document.getElementById("scroller").scrollTop = 3000; });
             const all = await page.list();
+            const again = await page.list();
+            const capped = await page.list(null, {max: 10});
             const open = all.items.filter((item) => /Yet to apply/.test(item.text)).map((item) => item.text);
             const scrolled = await page.evaluate(() => document.getElementById("scroller").scrollTop);
             const [tab] = await browser.tabs(${JSON.stringify(siteUrl + "virtual")});
-            console.log("LIST " + JSON.stringify({count: all.count, complete: all.complete, first: all.items[0].text, open, scrolled}));
+            console.log("LIST " + JSON.stringify({count: all.count, complete: all.complete, partial: all.partial, againCount: again.count, againComplete: again.complete, cappedPartial: capped.partial, first: all.items[0].text, open, scrolled}));
             console.log("TAB " + JSON.stringify({keys: Object.keys(JSON.parse(JSON.stringify(tab))), hasTarget: Boolean(tab.target && tab.tabId)}));`,
             ],
             { env },
@@ -439,6 +478,10 @@ test(
             {
               count: 150,
               complete: true,
+              partial: false,
+              againCount: 150,
+              againComplete: true,
+              cappedPartial: true,
               first: "Job 0 Applications closed",
               open: ["Job 120 Yet to apply"],
               scrolled: 3000,
@@ -764,6 +807,122 @@ test(
           assert.deepEqual(result.pooled, ["Item 1", "Item 2", "Item 3", "Item 4"]);
         },
       );
+
+      await t.test(
+        "page.read merges a thread, expands replies, waits and reports partial reads",
+        async () => {
+          const { stdout } = await run(
+            process.execPath,
+            [
+              cli,
+              "repl",
+              "--session",
+              "reading",
+              `page = await browser.openTab(${JSON.stringify(siteUrl + "thread")});
+            const markdown = await page.markdown();
+            const cut = await page.markdown({max: 80});
+            const read = await page.read({max: 4000});
+            await page.evaluate(() => {
+              const extra = document.createElement("p");
+              extra.textContent = "Long content ".repeat(1200);
+              document.querySelector("main").append(extra);
+            });
+            const small = await page.read({max: 2000});
+            console.log("READ " + JSON.stringify({
+              markdownReplies: markdown.includes("First reply") && markdown.includes("Second reply"),
+              markdownLate: markdown.includes("Late reply"),
+              markdownPartial: markdown.includes("[PARTIAL:") && markdown.includes("hidden behind Show more"),
+              cutPartial: cut.includes("[PARTIAL:") && cut.includes("cut at 80"),
+              readLate: read.markdown.includes("Late reply"),
+              readHidden: read.markdown.includes("Hidden reply"),
+              readCount: read.list && read.list.count,
+              readComplete: read.list && read.list.complete,
+              readPartial: read.partial,
+              smallPartial: small.partial,
+              smallArtifact: typeof small.artifact === "string",
+              liked: await page.evaluate(() => document.title === "liked"),
+            }));`,
+            ],
+            { env },
+          );
+          const result = JSON.parse(/READ (.*)/.exec(stdout)[1]);
+          assert.equal(result.markdownReplies, true);
+          assert.equal(result.markdownLate, false);
+          assert.equal(result.markdownPartial, true);
+          assert.equal(result.cutPartial, true);
+          assert.equal(result.readLate, true);
+          assert.equal(result.readHidden, true);
+          assert.equal(result.readCount, 5);
+          assert.equal(result.readComplete, true);
+          assert.equal(result.readPartial, false);
+          assert.equal(result.smallPartial, true);
+          assert.equal(result.smallArtifact, true);
+          assert.equal(result.liked, false);
+        },
+      );
+
+      await t.test("page.data reports a partial source list", async () => {
+        const { stdout } = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "partial-data",
+            `page = await browser.openTab(${JSON.stringify(siteUrl + "partial-data")});
+            const summary = await page.data({summary: true});
+            console.log("DATA " + JSON.stringify({partial: summary.partial, notes: summary.notes}));`,
+          ],
+          { env },
+        );
+        const result = JSON.parse(/DATA (.*)/.exec(stdout)[1]);
+        assert.equal(result.partial, true);
+        assert.match(result.notes.join(" "), /JSON-LD|JSON script/);
+      });
+
+      await t.test("learned lines only name operations the cell caused", async () => {
+        const first = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "learn",
+            `page = await browser.openTab(${JSON.stringify(siteUrl + "learn")});
+            await page.waitFor(() => window.__loaded);
+            await page.getByRole("button", { name: "Load lamps" }).click();`,
+          ],
+          { env },
+        );
+        const second = await run(
+          process.execPath,
+          [
+            cli,
+            "repl",
+            "--session",
+            "learn",
+            `const operations = await siteMapper.operations(new URL(page.url()).hostname);
+            console.log("OPS " + JSON.stringify(operations.map((operation) => operation.id)));`,
+          ],
+          { env },
+        );
+        const stdout = first.stdout + second.stdout;
+        const learned = stdout.split(/\r?\n/).filter((line) => line.startsWith("Learned on "));
+        assert.ok(
+          learned.some((line) => /search/i.test(line)),
+          stdout,
+        );
+        assert.ok(
+          learned.every((line) => !/checkout|animation/i.test(line)),
+          `unrelated page-load operations were announced:\n${learned.join("\n")}`,
+        );
+        const operations = JSON.parse(/OPS (.*)/.exec(stdout)[1]);
+        assert.ok(
+          operations.some((id) => /checkout/i.test(id)),
+          `the unrelated operations are still listed: ${stdout}`,
+        );
+        assert.ok(operations.some((id) => /animation/i.test(id)));
+      });
 
       await t.test("MCP lists the tools and runs browser_code", async () => {
         const mcp = mcpClient(env);

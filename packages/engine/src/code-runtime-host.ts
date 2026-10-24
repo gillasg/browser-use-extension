@@ -80,8 +80,14 @@ export function handleBrowserCodeMessage(
   const cancel = BrowserCodeCancelSchema.safeParse(candidate);
   if (cancel.success) {
     const cell = cells.get(cancel.data.cellId);
-    if (cell && cancel.data.reset) void resetRealm(cell.run.chatId);
-    if (cell) finish(cell, { output: "", error: "Browser workflow cancelled", reset: true });
+    const reset = cancel.data.reset === true;
+    if (cell && reset) void resetRealm(cell.run.chatId);
+    if (cell)
+      finish(cell, {
+        output: "",
+        error: reset ? "Browser workflow cancelled; runtime reset" : "Browser workflow cancelled",
+        reset,
+      });
     return true;
   }
   return false;

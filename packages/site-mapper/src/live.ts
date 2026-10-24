@@ -26,6 +26,8 @@ export interface LearnedOperation {
   step?: string;
   /** A write the page has just made successfully: siteMapper.write may repeat it. */
   proven?: boolean;
+  /** This cell's own action sent it (not an unrelated page-load request). */
+  related?: boolean;
   params: string[];
   /** Inputs that change per item, and where their values came from. */
   varies: string[];
@@ -119,7 +121,7 @@ export async function learnLive(
     (state.proofs[operation.id] !== undefined && !wasProven.has(operation.id));
   return {
     site: name,
-    learned: touched.filter(isNews).map((operation) => describe(name, operation, state)),
+    learned: touched.filter(isNews).map((operation) => describe(name, operation, state, sent)),
   };
 }
 
@@ -147,7 +149,12 @@ function noteProof(
   else delete state.proofs[operation.id];
 }
 
-function describe(site: string, operation: Operation, state: LiveState): LearnedOperation {
+function describe(
+  site: string,
+  operation: Operation,
+  state: LiveState,
+  sent: Exchange[],
+): LearnedOperation {
   const params = inputs(operation);
   const varies = operation.dependencies
     .filter((dependency) => dependency.source.kind === "response")
@@ -160,12 +167,18 @@ function describe(site: string, operation: Operation, state: LiveState): Learned
   const kind = operation.role === "action" ? writeKind(operation, state.approved) : undefined;
   const proven = kind === "routine" && state.proofs[operation.id] !== undefined;
   const step = operation.steps?.[0];
+  const pattern = templatePattern(operation);
+  const related = sent.some(
+    (exchange) =>
+      !!exchange.step && exchange.method === operation.method && pattern.test(pathOf(exchange.url)),
+  );
   return {
     id: operation.id,
     role: operation.role,
     ...(kind ? { kind } : {}),
     ...(step ? { step } : {}),
     ...(proven ? { proven } : {}),
+    ...(related ? { related } : {}),
     params,
     varies,
     how:

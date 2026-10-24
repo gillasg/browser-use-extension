@@ -333,24 +333,79 @@ export class SiteClient {
     try {
       return { response: await this.send(transport, request, context, readOnly), transport };
     } catch (error) {
-      // An extension in the page (an ad blocker wrapping fetch) can make the request fail before
-      // it leaves the browser. That is not an HTTP answer: try the same request directly once.
-      if (readOnly && transport !== this.direct && isFetchFailure(error)) {
-        const response = await this.send(this.direct, request, context, readOnly);
-        response.notes = [
-          ...(response.notes ?? []),
-          "The page could not make this request (a fetch error, often an ad blocker), so it was retried directly.",
-        ];
-        return { response, transport: this.direct };
-      }
-      const canFallBack =
-        readOnly && transport !== this.direct && this.options.transport !== "page";
-      if (!(error instanceof BrowserNotConnected) || !canFallBack) throw error;
-      return {
-        response: await this.send(this.direct, request, context, readOnly),
-        transport: this.direct,
-      };
+      const pageRetry = await this.retryPageFetch(transport, error, request, context, readOnly);
+      if (pageRetry) return pageRetry;
+      const directRetry = await this.retryDirectRefusal(
+        transport,
+        error,
+        request,
+        context,
+        readOnly,
+      );
+      if (directRetry) return directRetry;
+      return this.retryBrowserOffline(transport, error, request, context, readOnly);
     }
+  }
+
+  /** An extension in the page (an ad blocker wrapping fetch) made the request fail. */
+  private async retryPageFetch(
+    transport: Transport,
+    error: unknown,
+    request: RuntimeRequest,
+    context: CallContext,
+    readOnly: boolean,
+  ): Promise<{ response: RuntimeResponse; transport: Transport } | undefined> {
+    if (!readOnly || transport === this.direct || !isFetchFailure(error)) return undefined;
+    const response = await this.send(this.direct, request, context, readOnly);
+    response.notes = [
+      ...(response.notes ?? []),
+      "The page could not make this request (a fetch error, often an ad blocker), so it was retried directly.",
+    ];
+    return { response, transport: this.direct };
+  }
+
+  /** A direct call refused below HTTP (reset, TLS, timeout) may work in Chrome. */
+  private async retryDirectRefusal(
+    transport: Transport,
+    error: unknown,
+    request: RuntimeRequest,
+    context: CallContext,
+    readOnly: boolean,
+  ): Promise<{ response: RuntimeResponse; transport: Transport } | undefined> {
+    if (
+      !readOnly ||
+      transport !== this.direct ||
+      (this.options.transport ?? "auto") !== "auto" ||
+      !isNetworkRefusal(error) ||
+      isDnsFailure(error)
+    )
+      return undefined;
+    try {
+      const response = await this.send(this.page, request, context, readOnly);
+      response.notes = [
+        ...(response.notes ?? []),
+        "Plain HTTP was refused before an answer (reset/TLS), so the call went through the browser.",
+      ];
+      return { response, transport: this.page };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** The browser is gone: a read may still work directly. */
+  private async retryBrowserOffline(
+    transport: Transport,
+    error: unknown,
+    request: RuntimeRequest,
+    context: CallContext,
+    readOnly: boolean,
+  ): Promise<{ response: RuntimeResponse; transport: Transport }> {
+    const canFallBack = readOnly && transport !== this.direct && this.options.transport !== "page";
+    if (!(error instanceof BrowserNotConnected) || !canFallBack) throw error;
+    return {
+      response: await this.send(this.direct, request, context, readOnly),
+      transport: this.direct,
+    };
   }
 
   /** After a 401/403: retry in the page (auto mode), or renew a token and retry. Reads only. */
@@ -549,6 +604,22 @@ export type SiteMapper = SiteClient &
 function isFetchFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /Failed to fetch|NetworkError|Load failed|fetch failed|TypeError: fetch/i.test(message);
+}
+
+/** A request that failed below HTTP (reset, TLS refusal, timeout): a browser may still get in. */
+function isNetworkRefusal(error: unknown): boolean {
+  const text =
+    String((error as { cause?: { code?: string } })?.cause?.code ?? "") + " " + String(error);
+  return /ECONNRESET|EPROTO|ERR_SSL|UND_ERR_SOCKET|ECONNREFUSED|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|TimeoutError|aborted|fetch failed|socket hang up|other side closed/i.test(
+    text,
+  );
+}
+
+/** The name did not resolve: no browser can reach it either. */
+function isDnsFailure(error: unknown): boolean {
+  const text =
+    String((error as { cause?: { code?: string } })?.cause?.code ?? "") + " " + String(error);
+  return /ENOTFOUND|EAI_AGAIN|ENOENT/i.test(text);
 }
 
 /** The operation's data, with the response's notes when it had to take another transport. */
