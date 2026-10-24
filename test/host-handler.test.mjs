@@ -3,7 +3,11 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
-import { createHostHandler, readBlockedSites, saveBlockedSites } from "../packages/tools/dist/host.js";
+import {
+  createHostHandler,
+  readBlockedSites,
+  saveBlockedSites,
+} from "../packages/tools/dist/host.js";
 
 const PASSWORD = "host-handler-credential-secret";
 
@@ -38,7 +42,8 @@ if (!hit) process.exit(1);
 process.stdout.write(JSON.stringify(outputs[hit]));
 `,
   );
-  if (process.platform === "win32") await writeFile(join(dir, "bw.cmd"), `@node "${script}" %*\r\n`);
+  if (process.platform === "win32")
+    await writeFile(join(dir, "bw.cmd"), `@node "${script}" %*\r\n`);
   else {
     await writeFile(join(dir, "bw"), `#!/bin/sh\nexec node "${script}" "$@"\n`);
     await chmod(join(dir, "bw"), 0o755);
@@ -87,15 +92,15 @@ test("the one host handler answers credentials, merges site rules, and only a ch
   });
 
   const credential = await withPath(bw, () =>
-    handler({ credential: "login", url: "https://shop.example/" }, { source: "bridge", scope: "s" }),
+    handler(
+      { credential: "login", url: "https://shop.example/" },
+      { source: "bridge", scope: "s" },
+    ),
   );
   assert.equal(credential.logins[0]?.password, PASSWORD, "the engine gets the real login");
   assert.ok(!JSON.stringify(credential.provider).includes(PASSWORD));
 
-  const bridgeRules = await handler(
-    { siteRules: true },
-    { source: "bridge", scope: "s" },
-  );
+  const bridgeRules = await handler({ siteRules: true }, { source: "bridge", scope: "s" });
   assert.deepEqual(bridgeRules, {
     blocked: ["bank.example", "extra.example"],
     only: ["only.example"],
@@ -109,7 +114,10 @@ test("the one host handler answers credentials, merges site rules, and only a ch
   assert.deepEqual(externalRules.allow, []);
 
   assert.deepEqual(
-    await handler({ savedRead: { url: "https://shop.example/", text: "x" } }, { source: "bridge", scope: "s" }),
+    await handler(
+      { savedRead: { url: "https://shop.example/", text: "x" } },
+      { source: "bridge", scope: "s" },
+    ),
     { extra: true },
   );
   assert.equal(extra.length, 1);

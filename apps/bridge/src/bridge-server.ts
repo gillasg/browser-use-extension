@@ -325,9 +325,7 @@ export class Bridge {
 function serveRequest(request: unknown, session: string): Promise<unknown> {
   const workspace = join(dataDirectory(), "workspaces", session);
   const answer = hostHandler(request, { source: "bridge", scope: session, workspace });
-  return (
-    answer ?? Promise.reject(new Error("UNSUPPORTED: unknown browser runtime request"))
-  );
+  return answer ?? Promise.reject(new Error("UNSUPPORTED: unknown browser runtime request"));
 }
 
 const hostHandler = createHostHandler({
