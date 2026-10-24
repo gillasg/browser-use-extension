@@ -98,12 +98,13 @@ async function exploreSites(args: Args): Promise<void> {
   await explore(sites, {
     ...(goal ? { goal } : {}),
     ...(has(args, "actions") ? { actions: true } : {}),
+    ...(has(args, "loud") ? { quiet: false } : {}),
+    ...(flag(args, "parallel") ? { parallel: Number(flag(args, "parallel")) } : {}),
     ...(model ? { model } : {}),
-    parallel: Number(flag(args, "parallel") ?? 3),
     onSite: (result) =>
       out(
         result.error
-          ? `${result.site}\tfailed: ${result.error}`
+          ? `${result.site}\tfailed (${result.kind ?? "failed"}): ${result.error}`
           : `${result.site}\t${result.operations} operations (version ${result.version})`,
       ),
   });
@@ -182,7 +183,7 @@ export const mapCommand: Command = {
   summary: "record a flow in the browser (or explore sites), then build its API",
   help: `Usage: browserkit map <url> [--attach <tab>] [--name <n>] [--no-build]
        browserkit map --passive <domain,...> [--name <n>] [--no-build]
-       browserkit map --explore <site> [site ...] [--goal <g>] [--parallel <n>] [--actions]
+       browserkit map --explore <site> [site ...] [--goal <g>] [--parallel <n>] [--loud] [--actions]
 
 Records the site's own requests while you use it, then builds an OpenAPI spec, a typed
 client and a callable API from them.
@@ -196,7 +197,8 @@ client and a callable API from them.
                          background tab, looking only. Needs a model from the caller, which a
                          standalone CLI does not have: call explore() in code for that.
   --goal <g>             with --explore: extra things to do on each site
-  --parallel <n>         with --explore: how many sites at once (default 3)
+  --parallel <n>         with --explore: how many sites at once (default 1; max 3)
+  --loud                 with --explore: allow popunders, autoplay and ads
   --actions              with --explore: also map actions in dry run (never sent)`,
   run: map,
 };

@@ -111,6 +111,7 @@ export class FakeBrowser {
     this.localStorage = {};
     this.tabs = [];
     this.calls = [];
+    this.codes = [];
     // The real transport refuses a cell result over ~3.5 MB; tests can lower that.
     this.maxResultChars = options.maxResultChars ?? Infinity;
   }
@@ -160,6 +161,7 @@ export class FakeBrowser {
 
   /** The Bridge interface PageTransport uses. */
   async run(code) {
+    this.codes.push(code);
     const browser = {
       openTab: async (url) => {
         const tab = new FakeTab(this, url);

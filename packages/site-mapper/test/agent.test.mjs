@@ -141,6 +141,10 @@ test("explore maps sites by name or URL: the agent uses each one while it is rec
     onSite: (result) => seen.push(result.site),
   });
   assert.equal(results.length, 1, "the same site twice is explored once");
+  assert.ok(
+    browser.codes.some((code) => code.includes("quiet: true")),
+    "explore opens quiet tabs by default",
+  );
   assert.equal(results[0].summary, "Searched and opened products.");
   assert.ok(results[0].operations >= 1, JSON.stringify(results[0]));
   assert.deepEqual(seen, [siteName(site.origin)]);
@@ -148,6 +152,23 @@ test("explore maps sites by name or URL: the agent uses each one while it is rec
   assert.ok(
     (await loadModel(siteName(site.origin))).operations.some((op) => op.id === "listProducts"),
   );
+});
+
+test("explore says why a site failed and which tabs it opened", async (t) => {
+  await tempHome(t);
+  const site = await startFixtureSite();
+  t.after(() => site.close());
+  const model = {
+    complete: async () => {
+      throw new Error("TIMEOUT: the model took too long");
+    },
+  };
+  const browser = new FakeBrowser();
+  const [result] = await explore([site.origin], { model, bridge: async () => browser });
+  assert.equal(result.kind, "timeout");
+  assert.match(result.error, /TIMEOUT/);
+  assert.ok(Array.isArray(result.tabs), JSON.stringify(result));
+  assert.doesNotMatch(result.summary ?? "", /No result/);
 });
 
 test("model-powered features say a model must be passed when there is none", async (t) => {

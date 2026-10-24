@@ -12,6 +12,15 @@ export function formatResult(result: Json): {
   if (result.value !== undefined) parts.push("→ " + stringify(result.value));
   if (result.error) parts.push("Error: " + String(result.error));
   if (result.reset) parts.push("(The REPL was reset; variables from earlier cells are gone.)");
+  const stats = result.tabStats as
+    | { opened?: number; closed?: number; mine?: number[]; total?: number; popups?: number }
+    | undefined;
+  if (stats)
+    parts.push(
+      `tabs: opened ${stats.opened ?? 0}, closed ${stats.closed ?? 0}, mine ${stats.mine?.length ?? 0}` +
+        `${stats.mine?.length ? ` (${stats.mine.join(", ")})` : ""}, total ${stats.total ?? 0}` +
+        `${stats.popups ? `; popups: ${stats.popups} parked` : ""}`,
+    );
   let text = parts.join("\n") || "(no output)";
   if (text.length > MAX_TEXT)
     text = text.slice(0, MAX_TEXT) + `\n[... ${text.length - MAX_TEXT} more characters clipped]`;

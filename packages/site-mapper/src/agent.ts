@@ -81,6 +81,8 @@ export interface FlowOptions {
   session?: string;
   /** Bring the recorded tab to the front. Default true. */
   foreground?: boolean;
+  /** Block popunders, autoplay and ad hosts (explore defaults to this). */
+  quiet?: boolean;
   /** Requests that would change something are blocked and only recorded (see RecordOptions). */
   dryRun?: boolean;
 }
@@ -160,6 +162,7 @@ export async function performFlow(
     ...(options.bridge ? { bridge: options.bridge } : {}),
     ...(options.session ? { session: options.session } : {}),
     ...(options.foreground === false ? { foreground: false } : {}),
+    ...(options.quiet ? { quiet: true } : {}),
     ...(options.dryRun ? { dryRun: true } : {}),
   });
   const agent = new FlowAgent(session, options.onStep);
@@ -171,11 +174,26 @@ export async function performFlow(
     },
   ];
   let recording: Awaited<ReturnType<RecordingSession["stop"]>>;
+  let failure: unknown;
   try {
     await drive(model, agent, messages, options.maxSteps ?? 30);
-  } finally {
-    recording = await session.stop();
+  } catch (error) {
+    failure = error;
   }
+  const tabs = await session.tabIds();
+  try {
+    recording = await session.stop();
+  } catch (error) {
+    if (!failure) failure = error;
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+      browserTabs: tabs,
+      browserTabsLeftOpen: tabs,
+    });
+  }
+  if (failure)
+    throw Object.assign(failure instanceof Error ? failure : new Error(String(failure)), {
+      browserTabs: tabs,
+    });
   const flowPath = await saveRecording(name, recording, { description, steps: agent.steps });
   return {
     summary: agent.summary || "Stopped after the step limit.",

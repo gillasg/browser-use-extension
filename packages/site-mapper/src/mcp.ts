@@ -272,6 +272,8 @@ export async function runMcpServer(site?: string, options: SiteMapperOptions = {
       explore(args.sites as string[], {
         ...(typeof args.goal === "string" ? { goal: args.goal } : {}),
         ...(args.actions === true ? { actions: true } : {}),
+        ...(args.quiet === false ? { quiet: false } : {}),
+        ...(typeof args.parallel === "number" ? { parallel: args.parallel } : {}),
       }),
     call_operation: async (args) => {
       const maxItems = typeof args.maxItems === "number" ? { maxItems: args.maxItems } : {};
