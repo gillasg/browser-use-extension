@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { createRedactor, SECRET_HEADERS, SECRET_KEYS } from "./redact.js";
 import { siteDir, siteName } from "./registry.js";
@@ -132,14 +132,31 @@ export async function exportSitePack(options: {
 }
 
 export async function readSitePack(file: string): Promise<SitePack> {
-  let entries: Record<string, Uint8Array>;
+  const entries = await readZip(file);
+  const paths = Object.keys(entries);
+  for (const path of paths) safePath(path);
+  const manifest = readManifest(entries);
+  return {
+    manifest,
+    files: siteFiles(entries, paths),
+    skills: jsonEntries<PackSkill>(entries, paths, /^skills\/[^/]+\.json$/, (item) => {
+      return typeof item.name === "string" && typeof item.code === "string";
+    }),
+    boosts: jsonEntries<PackBoost>(entries, paths, /^boosts\/[^/]+\.json$/, (item) => {
+      return typeof item.name === "string";
+    }),
+  };
+}
+
+async function readZip(file: string): Promise<Record<string, Uint8Array>> {
   try {
-    entries = unzipSync(new Uint8Array(await readFile(file)));
+    return unzipSync(new Uint8Array(await readFile(file)));
   } catch {
     throw new Error(`${file} is not a zip file.`);
   }
-  const paths = Object.keys(entries);
-  for (const path of paths) safePath(path);
+}
+
+function readManifest(entries: Record<string, Uint8Array>): PackManifest {
   const manifestText = text(entries["pack.json"]);
   if (!manifestText) throw new Error("The pack has no pack.json.");
   const manifest = JSON.parse(manifestText) as PackManifest;
@@ -147,24 +164,29 @@ export async function readSitePack(file: string): Promise<SitePack> {
     throw new Error(`Unsupported pack format ${String(manifest.format)}.`);
   const site = siteName(String(manifest.site ?? ""));
   if (!/^[a-z0-9.-]+$/.test(site)) throw new Error("The pack has no valid site name.");
-  manifest.site = site;
+  return { ...manifest, site };
+}
+
+function siteFiles(entries: Record<string, Uint8Array>, paths: string[]): Map<string, string> {
   const files = new Map<string, string>();
   for (const path of paths) {
     if (path === "pack.json" || path.startsWith("skills/") || path.startsWith("boosts/")) continue;
     files.set(path, text(entries[path]) ?? "");
   }
-  const skills: PackSkill[] = [];
-  for (const path of paths.filter((name) => /^skills\/[^/]+\.json$/.test(name))) {
-    const parsed = JSON.parse(text(entries[path]) ?? "{}") as PackSkill;
-    if (typeof parsed.name === "string" && typeof parsed.code === "string")
-      skills.push({ ...parsed, enabled: false });
-  }
-  const boosts: PackBoost[] = [];
-  for (const path of paths.filter((name) => /^boosts\/[^/]+\.json$/.test(name))) {
-    const parsed = JSON.parse(text(entries[path]) ?? "{}") as PackBoost;
-    if (typeof parsed.name === "string") boosts.push({ ...parsed, enabled: false });
-  }
-  return { manifest, files, skills, boosts };
+  return files;
+}
+
+function jsonEntries<T>(
+  entries: Record<string, Uint8Array>,
+  paths: string[],
+  pattern: RegExp,
+  valid: (item: T) => boolean,
+): T[] {
+  return paths
+    .filter((name) => pattern.test(name))
+    .map((path) => JSON.parse(text(entries[path]) ?? "{}") as T)
+    .filter(valid)
+    .map((item) => ({ ...item, enabled: false }));
 }
 
 /** Writes the site files; the caller saves skills and boosts disabled. */
@@ -218,19 +240,30 @@ function scrubFile(
 
 function scrubValue(value: unknown, redactor: ReturnType<typeof createRedactor>): unknown {
   if (Array.isArray(value)) return value.map((item) => scrubValue(item, redactor));
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) {
-      if (/^cookies?$/i.test(key)) out[key] = [];
-      else if (/^(local|session)storage$/i.test(key)) out[key] = {};
-      else if (/^headers?$/i.test(key)) out[key] = scrubHeaders(item, redactor);
-      else if (SECRET_KEYS.test(key) && (item === null || typeof item !== "object"))
-        out[key] = "<redacted>";
-      else out[key] = scrubValue(item, redactor);
-    }
-    return out;
-  }
+  if (value && typeof value === "object")
+    return scrubObject(value as Record<string, unknown>, redactor);
   return typeof value === "string" ? redactor.text(redactor.body(value) ?? value) : value;
+}
+
+function scrubObject(
+  value: Record<string, unknown>,
+  redactor: ReturnType<typeof createRedactor>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, scrubField(key, item, redactor)]),
+  );
+}
+
+function scrubField(
+  key: string,
+  item: unknown,
+  redactor: ReturnType<typeof createRedactor>,
+): unknown {
+  if (/^cookies?$/i.test(key)) return [];
+  if (/^(local|session)storage$/i.test(key)) return {};
+  if (/^headers?$/i.test(key)) return scrubHeaders(item, redactor);
+  if (SECRET_KEYS.test(key) && (item === null || typeof item !== "object")) return "<redacted>";
+  return scrubValue(item, redactor);
 }
 
 function scrubHeaders(value: unknown, redactor: ReturnType<typeof createRedactor>): unknown {
