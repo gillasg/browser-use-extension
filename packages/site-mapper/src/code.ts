@@ -49,50 +49,97 @@ export async function code(input: string, options: SiteCodeOptions = {}): Promis
   const maxFiles = Math.max(1, Math.min(200, options.maxFiles ?? DEFAULT_MAX_FILES));
   const maxBytes = Math.max(10_000, Math.min(8_000_000, options.maxBytes ?? DEFAULT_MAX_BYTES));
   const timeoutMs = Math.max(1_000, Math.min(60_000, options.timeoutMs ?? DEFAULT_TIMEOUT));
-  const notes: string[] = [];
-  let total = 0;
-  const files: SiteCodeResult["files"] = [];
-  const texts = new Map<string, string>();
   const page = await read(url, maxBytes, timeoutMs);
-  texts.set(page.url, page.text);
-  if (page.via === "chrome") notes.push("page read through the browser");
   const scripts = scriptsOf(page.text, page.url);
   const buildId =
     /\/_next\/static\/([^/"']+)\/_buildManifest\.js/.exec(page.text)?.[1] ??
     /"buildId"\s*:\s*"([^"]+)"/.exec(page.text)?.[1];
-  const manifestUrls = manifestCandidates(page.url, buildId, scripts);
-  const queue = [...new Set([...scripts, ...manifestUrls])].filter((item) =>
-    sameOrigin(item, origin),
+  const collected = await collectFiles(
+    scripts,
+    manifestCandidates(page.url, buildId, scripts),
+    origin,
+    maxFiles,
+    maxBytes,
+    timeoutMs,
   );
+  const texts = new Map([[page.url, page.text], ...collected.texts]);
+  const sourceMaps = await collectSourceMaps(texts, collected.files, origin, maxBytes, timeoutMs);
+  const discovery = await collectDiscovery(page.url, maxBytes, timeoutMs);
+  const matches = options.grep ? grepFiles(texts, options.grep) : [];
+  const routes = uniqueRoutes([...collected.routes, ...sourceMaps.routes]);
+  return {
+    url,
+    finalUrl: page.url,
+    summary: `${routes.length} routes, ${collected.files.length} files, ${sourceMaps.maps.length} source maps, ${matches.length} matches`,
+    routes,
+    files: collected.files,
+    sourceMaps: sourceMaps.maps,
+    robots: discovery.robots.slice(0, 100),
+    sitemap: discovery.sitemap.slice(0, 500),
+    matches: matches.slice(0, MAX_MATCHES),
+    notes: [
+      ...(page.via === "chrome" ? ["page read through the browser"] : []),
+      ...collected.notes,
+      ...sourceMaps.notes,
+    ],
+    truncated:
+      collected.files.some((file) => file.bytes >= maxBytes) || matches.length > MAX_MATCHES,
+  };
+}
+
+async function collectFiles(
+  scripts: string[],
+  manifests: string[],
+  origin: string,
+  maxFiles: number,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<{
+  files: SiteCodeResult["files"];
+  texts: [string, string][];
+  routes: SiteCodeRoute[];
+  notes: string[];
+}> {
+  const files: SiteCodeResult["files"] = [];
+  const texts: [string, string][] = [];
+  const routes: SiteCodeRoute[] = [];
+  const notes: string[] = [];
   const seen = new Set<string>();
-  const routeCandidates: { url: string; text: string; source: string }[] = [];
-  for (const script of [...new Set(scripts)]) {
-    if (!sameOrigin(script, origin) || seen.has(script) || files.length >= maxFiles) continue;
-    seen.add(script);
-    const file = await optional(script, maxBytes, timeoutMs);
-    if (!file) continue;
-    files.push(meta(file));
-    texts.set(file.url, file.text);
-    total += file.text.length;
-    if (isManifestName(file.url)) routeCandidates.push({ ...file, source: file.url });
-    if (total >= MAX_TOTAL_BYTES) {
-      notes.push("stopped after the total size cap");
-      break;
+  let total = 0;
+  for (const [urls, source] of [
+    [scripts, "script"],
+    [manifests, "manifest"],
+  ] as const) {
+    for (const url of urls) {
+      if (!sameOrigin(url, origin) || seen.has(url) || files.length >= maxFiles) continue;
+      seen.add(url);
+      const file = await optional(url, maxBytes, timeoutMs);
+      if (!file) continue;
+      files.push(meta(file));
+      texts.push([file.url, file.text]);
+      total += file.text.length;
+      if (source === "manifest" || isManifestName(file.url))
+        routes.push(...routesFrom(file.url, file.text, file.url));
+      if (total >= MAX_TOTAL_BYTES) {
+        notes.push("stopped after the total size cap");
+        return { files, texts, routes, notes };
+      }
     }
   }
-  for (const manifest of queue) {
-    if (!sameOrigin(manifest, origin) || seen.has(manifest) || files.length >= maxFiles) continue;
-    seen.add(manifest);
-    const file = await optional(manifest, maxBytes, timeoutMs);
-    if (!file) continue;
-    files.push(meta(file));
-    texts.set(file.url, file.text);
-    total += file.text.length;
-    routeCandidates.push({ ...file, source: "manifest" });
-    if (total >= MAX_TOTAL_BYTES) break;
-  }
-  const routes = routeCandidates.flatMap((file) => routesFrom(file.url, file.text, file.source));
-  const sourceMaps: SiteCodeResult["sourceMaps"] = [];
+  return { files, texts, routes, notes };
+}
+
+async function collectSourceMaps(
+  texts: Map<string, string>,
+  files: SiteCodeResult["files"],
+  origin: string,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<{ maps: SiteCodeResult["sourceMaps"]; routes: SiteCodeRoute[]; notes: string[] }> {
+  const maps: SiteCodeResult["sourceMaps"] = [];
+  const routes: SiteCodeRoute[] = [];
+  const notes: string[] = [];
+  const seen = new Set<string>();
   for (const [fileUrl, text] of texts) {
     if (!/\.m?js(?:\?|$)/i.test(fileUrl)) continue;
     const mapUrl = sourceMapUrl(text, fileUrl) ?? `${fileUrl}.map`;
@@ -106,7 +153,7 @@ export async function code(input: string, options: SiteCodeOptions = {}): Promis
       const sources = Array.isArray(parsed.sources)
         ? parsed.sources.filter((item): item is string => typeof item === "string")
         : [];
-      if (sources.length) sourceMaps.push({ url: map.url, sources: sources.slice(0, 500) });
+      if (sources.length) maps.push({ url: map.url, sources: sources.slice(0, 500) });
       for (const source of sources.slice(0, 500))
         for (const route of routeStrings(source))
           routes.push({ route, chunks: [map.url], source: "source-map" });
@@ -114,8 +161,15 @@ export async function code(input: string, options: SiteCodeOptions = {}): Promis
       notes.push(`source map was not JSON: ${map.url}`);
     }
   }
-  const robotsUrl = new URL("/robots.txt", page.url).href;
-  const robotsFile = await optional(robotsUrl, maxBytes, timeoutMs).catch(() => undefined);
+  return { maps, routes, notes };
+}
+
+async function collectDiscovery(
+  pageUrl: string,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<{ robots: string[]; sitemap: string[] }> {
+  const robotsFile = await optional(new URL("/robots.txt", pageUrl).href, maxBytes, timeoutMs);
   const robots = robotsFile
     ? robotsFile.text
         .split(/\r?\n/)
@@ -125,36 +179,24 @@ export async function code(input: string, options: SiteCodeOptions = {}): Promis
   const sitemaps = robots
     .map((line) => /^sitemap:\s*(\S+)/i.exec(line)?.[1])
     .filter((value): value is string => Boolean(value))
-    .map((value) => {
-      try {
-        return new URL(value, page.url).href;
-      } catch {
-        return undefined;
-      }
-    })
+    .map((value) => absolute(value, pageUrl))
     .filter((value): value is string => Boolean(value));
   const sitemap: string[] = [];
   for (const sitemapUrl of [...new Set(sitemaps)].slice(0, 4)) {
-    const file = await optional(sitemapUrl, maxBytes, timeoutMs).catch(() => undefined);
+    const file = await optional(sitemapUrl, maxBytes, timeoutMs);
     if (!file) continue;
     sitemap.push(...urlsFromSitemap(file.text));
     if (sitemap.length >= 500) break;
   }
-  const matches = options.grep ? grepFiles(texts, options.grep) : [];
-  const finalRoutes = uniqueRoutes(routes);
-  return {
-    url,
-    finalUrl: page.url,
-    summary: `${finalRoutes.length} routes, ${files.length} files, ${sourceMaps.length} source maps, ${matches.length} matches`,
-    routes: finalRoutes,
-    files,
-    sourceMaps,
-    robots: robots.slice(0, 100),
-    sitemap: [...new Set(sitemap)].slice(0, 500),
-    matches: matches.slice(0, MAX_MATCHES),
-    notes,
-    truncated: files.some((file) => file.bytes >= maxBytes) || matches.length > MAX_MATCHES,
-  };
+  return { robots, sitemap: [...new Set(sitemap)] };
+}
+
+function absolute(value: string, base: string): string | undefined {
+  try {
+    return new URL(value, base).href;
+  } catch {
+    return undefined;
+  }
 }
 
 async function read(
@@ -288,22 +330,24 @@ function routesFrom(url: string, text: string, source: string): SiteCodeRoute[] 
     const parsed = JSON.parse(text) as Record<string, unknown>;
     for (const [route, value] of Object.entries(parsed)) {
       if (!route.startsWith("/")) continue;
-      const chunks =
-        typeof value === "string"
-          ? [value]
-          : Array.isArray(value)
-            ? value.filter((item): item is string => typeof item === "string")
-            : value &&
-                typeof value === "object" &&
-                typeof (value as { file?: unknown }).file === "string"
-              ? [(value as { file: string }).file]
-              : [];
-      routes.push({ route, chunks: chunks.map((chunk) => new URL(chunk, url).href), source });
+      routes.push({
+        route,
+        chunks: chunksFor(value).map((chunk) => new URL(chunk, url).href),
+        source,
+      });
     }
   } catch {
     // a JS manifest; the pair scan above is the useful part
   }
   return routes;
+}
+
+function chunksFor(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  if (value && typeof value === "object" && typeof (value as { file?: unknown }).file === "string")
+    return [(value as { file: string }).file];
+  return [];
 }
 
 function sourceMapUrl(text: string, fileUrl: string): string | undefined {
