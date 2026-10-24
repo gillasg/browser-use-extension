@@ -1,9 +1,12 @@
-import { resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import {
   syncSite,
   writeOutput,
+  type CheckReport,
   type Format,
   type PageResult,
+  type SiteCheck,
 } from "@browserkit/tools/browser-crawl";
 import { crawlTool, type CrawlToolInput } from "@browserkit/tools/definitions";
 import { flag, has, list, type Args } from "../args.js";
@@ -160,6 +163,66 @@ async function runSync(args: Args): Promise<number> {
     );
   return 0;
 }
+
+async function runCheck(args: Args): Promise<number> {
+  const urls = args.positional;
+  const file = flag(args, "file");
+  if (!urls.length && !file)
+    throw new Error("Usage: browserkit check <urls...|--file f> [--via http]");
+  const via = flag(args, "via") === "http" ? "http" : "auto";
+  const report = (await crawlTool.run(
+    { action: "check", urls, ...(file ? { file } : {}), via },
+    { workspace: process.cwd() },
+  )) as CheckReport;
+  const saved = await saveCheck(report.results);
+  if (has(args, "json")) printJson(report);
+  else {
+    printRows(Object.entries(report.counts).map(([verdict, count]) => [verdict, String(count)]));
+    out(
+      `spotCheck: ${report.spotCheck.checked} checked, ${report.spotCheck.disagreed.length} disagreed`,
+    );
+    out(`Saved evidence in ${saved}`);
+  }
+  return 0;
+}
+
+async function saveCheck(results: readonly SiteCheck[]): Promise<string> {
+  const folder = join("checks", new Date().toISOString().replace(/[:.]/g, "-"));
+  await mkdir(folder, { recursive: true });
+  await writeFile(join(folder, "results.json"), JSON.stringify(results, null, 2));
+  const rows = results.map((result) =>
+    [
+      result.host,
+      result.verdict,
+      result.via,
+      result.status ?? "",
+      result.title ?? "",
+      result.reason ?? "",
+    ]
+      .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+      .join(","),
+  );
+  await writeFile(
+    join(folder, "results.csv"),
+    ["host,verdict,via,status,title,reason", ...rows].join("\n"),
+  );
+  return folder.replace(/\\/g, "/");
+}
+
+export const checkCommand: Command = {
+  name: "check",
+  group: "Read the web",
+  summary: "check which of many sites load, with evidence for each verdict",
+  help: `Usage: browserkit check <urls...|--file f> [--via http] [--json]
+
+  --file <path>   a file listing hosts or URLs (JSON array/object or one per line)
+  --via http      never start Chrome; otherwise plain HTTP first, then Chrome for the rest
+  --json          the whole report as JSON
+
+Checks up to 5000 sites, prints the verdict counts and the spot-check line, and saves
+checks/<timestamp>/results.json and results.csv in the current folder.`,
+  run: runCheck,
+};
 
 export const syncCommand: Command = {
   name: "sync",

@@ -3,7 +3,7 @@ import test from "node:test";
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -41,6 +41,11 @@ test(
         response.end(
           `<title>Silent card</title><div id="card" style="width:240px;height:120px;border:1px solid;position:relative"><span id="open" style="position:absolute;right:4px;top:4px;padding:8px">Open details</span></div><p id="out"></p><script>document.getElementById('open').addEventListener('click', () => { document.getElementById('out').textContent = 'opened'; });</script>`,
         );
+        return;
+      }
+      if (path.startsWith("/ok")) {
+        response.setHeader("content-type", "text/html");
+        response.end(`<title>OK</title><p>${"readable text ".repeat(30)}</p>`);
         return;
       }
       if (path === "/code-fixture") {
@@ -179,6 +184,21 @@ test(
           value.matches.some((match) => match.text.includes("checkout")),
           stdout,
         );
+      });
+
+      await t.test("the check command reports counts and saves evidence", async () => {
+        const work = await mkdtemp(join(home, "check-"));
+        const { stdout } = await run(
+          process.execPath,
+          [cli, "check", siteUrl + "ok", "--via", "http", "--json"],
+          { env, cwd: work },
+        );
+        const report = JSON.parse(stdout);
+        assert.equal(report.counts.ok, 1, stdout);
+        assert.equal(report.browserUsed, false, stdout);
+        const folders = await readdir(join(work, "checks"));
+        assert.equal(folders.length, 1, stdout);
+        assert.ok(existsSync(join(work, "checks", folders[0], "results.json")), stdout);
       });
     } finally {
       chrome?.kill();

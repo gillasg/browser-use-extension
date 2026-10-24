@@ -2,6 +2,7 @@ import type { Command } from "../usage.js";
 import { boostsCommand } from "./boosts.js";
 import { browserGroup } from "./browser.js";
 import {
+  checkCommand,
   crawlCommand,
   findCommand,
   scrapeCommand,
@@ -20,6 +21,7 @@ import { useGroup } from "./site-use.js";
 export const COMMANDS: Command[] = [
   ...browserGroup,
   crawlCommand,
+  checkCommand,
   scrapeCommand,
   urlMapCommand,
   searchCommand,

@@ -18,7 +18,7 @@ import { dataDirectory } from "./paths.js";
 type Json = Record<string, unknown>;
 const MAX_TEXT = 60_000;
 
-const CRAWL_ACTIONS = ["scrape", "crawl", "map", "search", "find"] as const;
+const CRAWL_ACTIONS = ["scrape", "crawl", "map", "search", "find", "check"] as const;
 const SITE_ACTIONS = [
   "sites",
   "code",
