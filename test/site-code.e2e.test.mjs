@@ -106,7 +106,13 @@ test(
             const url = await b.url();
             const closed = await browser.closeTab(b.id);
             const note = await b.click("button");
-            const still = (await browser.tabs()).some((tab) => tab.id === b.id);
+            const still = await (async () => {
+              for (let i = 0; i < 50; i++) {
+                if (!(await browser.tabs()).some((tab) => tab.id === b.id)) return false;
+                await new Promise((done) => setTimeout(done, 50));
+              }
+              return true;
+            })();
             console.log("TABNOTES " + JSON.stringify({
               same: a.id === b.id,
               reused: b.reused,

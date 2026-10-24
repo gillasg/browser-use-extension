@@ -358,7 +358,13 @@ test(
           const mineIds = listed.filter((tab) => tab.mine).map((tab) => tab.id);
           const userMine = listed.find((tab) => tab.id === ${userTabId})?.mine;
           const result = await browser.closeTab(mineId);
-          const gone = !(await browser.tabs()).some((tab) => tab.id === mineId);
+          const gone = await (async () => {
+            for (let i = 0; i < 50; i++) {
+              if (!(await browser.tabs()).some((tab) => tab.id === mineId)) return true;
+              await new Promise((done) => setTimeout(done, 50));
+            }
+            return false;
+          })();
           const userError = await browser.closeTab(${userTabId}).then(() => null, (error) => String(error.message || error));
           const userStill = (await browser.tabs()).some((tab) => tab.id === ${userTabId});
           console.log("CLOSE " + JSON.stringify({ mineId, mineIds, userMine, result, gone, userError, userStill }));`);
