@@ -12,6 +12,7 @@
   "dependencies": {
     "ws": "8.22.0",
     "@browserkit/tools": "workspace:*",
+    "@browserkit/site-mapper": "workspace:*",
     "@browserkit/credentials": "workspace:*"
   },
   "devDependencies": {

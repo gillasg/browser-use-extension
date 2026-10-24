@@ -16,6 +16,7 @@ const BOOLEAN = new Set([
   "include-actions",
   "json",
   "no-build",
+  "no-boosts",
   "no-register",
   "off",
   "quiet",

@@ -3,9 +3,9 @@ import type { Overrides } from "./types.js";
 // Redaction for everything that leaves the machine or goes into a shareable file: reports,
 // exported specs, samples and curl examples. The local site model keeps real values so calls work.
 
-const SECRET_HEADERS =
+export const SECRET_HEADERS =
   /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|apikey|x-auth-token|x-access-token|x-csrf-token|x-xsrf-token|csrf-token|x-amz-security-token)$|token|secret|session|password|signature|x-.*-key$/i;
-const SECRET_KEYS =
+export const SECRET_KEYS =
   /^(password|passwd|pwd|pass|secret|client_secret|token|access_?token|refresh_?token|id_?token|api_?key|apikey|authorization|auth|session(_?id)?|sid|ssn|card_?number|cc_?number|cvv|cvc|otp|pin|private_?key|csrf(_?token)?|xsrf(_?token)?|authenticity_token)$/i;
 const JWT = /\beyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]{6,}\b/g;
 const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;

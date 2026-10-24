@@ -28,6 +28,9 @@ importers:
       "@browserkit/credentials":
         specifier: workspace:*
         version: link:../../packages/credentials
+      "@browserkit/site-mapper":
+        specifier: workspace:*
+        version: link:../../packages/site-mapper
       "@browserkit/tools":
         specifier: workspace:*
         version: link:../../packages/tools
@@ -224,6 +227,10 @@ importers:
         version: 4.6.5
 
   packages/site-mapper:
+    dependencies:
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
     devDependencies:
       "@eslint/js":
         specifier: 10.0.1

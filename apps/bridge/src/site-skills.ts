@@ -10,6 +10,8 @@ export interface SiteSkill {
   description: string;
   examples: string;
   code: string;
+  /** Imported skills start false; the user enables them explicitly. */
+  enabled?: boolean;
   updatedAt: number;
 }
 type Request =
@@ -26,11 +28,14 @@ export async function siteSkillCall(directory: string, request: Request): Promis
   if (request.siteSkill === "list") {
     const host = hostOf(request.url);
     return (await all(directory))
+      .filter((skill) => skill.enabled !== false)
       .filter((skill) => !host || skill.domains.some((domain) => matches(host, domain)))
       .map(({ name, domains, description }) => ({ name, domains, description }));
   }
   if (request.siteSkill === "get") {
-    const skill = (await all(directory)).find((item) => item.name === validName(request.name));
+    const skill = (await all(directory)).find(
+      (item) => item.name === validName(request.name) && item.enabled !== false,
+    );
     if (!skill) throw new Error(`SKILL_NOT_FOUND: ${request.name}`);
     return skill;
   }
@@ -83,6 +88,7 @@ function validSkill(skill: Partial<SiteSkill> | undefined): SiteSkill {
     description: text(skill?.description, 2000, "description"),
     examples: text(skill?.examples, 4000, "examples"),
     code,
+    enabled: skill?.enabled !== false,
     updatedAt: Date.now(),
   };
 }
@@ -104,4 +110,40 @@ function hostOf(url: string | undefined): string | undefined {
 function matches(host: string, domain: string): boolean {
   if (domain.startsWith("*.")) return host === domain.slice(2) || host.endsWith(domain.slice(1));
   return host === domain || host.endsWith("." + domain);
+}
+
+/** Every skill, including imported ones that are still disabled. */
+export async function readSiteSkills(directory: string): Promise<SiteSkill[]> {
+  return all(directory);
+}
+
+/** Saves skills from a site pack disabled; the user enables them explicitly. */
+export async function importSiteSkills(
+  directory: string,
+  skills: Partial<SiteSkill>[],
+): Promise<SiteSkill[]> {
+  const saved: SiteSkill[] = [];
+  for (const skill of skills) {
+    const valid = validSkill({ ...skill, enabled: false });
+    await writeSkill(directory, valid);
+    saved.push(valid);
+  }
+  return saved;
+}
+
+export async function enableSiteSkills(directory: string, site: string): Promise<string[]> {
+  const host = hostOf(site.includes("://") ? site : `https://${site}`);
+  if (!host) throw new Error(`Not a site: ${site}`);
+  const enabled: string[] = [];
+  for (const skill of await all(directory)) {
+    if (skill.enabled !== false || !skill.domains.some((domain) => matches(host, domain))) continue;
+    await writeSkill(directory, { ...skill, enabled: true, updatedAt: Date.now() });
+    enabled.push(skill.name);
+  }
+  return enabled;
+}
+
+async function writeSkill(directory: string, skill: SiteSkill): Promise<void> {
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, skill.name + ".json"), JSON.stringify(skill, null, 2) + "\n");
 }

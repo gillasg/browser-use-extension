@@ -28,6 +28,19 @@ export { generateClient } from "./emit/client.js";
 export { markdownReport, curlExample, redactedSamples } from "./emit/report.js";
 export { htmlReport } from "./emit/html.js";
 export { createRedactor } from "./redact.js";
+export {
+  exportSitePack,
+  installSitePack,
+  readSitePack,
+  skillsForSite,
+  PACK_FORMAT,
+  PACK_VERSION,
+  type PackBoost,
+  type PackExport,
+  type PackManifest,
+  type PackSkill,
+  type SitePack,
+} from "./pack.js";
 export { diffModels, formatDiff, schemaChanges } from "./diff.js";
 export * from "./registry.js";
 export { rebuild, importCaptures, saveRecording, loadFlows } from "./workflow.js";
