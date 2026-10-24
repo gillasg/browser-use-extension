@@ -22,6 +22,7 @@ export function formatResult(result: Json): {
         `${stats.popups ? `; popups: ${stats.popups} parked` : ""}`,
     );
   let text = parts.join("\n") || "(no output)";
+  if (typeof result.runLog === "string") text += "\nrun log: " + result.runLog;
   if (text.length > MAX_TEXT)
     text = text.slice(0, MAX_TEXT) + `\n[... ${text.length - MAX_TEXT} more characters clipped]`;
   const images = ((result.steps as Json[] | undefined) ?? [])

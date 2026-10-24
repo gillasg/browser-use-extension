@@ -161,10 +161,18 @@ var browser = Object.freeze({
       ...(options.window ? {window: {width: Math.round(options.window.width ?? 1920), height: Math.round(options.window.height ?? 1080)}} : {})});
     if (!options.window) __opened.set(origin || url, result.tab.target);
     await bu.use(result.tab.target);
-    return __openResult(result.tab, false);
+    if (result.navigation === 'failed') {
+      console.log('[warn] tab ' + result.tab.target.tabId + ' opened, but ' + url + ' did not load: ' + (result.reason || 'navigation failed') + '; the tab is still yours (page.navigation is "failed", page.reason says why)');
+    }
+    return __openResult(result.tab, false, result.navigation === 'failed' ? result.reason : undefined);
   },
   // Fetch without a tab: from the extension, with the user's cookies (credentials: 'omit' to skip).
-  fetch: (url, init = {}) => __call({fetch: {...init, url: String(url)}}),
+  // A failed fetch carries why it failed: kind (dns, tls, refused, reset, timeout, cors,
+  // blocked-page), host, and networkBlock for a name that resolves to a block or sinkhole page.
+  fetch: async (url, init = {}) => {
+    try { return await __call({fetch: {...init, url: String(url)}}); }
+    catch (error) { throw __fetchFailure(error); }
+  },
   pool: (items, worker, options = {}) => __pool(items, worker, options),
   // Close every tab this chat/session opened (page.keep tabs stay), returning {closed, remaining}.
   reset: () => __call({tabs:'reset'}),
@@ -335,14 +343,38 @@ var browser = Object.freeze({
     }),
     network: Object.freeze({
       start: (options = {}) => __call({network:'start', target, ...options}),
+      // The tab is recorded from its first request on, so this works without start(). An empty
+      // list says why it is empty (it never is a bare []).
       list: async (options = {}) => {
-        try { return await __call({network:'list', target, ...(typeof options === 'string' ? {match: options} : options)}); }
+        var filter = typeof options === 'string' ? {match: options} : options;
+        var entries;
+        try { entries = await __call({network:'list', target, ...filter}); }
         catch (error) {
           if (!/Not recording/.test(String(error && error.message))) throw error;
           await __call({network:'start', target});
           console.log('[ok] network capture started now (it was off, so nothing earlier was recorded); repeat the action or reload, then list again');
-          return [];
+          entries = [];
         }
+        if (!entries.length) {
+          var state = await __call({network:'state', target}).catch(() => ({}));
+          var note = state.note;
+          if (!note && state.recent && state.recent.length)
+            note = 'no request matches ' + (filter.match ? '"' + filter.match + '"' : JSON.stringify(filter)) + ' here; captured: ' + state.recent.join(', ');
+          if (note) {
+            console.log('[ok] ' + note);
+            Object.defineProperty(entries, 'note', {value: note, enumerable: false});
+          }
+        }
+        return entries;
+      },
+      // Resolves with the first request finishing after this call whose URL matches (substring or
+      // /regex/), optionally a method and statuses: {url, status, headers, body}. Use it instead of
+      // a sleep after a click, or start it first and await it after the click.
+      waitFor: async (options = {}, extra = {}) => {
+        var filter = typeof options === 'string' || options instanceof RegExp ? {match: options} : {...options, ...extra};
+        if (filter.match instanceof RegExp) { filter.regex = true; filter.match = filter.match.source; }
+        if (!filter.match && !filter.method && !filter.status) throw Error('page.network.waitFor needs a match (a URL part or /regex/), a method or a status');
+        return __call({network:'waitFor', target, ...filter});
       },
       get: (id) => __call({network:'get', target, id}),
       // Failed requests grouped by endpoint: statuses, sizes, timing, block headers and the last
@@ -420,14 +452,16 @@ function __compactTab(tab) {
   return entry;
 }
 // openTab returns a page (so page.title() and page.url() keep working) with the tab it used
-// exposed as id, tab and reused.
-function __openResult(tab, reused) {
+// exposed as id, tab and reused; navigation is "ok", or "failed" with the page's reason.
+function __openResult(tab, reused, failedReason) {
   var page = browser.page(tab.target);
   var id = tab.target.tabId;
   return new Proxy(page, {
     get: (object, key) => {
       if (key === 'id') return id;
       if (key === 'reused') return reused === true;
+      if (key === 'navigation') return failedReason === undefined ? 'ok' : 'failed';
+      if (key === 'reason') return failedReason;
       return object[key];
     },
   });
@@ -462,6 +496,24 @@ async function __tabTarget(target) {
 }
 function __clamp(value, min, max) { return Math.min(max, Math.max(min, Math.round(Number(value)) || min)); }
 function __sleep(ms) { return new Promise((done) => setTimeout(done, Math.min(30000, Math.max(0, Number(ms) || 0)))); }
+// A browser.fetch failure that named its kind and host (see native-browser-fetch): the message
+// stays readable and kind, host and networkBlock are fields an agent can branch on.
+function __fetchFailure(error) {
+  var text = String(error && error.message || error);
+  var found = /\\[fetch kind=([a-z-]+) host=([^ \\]]*)([^\\]]*)\\]/.exec(text);
+  if (!found) return error;
+  var fields = {};
+  for (var pair of found[3].trim().split(/\\s+/)) {
+    var at = pair.indexOf('=');
+    if (at > 0) fields[pair.slice(0, at)] = pair.slice(at + 1);
+  }
+  var failure = Error(text.replace(found[0], '').trim());
+  failure.kind = found[1];
+  failure.host = found[2];
+  if (fields.networkBlock) failure.networkBlock = fields.networkBlock === 'true';
+  if (fields.detail) failure.detail = fields.detail;
+  return failure;
+}
 function __absoluteUrl(url, target) {
   url = String(url);
   try { return new URL(url).href; } catch {}

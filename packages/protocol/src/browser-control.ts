@@ -200,7 +200,15 @@ export const BrowserExecutorResultSchema = z.discriminatedUnion("kind", [
       focusedWindowId: z.number().int().nonnegative().optional(),
     })
     .strict(),
-  z.object({ kind: z.literal("tab"), tab: BrowserTabSchema }).strict(),
+  z
+    .object({
+      kind: z.literal("tab"),
+      tab: BrowserTabSchema,
+      /** "failed" when the tab exists but its page did not load: the tab still belongs to the run. */
+      navigation: z.enum(["ok", "failed"]).optional(),
+      reason: z.string().max(500).optional(),
+    })
+    .strict(),
   SemanticObservationSchema,
   ScreenshotObservationSchema,
   z

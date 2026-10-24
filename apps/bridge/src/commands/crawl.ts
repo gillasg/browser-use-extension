@@ -168,16 +168,29 @@ async function runCheck(args: Args): Promise<number> {
   const urls = args.positional;
   const file = flag(args, "file");
   if (!urls.length && !file)
-    throw new Error("Usage: browserkit check <urls...|--file f> [--via http]");
+    throw new Error(
+      "Usage: browserkit check <urls...|--file f> [--via http] [--paths p] [--expect t]",
+    );
   const via = flag(args, "via") === "http" ? "http" : "auto";
+  const paths = list(args, "paths");
+  const expect = flag(args, "expect");
   const report = (await crawlTool.run(
-    { action: "check", urls, ...(file ? { file } : {}), via },
+    {
+      action: "check",
+      urls,
+      ...(file ? { file } : {}),
+      via,
+      ...(paths.length ? { paths } : {}),
+      ...(expect ? { expect } : {}),
+    },
     { workspace: process.cwd() },
   )) as CheckReport;
   const saved = await saveCheck(report.results);
   if (has(args, "json")) printJson(report);
   else {
     printRows(Object.entries(report.counts).map(([verdict, count]) => [verdict, String(count)]));
+    for (const line of report.paths ?? [])
+      out(`paths: ${line.host} ${line.ok} ok, ${line.failed} failed of ${line.probes.length}`);
     out(
       `spotCheck: ${report.spotCheck.checked} checked, ${report.spotCheck.disagreed.length} disagreed`,
     );
@@ -213,14 +226,18 @@ export const checkCommand: Command = {
   name: "check",
   group: "Read the web",
   summary: "check which of many sites load, with evidence for each verdict",
-  help: `Usage: browserkit check <urls...|--file f> [--via http] [--json]
+  help: `Usage: browserkit check <urls...|--file f> [--via http] [--paths p,p] [--expect t] [--json]
 
-  --file <path>   a file listing hosts or URLs (JSON array/object or one per line)
-  --via http      never start Chrome; otherwise plain HTTP first, then Chrome for the rest
-  --json          the whole report as JSON
+  --file <path>     a file listing hosts or URLs (JSON array/object or one per line)
+  --via http        never start Chrome; otherwise plain HTTP first, then Chrome for the rest
+  --paths <paths>   paths to probe on every host, comma separated ('/api/x,/stream.m3u8')
+  --expect <what>   what those paths should answer: json, html, m3u8, xml, text or a type
+  --json            the whole report as JSON
 
 Checks up to 5000 sites, prints the verdict counts and the spot-check line, and saves
-checks/<timestamp>/results.json and results.csv in the current folder.`,
+checks/<timestamp>/results.json and results.csv in the current folder. With --paths, every
+host is asked the same paths and each answer is typed by its content type and real shape (a
+JSON endpoint is told apart from a site answering its HTML catch-all page with 200).`,
   run: runCheck,
 };
 

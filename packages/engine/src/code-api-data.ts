@@ -45,6 +45,26 @@ function __readMetadata() {
 
 // Runs in the page, so the metadata reader is passed in rather than referenced.
 function __readPageData(readMetadata, options) {
+  // Every array of objects inside the embedded data, by path: a Next/Nuxt/Redux page keeps what
+  // it renders in here, so this is the cheapest way to the data behind the layout.
+  function dataLists(root, limit) {
+    var found = [];
+    function walk(value, path, depth) {
+      if (!value || typeof value !== 'object' || depth > 8 || found.length >= limit) return;
+      if (Array.isArray(value)) {
+        var first = value[0];
+        if (!value.length) return;
+        if (first && typeof first === 'object' && !Array.isArray(first))
+          found.push({path: path, count: value.length, keys: Object.keys(first).slice(0, 12), sample: value.slice(0, 5)});
+        // Nested lists live inside the items too (a page of orders with its lines).
+        walk(first, path + '[]', depth + 1);
+        return;
+      }
+      for (var key of Object.keys(value).slice(0, 60)) walk(value[key], path ? path + '.' + key : key, depth + 1);
+    }
+    walk(root, '', 0);
+    return found;
+  }
   var parse = (text) => { try { return JSON.parse(text); } catch { return undefined; } };
   var plain = (value) => { try { return JSON.parse(JSON.stringify(value)); } catch { return undefined; } };
   var data = {}, notes = [], partial = false;
@@ -99,6 +119,22 @@ function __readPageData(readMetadata, options) {
     try { params = [...new URL(location.href).searchParams.keys()]; } catch {}
     return {sources: sources, urlParams: params, partial, notes};
   }
+  var find = options && Array.isArray(options.find) ? options.find.map(String).slice(0, 12) : [];
+  var lists = dataLists(data, 20);
+  if (find.length) {
+    var hits = lists.filter((list) => list.sample[0] && find.every((key) => key in list.sample[0]));
+    if (!hits.length)
+      notes.push('no array of objects with ' + find.join(', ') + ' in the page data; source keys: ' + Object.keys(data).join(', '));
+    return {
+      find: find,
+      lists: hits.map((list) => ({path: list.path, count: list.count, keys: list.keys,
+        items: list.sample.slice(0, Math.max(1, Math.min(50, Number(options.max) || 10)))})),
+      sources: Object.keys(data),
+      partial,
+      notes,
+    };
+  }
+  if (lists.length) data.lists = lists.slice(0, 5).map((list) => ({path: list.path, count: list.count, keys: list.keys}));
   data.metadata = readMetadata();
   if (partial) { data.partial = true; data.notes = notes; }
   return data;

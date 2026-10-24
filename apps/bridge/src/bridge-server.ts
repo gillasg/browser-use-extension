@@ -13,6 +13,7 @@ import {
   truncateForJournal,
   type JournalTarget,
 } from "./session-journal.js";
+import { runLogPath, writeRunLog } from "./session-runs.js";
 import { isWorkspaceRequest, validateUploadFiles, workspaceCall } from "./workspace.js";
 
 // The bridge sits between the browser (extension executors) and agents (CLI and MCP clients).
@@ -39,6 +40,8 @@ interface Cell {
   timer: ReturnType<typeof setTimeout> | undefined;
   progress: (message: Json) => void;
   finish: (result: Json) => void;
+  /** Workspace files this cell wrote, for the run log. */
+  files: string[];
 }
 
 const PROTOCOL = { major: 1, minor: 6 };
@@ -100,6 +103,7 @@ export class Bridge {
               : {}),
           }),
         finish: resolve,
+        files: [],
       });
       this.pause(cellId, false);
       send(executor.socket, {
@@ -212,7 +216,8 @@ export class Bridge {
     try {
       const cell = this.cells.get(String(message.cellId));
       if (!cell) throw new Error("Browser cell is no longer active");
-      reply({ value: await serveRequest(message.request, cell.session) });
+      const value = await serveRequest(message.request, cell.session, cell.files);
+      reply({ value });
     } catch (error) {
       reply({ error: (error instanceof Error ? error.message : String(error)).slice(0, 20000) });
     }
@@ -261,6 +266,16 @@ export class Bridge {
     if (!cell) return;
     this.cells.delete(cellId);
     if (cell.timer) clearTimeout(cell.timer);
+    // A compact run log per run in the session folder: tabs, hosts, files and jobs.
+    const runLog = runLogPath(cell.session);
+    void writeRunLog(runLog, {
+      session: cell.session,
+      startedAt: cell.startedAt,
+      durationMs: Date.now() - cell.startedAt,
+      isError: typeof result.error === "string",
+      files: cell.files,
+      result,
+    }).catch(() => undefined);
     try {
       const isError = typeof result.error === "string";
       const preview = truncateForJournal(
@@ -275,11 +290,12 @@ export class Bridge {
         durationMs: Date.now() - cell.startedAt,
         resultPreview: preview,
         opened: Array.isArray(result.opened) ? result.opened.length : 0,
+        runLog,
       }).catch(() => undefined);
     } catch {
       // A journal entry is never allowed to fail the cell it describes.
     }
-    cell.finish(result);
+    cell.finish({ ...result, runLog });
   }
 
   private async restoreSessions(): Promise<void> {
@@ -325,10 +341,20 @@ export class Bridge {
 }
 
 /** Workspace files, site skills and upload checks: what a cell asks of the machine. */
-function serveRequest(request: unknown, session: string): Promise<unknown> {
+function serveRequest(request: unknown, session: string, files?: string[]): Promise<unknown> {
   const workspace = join(dataDirectory(), "workspaces", session);
+  noteWorkspaceWrite(files, request);
   const answer = hostHandler(request, { source: "bridge", scope: session, workspace });
   return answer ?? Promise.reject(new Error("UNSUPPORTED: unknown browser runtime request"));
+}
+
+/** A workspace file this cell wrote, for the run log. */
+function noteWorkspaceWrite(files: string[] | undefined, request: unknown): void {
+  if (!files || !isWorkspaceRequest(request)) return;
+  const kind = (request as { workspace?: unknown }).workspace;
+  const name = (request as { name?: unknown }).name;
+  if (typeof name === "string" && kind !== "load" && kind !== "loadHelper" && kind !== "image")
+    files.push(name);
 }
 
 const hostHandler = createHostHandler({

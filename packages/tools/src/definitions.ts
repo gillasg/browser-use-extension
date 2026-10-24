@@ -75,6 +75,8 @@ export type CrawlToolInput = {
   formats?: Format[];
   render?: "auto" | "static" | "browser";
   via?: "auto" | "http";
+  paths?: string[];
+  expect?: string;
   api?: { site: string; operation: string; params?: Record<string, unknown>; maxItems?: number };
 };
 
@@ -121,6 +123,18 @@ const crawlParameters: JsonObjectSchema = {
       enum: ["auto", "http"],
       description: "For check: http never starts Chrome.",
     },
+    paths: {
+      type: "array",
+      items: { type: "string", maxLength: 500 },
+      maxItems: 20,
+      description: 'For check: paths to probe on every host, e.g. ["/api/x"].',
+    },
+    expect: {
+      type: "string",
+      maxLength: 60,
+      description:
+        "For check: what those paths should answer (json, html, m3u8, xml, text or a content type); the body's real shape is checked.",
+    },
     api: {
       type: "object",
       description: "For crawl: read a mapped site operation instead of crawling pages.",
@@ -160,7 +174,7 @@ export const crawlTool: AgentToolDefinition<CrawlToolInput> = {
     { name: "map", params: ["url", "query", "limit"] },
     { name: "search", params: ["query", "limit"] },
     { name: "find", params: ["query", "criteria", "columns", "limit"] },
-    { name: "check", params: ["urls", "file", "limit", "via"] },
+    { name: "check", params: ["urls", "file", "limit", "via", "paths", "expect"] },
   ],
   parameters: crawlParameters,
   async run(input, context) {
@@ -171,7 +185,11 @@ export const crawlTool: AgentToolDefinition<CrawlToolInput> = {
       const urls = [...(input.urls ?? []), ...(await urlsFromFile(input.file, context.workspace))];
       if (!urls.length)
         throw new Error("Give urls (hosts or URLs) or a workspace file listing them");
-      return checkSites(urls.slice(0, 5000), { via: input.via ?? "auto" });
+      return checkSites(urls.slice(0, 5000), {
+        via: input.via ?? "auto",
+        ...(input.paths?.length ? { paths: input.paths.slice(0, 20) } : {}),
+        ...(input.expect ? { expect: input.expect } : {}),
+      });
     }
     if (input.action === "find")
       return findList(require(input.query, "query"), {

@@ -34,13 +34,15 @@ export function takeLearned(recorder: Taking): unknown {
   const ready = [...recorder.entries.values()].filter(
     (entry) => entry.done && !entry.requestBodyPending && !recorder.taken?.has(entry.id),
   );
+  // The page itself is listed by page.network, but a site's API is its calls, not its documents.
+  const calls = ready.filter((entry) => entry.type !== "Document");
   for (const entry of ready) {
     if (recorder.passive) {
       recorder.bodyBytes -= entry.body?.length ?? 0;
       recorder.entries.delete(entry.id);
     } else recorder.taken.add(entry.id);
   }
-  return toHar(ready.filter((entry) => !isTrackerUrl(entry.url)).map(withoutSecrets));
+  return toHar(calls.filter((entry) => !isTrackerUrl(entry.url)).map(withoutSecrets));
 }
 
 function withoutSecrets(entry: NetworkEntry): NetworkEntry {

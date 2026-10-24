@@ -31,7 +31,28 @@ export interface SiteCheck {
   status?: number;
   finalUrl?: string;
   title?: string;
+  /** The answer's content type, and the shape its body really is. */
+  contentType?: string;
+  shape?: PageShape;
+  /** What `paths` found on this host, when paths were given. */
+  paths?: PathProbe[];
   /** Why: the status, the bot-check vendor, the network error, or what made it parked. */
+  reason?: string;
+}
+
+/** What a body really is: parsed JSON, a page, the site's catch-all page, nothing, or something else. */
+export type PageShape =
+  "json-object" | "json-array" | "html-page" | "catch-all" | "empty" | "other";
+
+export interface PathProbe {
+  path: string;
+  url: string;
+  status?: number;
+  contentType?: string;
+  shape: PageShape;
+  /** Whether the answer is what `expect` asked for (a status under 400 when nothing was asked). */
+  ok: boolean;
+  bytes?: number;
   reason?: string;
 }
 
@@ -44,6 +65,10 @@ export interface CheckOptions {
   browser?: boolean;
   /** "http" never starts Chrome; auto (default) settles uncertain sites there. */
   via?: "auto" | "http";
+  /** Extra paths to probe on every host, e.g. ["/api/x", "/stream.m3u8"]. */
+  paths?: readonly string[];
+  /** What those paths should answer: "json", "html", "m3u8", "xml", "text" or a content type. */
+  expect?: string;
   onProgress?(done: number, total: number): void;
 }
 
@@ -54,6 +79,8 @@ export interface CheckReport {
   browserUsed: boolean;
   /** Pages loaded in Chrome, including spot checks. */
   chromePages: number;
+  /** What the paths check found, when paths were given: one line per host. */
+  paths?: { host: string; probes: PathProbe[]; ok: number; failed: number; expectation?: string }[];
 }
 
 interface Answer {
@@ -102,7 +129,170 @@ export async function checkSites(
       if (!SETTLED.has(result.verdict)) {
         result.reason = `${result.reason ?? result.verdict}; not checked in Chrome (${options.via === "http" ? "via http" : "no browser"})`;
       }
-  return { results, counts: countVerdicts(results), spotCheck, browserUsed, chromePages };
+  const paths = await probeEveryHost(results, options);
+  return {
+    results,
+    counts: countVerdicts(results),
+    spotCheck,
+    browserUsed,
+    chromePages,
+    ...(paths.length ? { paths } : {}),
+  };
+}
+
+/**
+ * `paths` probes on every host: the same paths asked of each site, so one that answers JSON where
+ * another answers its HTML catch-all page is obvious. Plain HTTP only; fast and many at once.
+ */
+async function probeEveryHost(
+  results: readonly SiteCheck[],
+  options: CheckOptions,
+): Promise<NonNullable<CheckReport["paths"]>> {
+  const paths = (options.paths ?? [])
+    .map((path) => String(path).trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  if (!paths.length) return [];
+  const lines: NonNullable<CheckReport["paths"]> = await mapLimit(
+    results,
+    Math.min(options.concurrency ?? 40, 20),
+    async (result) => {
+      const probes = await probePaths(result.url, paths, options);
+      result.paths = probes;
+      const ok = probes.filter((probe) => probe.ok).length;
+      return {
+        host: result.host,
+        probes,
+        ok,
+        failed: probes.length - ok,
+        ...(options.expect ? { expectation: options.expect } : {}),
+      };
+    },
+  );
+  return lines;
+}
+
+async function probePaths(
+  url: string,
+  paths: readonly string[],
+  options: CheckOptions,
+): Promise<PathProbe[]> {
+  const origin = new URL(url).origin;
+  const timeoutMs = options.timeoutMs ?? 8000;
+  const catchAll = await answersAnyPath(origin, timeoutMs);
+  const probes: PathProbe[] = [];
+  for (const path of paths)
+    probes.push(await probePath(origin, path, catchAll, timeoutMs, options));
+  return probes;
+}
+
+/** A site that answers a nonsense path with its HTML page has a catch-all: paths cannot be typed. */
+async function answersAnyPath(origin: string, timeoutMs: number): Promise<boolean> {
+  const probe = await get(`${origin}/__browserkit_missing_${Date.now()}`, timeoutMs);
+  return Boolean(probe && probe.status === 200 && /html/i.test(probe.contentType));
+}
+
+async function probePath(
+  origin: string,
+  path: string,
+  catchAll: boolean,
+  timeoutMs: number,
+  options: CheckOptions,
+): Promise<PathProbe> {
+  const target = new URL(path, origin).href;
+  const answer = await get(target, timeoutMs);
+  if (!answer)
+    return {
+      path,
+      url: target,
+      shape: "empty",
+      ok: false,
+      reason: "no answer (the name does not resolve, or the connection failed)",
+    };
+  const raw = shapeOf(answer.contentType, answer.body);
+  const shape = raw === "html-page" && catchAll && answer.status === 200 ? "catch-all" : raw;
+  const probe: PathProbe = {
+    path,
+    url: target,
+    status: answer.status,
+    contentType: answer.contentType,
+    shape,
+    ok: false,
+    bytes: answer.body.length,
+  };
+  const expectation = expectationOf(options.expect, probe);
+  probe.ok = expectation.ok;
+  if (expectation.reason) probe.reason = expectation.reason;
+  return probe;
+}
+
+interface Answer2 {
+  status: number;
+  contentType: string;
+  body: string;
+}
+
+async function get(url: string, timeoutMs: number): Promise<Answer2 | undefined> {
+  try {
+    const response = await fetch(url, {
+      headers: HEADERS,
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const body = (await response.text()).slice(0, BODY_LIMIT);
+    return {
+      status: response.status,
+      contentType: response.headers.get("content-type") ?? "",
+      body,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** What a body really is: JSON parses (an object or an array), HTML, nothing, or other bytes. */
+export function shapeOf(contentType: string, body: string): PageShape {
+  const text = body.trim();
+  if (!text) return "empty";
+  if (/json/i.test(contentType) || text.startsWith("{") || text.startsWith("[")) {
+    try {
+      return Array.isArray(JSON.parse(text) as unknown) ? "json-array" : "json-object";
+    } catch {
+      // A broken or partial JSON body is not JSON.
+    }
+  }
+  if (/html/i.test(contentType) || /^<(!doctype html|html[\s>])/i.test(text)) return "html-page";
+  return "other";
+}
+
+/** Whether an answer is what `expect` asked for, and why not when it is not. */
+export function expectationOf(
+  expect: string | undefined,
+  probe: PathProbe,
+): { ok: boolean; reason?: string } {
+  const failed = `HTTP ${probe.status ?? 0}`;
+  if (!expect) {
+    const ok = probe.status !== undefined && probe.status < 400;
+    return ok ? { ok } : { ok, reason: failed };
+  }
+  if (expectationMatches(expect.toLowerCase(), probe)) return { ok: true };
+  const got = `${probe.status !== undefined ? "HTTP " + probe.status + ", " : ""}${probe.contentType || "no content type"}, ${probe.shape}`;
+  const catchAll =
+    probe.shape === "catch-all"
+      ? ` — the site answers any path with its HTML page (catch-all), so ${probe.path} is probably not an endpoint`
+      : "";
+  return { ok: false, reason: `expected ${expect}, got ${got}${catchAll}` };
+}
+
+function expectationMatches(expect: string, probe: PathProbe): boolean {
+  const type = (probe.contentType ?? "").toLowerCase();
+  if (expect === "json") return probe.shape === "json-object" || probe.shape === "json-array";
+  if (expect === "json-array") return probe.shape === "json-array";
+  if (expect === "json-object") return probe.shape === "json-object";
+  if (expect === "html") return probe.shape === "html-page";
+  if (expect === "text") return /^text\//.test(type);
+  if (expect === "xml" || expect === "rss") return /xml/.test(type);
+  return Boolean(type) && type.includes(expect);
 }
 
 /** "example.com", "https://example.com/x" → "https://example.com/x"; junk → undefined. */
@@ -126,13 +316,21 @@ async function checkOverHttp(url: string, timeoutMs: number): Promise<SiteCheck>
       signal: AbortSignal.timeout(timeoutMs),
     });
     const html = (await response.text()).slice(0, BODY_LIMIT);
+    const contentType = response.headers.get("content-type") ?? "";
     const answer = {
       status: response.status,
       finalUrl: response.url || url,
       headers: Object.fromEntries(response.headers),
       html,
     };
-    return applyRedirect({ url, host, via: "http", ...judge(answer) });
+    return applyRedirect({
+      url,
+      host,
+      via: "http",
+      contentType,
+      shape: shapeOf(contentType, html),
+      ...judge(answer),
+    });
   } catch (error) {
     if (isDnsFailure(error))
       return { url, host, via: "http", verdict: "dead", reason: "the name does not resolve" };
@@ -254,6 +452,8 @@ function chromeVerdict(result: SiteCheck, answer: ChromeAnswer): Partial<SiteChe
     via: "chrome",
     url: result.url,
     host: result.host,
+    contentType: answer.headers["content-type"] ?? "",
+    shape: shapeOf(answer.headers["content-type"] ?? "", answer.html),
   });
 }
 

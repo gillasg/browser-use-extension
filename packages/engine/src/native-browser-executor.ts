@@ -82,6 +82,7 @@ import {
 } from "./native-browser-navigation.js";
 import { executeSiteScript, handleScriptSync } from "./site-script-runtime.js";
 import { browserPopups } from "./native-browser-popup.js";
+import { captureFromTabStart } from "./native-browser-network.js";
 import type { BrowserIdentity } from "./native-worker-identity.js";
 
 type Capability = Extract<
@@ -209,7 +210,11 @@ export async function performExtra(
         );
       if (request.step.op === "press")
         return pressElement(debuggee, request, () => revalidate(request, tabId));
-      if (request.step.op === "navigate") return navigateReady(tabId, request.step.url);
+      if (request.step.op === "navigate") {
+        // Recorded from the first request, so page.network.list() has the new page's calls.
+        await captureFromTabStart(tabId);
+        return navigateReady(tabId, request.step.url);
+      }
       if (request.step.op === "diagnostics") {
         await enableConsoleCapture(tabId);
         return readDiagnostics(tabId, request.step.clear);
@@ -467,12 +472,33 @@ async function openTab(
     step.ownerTitle ?? ownerTitle(request.chatId),
   );
   if (step.quiet) await enableQuietTab(created.id);
-  await withBrowserDebugger(created.id, () => navigateReady(created.id as number, step.url));
+  const navigation = await navigateOpenedTab(created.id, step.url);
   assertRequestActive(request);
   const tab = await refreshInventoryTab(created.id);
   if (!tab || !sameIdentity(tab.target, identity)) throw new Error("TARGET_LOST");
   bindBrowserSession(created.id, request.chatId);
-  return BrowserExecutorResultSchema.parse({ kind: "tab", tab });
+  return BrowserExecutorResultSchema.parse({
+    kind: "tab",
+    tab,
+    ...(navigation ? { navigation: "failed" as const, reason: navigation } : {}),
+  });
+}
+
+/**
+ * Opens the tab's page, recording it from its first request. A page that will not load leaves a
+ * tab behind: it belongs to this run, so it is reported (navigation: "failed", reason) rather
+ * than thrown away as an untracked stray.
+ */
+async function navigateOpenedTab(tabId: number, url: string): Promise<string | undefined> {
+  try {
+    await withBrowserDebugger(tabId, async () => {
+      await captureFromTabStart(tabId);
+      await navigateReady(tabId, url);
+    });
+    return undefined;
+  } catch (error) {
+    return (error instanceof Error ? error.message : String(error)).slice(0, 400);
+  }
 }
 
 // A window of its own is focused and normal-sized, so Chrome keeps painting it (screencasts and

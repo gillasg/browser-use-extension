@@ -6,6 +6,12 @@ import {
 import { toHar, summarize, type NetworkEntry } from "./native-browser-network-format.js";
 import { dryRunActive, setDryRun } from "./native-browser-dry-run.js";
 import { onEngineInstall } from "./native-engine-install.js";
+import {
+  bodyPreview,
+  describeWait,
+  waitMatcher,
+  type Waitable,
+} from "./native-browser-network-wait.js";
 import { isTrackerUrl, takeLearned } from "./native-browser-network-learn.js";
 import { rememberSessionHeaders, sessionHeadersFor } from "./native-browser-session-headers.js";
 import { hideSecrets } from "./native-browser-secrets.js";
@@ -19,7 +25,8 @@ const DEFAULT_MAX_BODY = 1_000_000;
 const MAX_TOTAL_BODY = 60_000_000;
 const MAX_FRAMES = 200;
 const API_TYPES = new Set(["XHR", "Fetch", "EventSource", "WebSocket", "Document"]);
-const PASSIVE_TYPES = new Set(["XHR", "Fetch"]);
+// A passively recorded tab keeps the page itself and the site's own calls, not fonts and images.
+const PASSIVE_TYPES = new Set(["XHR", "Fetch", "Document"]);
 const PASSIVE_MAX_BODY = 256_000;
 const TEXTUAL = /json|text|javascript|xml|html|graphql|x-www-form-urlencoded|csv|event-stream/i;
 
@@ -38,6 +45,16 @@ interface Recorder {
   passive?: boolean;
   /** Requests already handed over by take. */
   taken?: Set<string>;
+  /** Capture began before the tab's first request (openTab/page.navigate), not after a load. */
+  fromStart?: boolean;
+  /** page.network.waitFor callers still waiting for one request to finish. */
+  waiters?: Set<Waiter>;
+}
+
+interface Waiter {
+  matches(entry: Waitable): boolean;
+  resolve(entry: NetworkEntry): void;
+  timer: ReturnType<typeof setTimeout>;
 }
 const recorders = new Map<number, Recorder>();
 /** Recordings that were stopped: still readable (list, har, save) until a new start or the tab closes. */
@@ -74,6 +91,7 @@ const HANDLERS: Record<string, (recorder: Recorder, params: Params, tabId: numbe
     if (!entry) return;
     entry.failed = String(params.errorText ?? "failed");
     entry.done = true;
+    notifyWaiters(recorder, entry);
   },
   "Network.webSocketCreated": (recorder, params) =>
     add(recorder, {
@@ -172,7 +190,19 @@ function loadingFinished(recorder: Recorder, params: Params, tabId: number): voi
   entry.size = Number(params.encodedDataLength ?? 0);
   entry.durationMs = Math.max(0, Date.now() - entry.startedAt);
   entry.done = true;
-  if (recorder.bodies) void captureBodies(tabId, recorder, entry);
+  const captured = recorder.bodies ? captureBodies(tabId, recorder, entry) : Promise.resolve();
+  void captured.finally(() => notifyWaiters(recorder, entry));
+}
+
+/** A finished request wakes the page.network.waitFor calls that were waiting for it. */
+function notifyWaiters(recorder: Recorder, entry: NetworkEntry): void {
+  if (!recorder.waiters?.size) return;
+  for (const waiter of [...recorder.waiters]) {
+    if (!waiter.matches(entry)) continue;
+    clearTimeout(waiter.timer);
+    recorder.waiters.delete(waiter);
+    waiter.resolve(entry);
+  }
 }
 
 /** Fetches the response body (and an omitted request body) while the browser still has them. */
@@ -284,6 +314,8 @@ function initiatorOf(value: unknown): Pick<NetworkEntry, "initiator"> {
 
 onEngineInstall(() => {
   chrome.tabs.onRemoved.addListener((tabId) => {
+    const recorder = recorders.get(tabId) ?? stopped.get(tabId);
+    if (recorder) cancelWaiters(recorder);
     recorders.delete(tabId);
     stopped.delete(tabId);
     holdBrowserDebugger(tabId, false);
@@ -311,6 +343,7 @@ export async function networkCall(
   if (action === "learn-start") return learnStart(tabId);
   // For site API calls made from the site's page (site-to-api's page transport) only.
   if (action === "session-headers") return sessionHeadersFor(String(options.url ?? ""));
+  if (action === "state") return stateOf(tabId);
   if (action === "take") {
     const recorder = recorders.get(tabId) ?? stopped.get(tabId);
     return recorder ? takeLearned(recorder) : { log: { version: "1.2", entries: [] } };
@@ -319,12 +352,16 @@ export async function networkCall(
     await setDryRun(tabId, false);
     holdBrowserDebugger(tabId, false);
     const active = recorders.get(tabId);
-    if (active) stopped.set(tabId, active);
+    if (active) {
+      cancelWaiters(active);
+      stopped.set(tabId, active);
+    }
     return { stopped: recorders.delete(tabId) };
   }
   const recorder = recorders.get(tabId) ?? stopped.get(tabId);
   if (!recorder) throw new Error("Not recording: call page.network.start() first");
   if (action === "list") return list(recorder, options);
+  if (action === "waitFor") return waitForRequest(tabId, recorder, options);
   if (action === "failures") {
     const match = typeof options.match === "string" ? options.match : "";
     return failuresOf([...recorder.entries.values()], match);
@@ -388,6 +425,16 @@ async function learnStart(tabId: number): Promise<unknown> {
   return { recording: true, passive: true };
 }
 
+/**
+ * Begins recording a tab before its first request, so page.network.list() shows what a page
+ * loaded even though the agent never called start(). Used by openTab and page.navigate.
+ */
+export async function captureFromTabStart(tabId: number): Promise<void> {
+  await learnStart(tabId).catch(() => undefined);
+  const recorder = recorders.get(tabId);
+  if (recorder) recorder.fromStart = true;
+}
+
 async function start(tabId: number, options: Params): Promise<unknown> {
   const recorder: Recorder = recorders.get(tabId) ??
     stopped.get(tabId) ?? {
@@ -426,6 +473,145 @@ function list(recorder: Recorder, options: Params): unknown[] {
     .filter((entry) => !method || entry.method === method)
     .filter((entry) => typeof options.type !== "string" || entry.type === options.type)
     .map(summarize);
+}
+
+/**
+ * Why a list came back empty: the tab is recorded from its first request on, so an empty list
+ * means the page loaded before this chat had the tab. Says so instead of leaving a bare [].
+ */
+function stateOf(tabId: number): Record<string, unknown> {
+  const recording = recorders.get(tabId);
+  if (!recording)
+    return stopped.has(tabId)
+      ? { recording: false, entries: 0, note: "network capture is stopped: page.network.start()" }
+      : {
+          recording: false,
+          entries: 0,
+          note: "nothing captured in this tab yet: capture starts when this chat opens or navigates a tab; reload the page to capture it",
+        };
+  const entries = [...recording.entries.values()];
+  const first = entries.length ? Math.min(...entries.map((entry) => entry.startedAt)) : undefined;
+  return {
+    recording: true,
+    passive: recording.passive === true,
+    entries: entries.length,
+    ...(first ? { since: new Date(first).toISOString() } : {}),
+    ...(entries.length ? { recent: recentOf(entries) } : {}),
+    ...(entries.length
+      ? {}
+      : {
+          note: recording.fromStart
+            ? "nothing recorded in this tab yet: the page has made no requests since the chat opened it (the page itself and its fetch/XHR calls are listed); page.network.start() records everything"
+            : "capture began after the page loaded: reload to capture its requests, or page.network.start() before the flow",
+        }),
+  };
+}
+
+/** The last few requests, for "nothing matched, but this is what happened". */
+function recentOf(entries: readonly NetworkEntry[]): string[] {
+  return entries
+    .slice(-3)
+    .map(
+      (entry) => entry.method + " " + pathOf(entry.url) + (entry.status ? " " + entry.status : ""),
+    );
+}
+
+const WAIT_TIMEOUT_MS = 15_000;
+const WAIT_MAX_MS = 120_000;
+
+/**
+ * Resolves with the first request matching the pattern that finishes from now on (or one already
+ * in flight). A timeout names the pattern and what was captured meanwhile.
+ */
+async function waitForRequest(
+  tabId: number,
+  recorder: Recorder,
+  options: Params,
+): Promise<unknown> {
+  const matches = waitMatcher(options);
+  const label = describeWait(options);
+  const timeoutMs = Math.min(
+    WAIT_MAX_MS,
+    Math.max(500, Number(options.timeoutMs ?? WAIT_TIMEOUT_MS) || WAIT_TIMEOUT_MS),
+  );
+  const entry = await raceRequest(recorder, matches, timeoutMs, label);
+  if (entry.body === undefined && !entry.bodyBase64 && entry.mimeType?.match(TEXTUAL))
+    await captureBodies(tabId, recorder, entry).catch(() => undefined);
+  return waitedEntry(entry);
+}
+
+function raceRequest(
+  recorder: Recorder,
+  matches: (entry: Waitable) => boolean,
+  timeoutMs: number,
+  label: string,
+): Promise<NetworkEntry> {
+  return new Promise<NetworkEntry>((resolve, reject) => {
+    const waiter: Waiter = {
+      matches,
+      resolve,
+      timer: setTimeout(() => {
+        recorder.waiters?.delete(waiter);
+        reject(
+          new Error(
+            "TIMEOUT: no request matching " +
+              label +
+              " completed within " +
+              timeoutMs +
+              " ms" +
+              recentHint(recorder),
+          ),
+        );
+      }, timeoutMs),
+    };
+    recorder.waiters ??= new Set();
+    recorder.waiters.add(waiter);
+  });
+}
+
+function cancelWaiters(recorder: Recorder): void {
+  for (const waiter of [...(recorder.waiters ?? [])]) {
+    clearTimeout(waiter.timer);
+    recorder.waiters?.delete(waiter);
+  }
+}
+
+/** A timeout is clearer with the last few requests the tab made. */
+function recentHint(recorder: Recorder): string {
+  const recent = [...recorder.entries.values()]
+    .filter((entry) => entry.done)
+    .slice(-3)
+    .map(
+      (entry) => entry.method + " " + pathOf(entry.url) + (entry.status ? " " + entry.status : ""),
+    );
+  if (!recent.length) return "; nothing was captured in this tab: page.network.list() says why";
+  return "; captured meanwhile: " + recent.join(", ") + ". page.network.list() has the rest";
+}
+
+function waitedEntry(entry: NetworkEntry): Record<string, unknown> {
+  return {
+    id: entry.id,
+    method: entry.method,
+    url: entry.url,
+    type: entry.type,
+    ...(entry.status !== undefined ? { status: entry.status } : {}),
+    ...(entry.statusText ? { statusText: entry.statusText } : {}),
+    ...(entry.failed ? { failed: entry.failed } : {}),
+    ...(entry.mimeType ? { mimeType: entry.mimeType } : {}),
+    ...(entry.durationMs !== undefined ? { durationMs: entry.durationMs } : {}),
+    ...(entry.size !== undefined ? { size: entry.size } : {}),
+    headers: responseHeadersOf(entry.responseHeaders),
+    body: bodyPreview(entry),
+  };
+}
+
+/** Response headers, capped: enough to read a content type or a block header. */
+function responseHeadersOf(headers: Record<string, string> | undefined): Record<string, string> {
+  const all = Object.entries(headers ?? {});
+  const kept = Object.fromEntries(
+    all.slice(0, 40).map(([name, value]) => [name.toLowerCase(), String(value).slice(0, 500)]),
+  );
+  return all.length > 40 ? { ...kept, "x-headers-not-shown": String(all.length - 40) } : kept;
 }
 
 /**

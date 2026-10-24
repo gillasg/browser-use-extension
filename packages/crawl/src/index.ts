@@ -17,10 +17,14 @@ export {
   originGated,
   judge,
   siteUrl,
+  shapeOf,
+  expectationOf,
   type SiteCheck,
   type SiteVerdict,
   type CheckOptions,
   type CheckReport,
+  type PageShape,
+  type PathProbe,
 } from "./check.js";
 export { StaticFetcher } from "./fetch/static.js";
 export { BrowserFetcher, pageCode } from "./fetch/browser.js";

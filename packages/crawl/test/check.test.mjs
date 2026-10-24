@@ -9,6 +9,7 @@ import {
   judge,
   needsBrowser,
   originGated,
+  shapeOf,
 } from "../dist/index.js";
 
 const page = (body, title = "Shop") => `<!doctype html><title>${title}</title><body>${body}</body>`;
@@ -157,4 +158,107 @@ test("a refused connection goes to the browser instead of failing the page", asy
   });
   const fetched = await fetcher.fetch("https://refuses.example/", { formats: ["markdown"] });
   assert.equal(fetched.fetchedBy, "browser");
+});
+
+test("a body's real shape is read, not its content type", () => {
+  assert.equal(shapeOf("application/json", '{"a":1}'), "json-object");
+  assert.equal(shapeOf("text/html", "[1,2]"), "json-array");
+  assert.equal(shapeOf("text/plain", "<!doctype html><title>x</title>"), "html-page");
+  assert.equal(shapeOf("application/json", "not json {"), "other");
+  assert.equal(shapeOf("application/json", "   "), "empty");
+});
+
+test("check paths probe every host and compare the body's shape", async () => {
+  const routes = (request, response) => {
+    const url = new URL(request.url, "http://localhost");
+    if (url.pathname === "/api/x") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ id: 1, name: "Lamp" }));
+      return true;
+    }
+    if (url.pathname === "/api/list") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify([{ id: 1 }, { id: 2 }]));
+      return true;
+    }
+    if (url.pathname === "/stream.m3u8") {
+      response.setHeader("content-type", "application/vnd.apple.mpegurl");
+      response.end("#EXTM3U\n#EXT-X-VERSION:3\n");
+      return true;
+    }
+    if (url.pathname === "/empty") {
+      response.end("");
+      return true;
+    }
+    return false;
+  };
+  const plain = createServer((request, response) => {
+    if (routes(request, response)) return;
+    response.statusCode = 404;
+    response.setHeader("content-type", "text/html");
+    response.end(page("<p>Not found</p>", "Not found"));
+  });
+  // A site whose router answers every path with the app's HTML page: nothing can be typed by path.
+  const spa = createServer((request, response) => {
+    if (routes(request, response)) return;
+    response.setHeader("content-type", "text/html");
+    response.end(page('<div id="root">App</div>'));
+  });
+  await new Promise((resolve) => plain.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => spa.listen(0, "127.0.0.1", resolve));
+  try {
+    const report = await checkSites(
+      [`http://127.0.0.1:${plain.address().port}/`, `http://127.0.0.1:${spa.address().port}/`],
+      {
+        browser: false,
+        via: "http",
+        timeoutMs: 4000,
+        paths: ["/api/x", "/api/list", "/stream.m3u8", "/missing", "/empty"],
+        expect: "json",
+      },
+    );
+    const [plainLine, spaLine] = report.paths;
+    const probe = (line, path) => line.probes.find((item) => item.path === path);
+    assert.equal(probe(plainLine, "/api/x").shape, "json-object");
+    assert.equal(probe(plainLine, "/api/x").contentType, "application/json");
+    assert.equal(probe(plainLine, "/api/x").ok, true);
+    assert.equal(probe(plainLine, "/api/list").shape, "json-array");
+    assert.equal(probe(plainLine, "/stream.m3u8").shape, "other");
+    assert.match(probe(plainLine, "/stream.m3u8").reason, /expected json/);
+    assert.equal(probe(plainLine, "/missing").shape, "html-page");
+    assert.equal(probe(plainLine, "/empty").shape, "empty");
+    // The site that answers any path with its app page: JSON is never there.
+    assert.equal(probe(spaLine, "/missing").shape, "catch-all");
+    assert.match(probe(spaLine, "/missing").reason, /catch-all/);
+    assert.equal(probe(spaLine, "/api/x").shape, "json-object");
+    assert.equal(plainLine.ok, 2);
+    assert.equal(spaLine.ok, 2);
+    assert.equal(spaLine.expectation, "json");
+  } finally {
+    plain.close();
+    spa.close();
+  }
+});
+test("check paths without expect accept any status under 400", async () => {
+  const server = createServer((request, response) => {
+    if (request.url === "/ok") return response.end("fine");
+    response.statusCode = 404;
+    response.end("gone");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const report = await checkSites([`http://127.0.0.1:${port}/`], {
+      browser: false,
+      via: "http",
+      paths: ["/ok", "/gone"],
+    });
+    const [line] = report.paths;
+    assert.deepEqual(
+      line.probes.map((item) => item.ok),
+      [true, false],
+    );
+  } finally {
+    server.close();
+  }
 });

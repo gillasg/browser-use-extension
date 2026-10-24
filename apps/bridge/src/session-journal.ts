@@ -21,6 +21,8 @@ export interface JournalEntry {
   durationMs: number;
   resultPreview: string;
   opened: number;
+  /** This run's log in the session folder ("sessions/<id>/runs/<time>.json"). */
+  runLog?: string;
 }
 
 const sessionsFile = (): string => join(dataDirectory(), "sessions.json");
