@@ -95,7 +95,8 @@ function commonSections(sections) {
 function rewriteForAeon(text) {
   return text
     .replaceAll("{{workspace}}", "`%LOCALAPPDATA%\\Aeon\\data\\external\\<session>` on Windows")
-    .replaceAll("browserkit", "aeon");
+    .replaceAll("browserkit", "aeon")
+    .replaceAll("aeon's", "Aeon's");
 }
 
 function browserkitWorkspace() {

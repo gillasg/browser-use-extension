@@ -135,7 +135,7 @@ browserkit federate shop.example:search other.example:search --params '{"query":
 browserkit heal shop.example              # drift, breakage, sign-out, bot walls
 ```
 
-- `browserkit` (or `siteMapper` in browser code) only works on sites that are mapped. Check `sites`
+- **Site APIs** (or `siteMapper` in browser code) only work on sites that are mapped. Check `sites`
   first. To map a site: `map`, `describe`, `learn`, or use it in `browser_code` so its requests are
   learned as you go.
 - `call` reads. A write the page made successfully can be repeated with `siteMapper.write`; the
