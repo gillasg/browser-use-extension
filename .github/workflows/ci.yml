@@ -33,6 +33,7 @@ jobs:
       # browser-crawl used to be a linked repo next to this checkout; it is a package here now.
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm format:check
+      - run: pnpm agent-text:check
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
