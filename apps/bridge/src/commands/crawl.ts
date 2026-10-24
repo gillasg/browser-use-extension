@@ -1,14 +1,11 @@
 import { resolve } from "node:path";
 import {
-  crawl,
-  findList,
-  mapSite,
-  scrape,
-  search,
   syncSite,
   writeOutput,
   type Format,
+  type PageResult,
 } from "@browserkit/tools/browser-crawl";
+import { crawlTool, type CrawlToolInput } from "@browserkit/tools/definitions";
 import { flag, has, list, type Args } from "../args.js";
 import { cliModel } from "../host.js";
 import { out, printJson, printRows } from "../output.js";
@@ -39,7 +36,7 @@ function formats(args: Args): Format[] {
   return chosen.length ? (chosen as Format[]) : DEFAULT_FORMATS;
 }
 
-function crawlOptions(args: Args): Parameters<typeof crawl>[0] {
+function crawlOptions(args: Args): CrawlToolInput {
   const start = action(args).target;
   const wholeSite = has(args, "site") ? new URL(start).origin : start;
   const include = list(args, "include");
@@ -47,6 +44,7 @@ function crawlOptions(args: Args): Parameters<typeof crawl>[0] {
   const query = flag(args, "query");
   const api = flag(args, "api");
   return {
+    action: "crawl",
     url: wholeSite,
     limit: Number(flag(args, "limit") ?? 25),
     formats: formats(args),
@@ -54,7 +52,7 @@ function crawlOptions(args: Args): Parameters<typeof crawl>[0] {
     ...(flag(args, "depth") ? { maxDepth: Number(flag(args, "depth")) } : {}),
     ...(include.length ? { include } : {}),
     ...(exclude.length ? { exclude } : {}),
-    ...(query ? { query, strategy: "best" as const } : {}),
+    ...(query ? { query } : {}),
     ...(api ? { api: { site: api.split(":")[0] ?? "", operation: api.split(":")[1] ?? "" } } : {}),
   };
 }
@@ -62,28 +60,41 @@ function crawlOptions(args: Args): Parameters<typeof crawl>[0] {
 async function runScrape(target: string, args: Args): Promise<number> {
   const query = flag(args, "query");
   printJson(
-    await scrape(target, {
-      formats: formats(args),
-      render: render(args),
-      ...(query ? { query } : {}),
-    }),
+    await crawlTool.run(
+      {
+        action: "scrape",
+        url: target,
+        formats: formats(args),
+        render: render(args),
+        ...(query ? { query } : {}),
+      },
+      {},
+    ),
   );
   return 0;
 }
 
 async function runMap(target: string, args: Args): Promise<number> {
   const query = flag(args, "query");
-  const urls = await mapSite(target, {
-    limit: Number(flag(args, "limit") ?? 500),
-    ...(query ? { search: query } : {}),
-  });
+  const urls = (await crawlTool.run(
+    {
+      action: "map",
+      url: target,
+      limit: Number(flag(args, "limit") ?? 500),
+      ...(query ? { query } : {}),
+    },
+    {},
+  )) as { url: string; title?: string }[];
   if (has(args, "json")) printJson(urls);
   else printRows(urls.map((item) => [item.url, item.title]));
   return 0;
 }
 
 async function runSearch(target: string, args: Args): Promise<number> {
-  const results = await search(target, { limit: Number(flag(args, "limit") ?? 10) });
+  const results = (await crawlTool.run(
+    { action: "search", query: target, limit: Number(flag(args, "limit") ?? 10) },
+    {},
+  )) as { url: string; title?: string; snippet?: string }[];
   if (has(args, "json")) printJson(results);
   else printRows(results.map((item) => [item.url, item.title, item.snippet]));
   return 0;
@@ -97,11 +108,15 @@ async function runFind(target: string, args: Args): Promise<number> {
   }
   const criteria = flag(args, "criteria");
   const model = await cliModel();
-  const rows = await findList(target, {
-    columns: Object.keys(columns).length ? columns : { name: "name" },
-    ...(criteria ? { criteria } : {}),
-    ...(model ? { model } : {}),
-  });
+  const rows = (await crawlTool.run(
+    {
+      action: "find",
+      query: target,
+      columns: Object.keys(columns).length ? columns : { name: "name" },
+      ...(criteria ? { criteria } : {}),
+    },
+    model ? { model: async () => model } : {},
+  )) as { url: string; values: Record<string, unknown> }[];
   if (has(args, "json")) printJson(rows);
   else printRows(rows.map((row) => [row.url, ...Object.values(row.values).map(String)]));
   return 0;
@@ -118,7 +133,7 @@ async function runCrawl(args: Args): Promise<number> {
   if (kind === "search") return runSearch(target, args);
   if (kind === "find") return runFind(target, args);
   const outDir = flag(args, "out");
-  const pages = await crawl(crawlOptions(args));
+  const pages = (await crawlTool.run(crawlOptions(args), {})) as PageResult[];
   if (outDir) {
     await writeOutput(pages, resolve(outDir));
     out(`Wrote ${pages.length} pages to ${outDir}`);
