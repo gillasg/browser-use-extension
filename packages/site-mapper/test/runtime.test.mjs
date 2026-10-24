@@ -263,3 +263,36 @@ test("watch reports only items that are new, changed or gone since the last chec
   assert.deepEqual(fewer.removed, ["1002"]);
   assert.equal(fewer.new.length, 0, "an item seen before is not new again");
 });
+
+test("a page fetch blocked by an extension retries directly and says so", async (t) => {
+  const { model } = await shop(t);
+  let direct = 0;
+  const api = await siteMapper(model.site, {
+    model,
+    transport: "page",
+    session: false,
+    transports: {
+      page: {
+        name: "page",
+        async send() {
+          throw new Error("OPERATION_FAILED: TypeError: Failed to fetch");
+        },
+      },
+      direct: {
+        name: "direct",
+        async send() {
+          direct += 1;
+          return { status: 200, headers: {}, json: { items: [{ id: 1 }] } };
+        },
+      },
+    },
+  });
+  const response = await api.request("listProducts", { limit: 2 });
+  assert.equal(response.status, 200);
+  assert.equal(direct, 1, "one retry, over the direct transport");
+  assert.match(response.notes?.[0] ?? "", /ad blocker.*retried directly/);
+
+  const value = await api.call("listProducts", { limit: 2 });
+  assert.equal(value.items[0].id, 1);
+  assert.match(value.notes[0], /retried directly/);
+});

@@ -333,6 +333,16 @@ export class SiteClient {
     try {
       return { response: await this.send(transport, request, context, readOnly), transport };
     } catch (error) {
+      // An extension in the page (an ad blocker wrapping fetch) can make the request fail before
+      // it leaves the browser. That is not an HTTP answer: try the same request directly once.
+      if (readOnly && transport !== this.direct && isFetchFailure(error)) {
+        const response = await this.send(this.direct, request, context, readOnly);
+        response.notes = [
+          ...(response.notes ?? []),
+          "The page could not make this request (a fetch error, often an ad blocker), so it was retried directly.",
+        ];
+        return { response, transport: this.direct };
+      }
       const canFallBack =
         readOnly && transport !== this.direct && this.options.transport !== "page";
       if (!(error instanceof BrowserNotConnected) || !canFallBack) throw error;
@@ -429,7 +439,7 @@ export class SiteClient {
     if (wall) throw new Challenged(id, response, wall);
     if (response.status === 401 || response.status === 403) throw new SignedOut(id, response);
     if (response.status >= 400 || response.status === 0) throw new HttpError(id, response);
-    return response.json ?? response.text;
+    return withNotes(response);
   }
 
   /** The site's saved multi-step actions (overrides.actions). */
@@ -534,6 +544,24 @@ export type SiteMapper = SiteClient &
       (params?: Params, options?: PaginateOptions) => AsyncIterable<unknown>
     >;
   };
+
+/** A request that failed before the site answered: a fetch error in the page, not an HTTP status. */
+function isFetchFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Failed to fetch|NetworkError|Load failed|fetch failed|TypeError: fetch/i.test(message);
+}
+
+/** The operation's data, with the response's notes when it had to take another transport. */
+function withNotes(response: RuntimeResponse): unknown {
+  const value = response.json ?? response.text;
+  if (!response.notes?.length || !value || typeof value !== "object" || Array.isArray(value))
+    return value;
+  const existing = (value as { notes?: unknown }).notes;
+  return {
+    ...value,
+    notes: [...(Array.isArray(existing) ? existing : []), ...response.notes],
+  };
+}
 
 async function initialSession(
   model: SiteModel,

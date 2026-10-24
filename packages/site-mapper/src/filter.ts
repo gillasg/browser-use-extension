@@ -140,6 +140,20 @@ const STATIC_PATHS =
 const AUTH_PATHS =
   /\/(oauth2?|auth|token|refresh|session|login|signin|sign-in|csrf|xsrf)(\/|$|\?)/i;
 
+// A search the page ran for the user: the site's own search often answers HTML, which is still
+// the search operation an app wants (its results are on the page). Keep it like a JSON read.
+const SEARCH_PATH = /(^|\/)(search|autocomplete|suggest|query|find|lookup)(\/|$)/i;
+const SEARCH_PARAM = /^(q|query|term|search|searchterm|keyword|keywords|text|phrase)$/i;
+const SEARCH_STEP = /\b(search|find|look ?up)\b/i;
+
+function isSearchRequest(exchange: Exchange, url: URL): boolean {
+  return (
+    SEARCH_PATH.test(url.pathname) ||
+    [...url.searchParams.keys()].some((name) => SEARCH_PARAM.test(name)) ||
+    SEARCH_STEP.test(exchange.step ?? "")
+  );
+}
+
 export interface Classified {
   exchange: Exchange;
   category: Category;
@@ -252,7 +266,7 @@ function categorize(exchange: Exchange, url: URL): Category | undefined {
   const type = exchange.resourceType;
   if (type && !["xhr", "fetch", "other"].includes(type)) return undefined;
   const answersData = isJsonLike(exchange) || exchange.status === 204 || exchange.method !== "GET";
-  if (!answersData) return undefined;
+  if (!answersData && !isSearchRequest(exchange, url)) return undefined;
   return AUTH_PATHS.test(url.pathname) ? "auth" : "api";
 }
 

@@ -141,3 +141,37 @@ test("Undo refuses a write the API never made", async (t) => {
     (error) => error instanceof NotProven && /nothing to undo/.test(error.message),
   );
 });
+
+test("a search XHR that answers HTML is learned as a search operation", async (t) => {
+  await tempHome(t);
+  const search = {
+    startedDateTime: new Date(Date.UTC(2026, 9, 22, 10, 0, 3)).toISOString(),
+    _resourceType: "xhr",
+    _step: 'fill "Search domains"',
+    request: {
+      method: "GET",
+      url: "https://domains.example/domains/search?q=lamp",
+      headers: [{ name: "accept", value: "text/html" }],
+    },
+    response: {
+      status: 200,
+      headers: [{ name: "content-type", value: "text/html" }],
+      content: {
+        mimeType: "text/html",
+        text: "<ul><li>lamp.com</li><li>lamp.co</li></ul>",
+      },
+    },
+  };
+  const result = await learnLive("domains.example", har(search));
+  const model = await loadModel("domains.example");
+  const operation = model.operations.find((item) => item.capabilities?.includes("search"));
+  assert.ok(operation, JSON.stringify(model.operations.map((item) => item.id)));
+  assert.match(operation.path, /^\/domains\/search/);
+  assert.equal(operation.method, "GET");
+  assert.equal(operation.role, "read");
+  assert.ok(operation.params.some((param) => param.name === "q"));
+  assert.ok(
+    result.learned.some((item) => item.id === operation.id),
+    "the new search operation is announced",
+  );
+});

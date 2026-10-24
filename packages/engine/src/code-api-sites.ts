@@ -54,16 +54,22 @@ var skills = Object.freeze({
 });
 // Mapped site APIs (site-to-api): call an operation, or watch it for items new or changed since the last watch.
 // write repeats a routine write the page has proven; batch runs one over many items, paced.
+// Every method takes the site first, or one object: siteMapper.call('a.com', 'op', {q}) and
+// siteMapper.call({site: 'a.com', operation: 'op', params: {q}}) are the same call.
+var __siteObject = value => value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
 var siteMapper=Object.freeze({
   sites:()=>__call({siteMapper:'sites'}),
-  operations:site=>__call({siteMapper:'operations',site}),
-  call:(site,operation,params={})=>__call({siteMapper:'call',site,operation,params}),
-  undo:(site,operation,params={})=>__call({siteMapper:'undo',site,operation,params}),
-  write:(site,operation,params={})=>__call({siteMapper:'write',site,operation,params}),
-  batch:(site,operation,items,options={})=>__writeBatch(site,operation,items,options),
-  watch:(site,operation,params={},options={})=>__call({siteMapper:'watch',site,operation,params,...options}),
-  action:(site,name,inputs={})=>__call({siteMapper:'action',site,name,params:inputs}),
-  channel:(site,id,options={})=>__call({siteMapper:'channel',site,name:id,params:options}),
+  operations:site=>__call({siteMapper:'operations', ...(__siteObject(site) || {site})}),
+  call:(site,operation,params={})=>__call({siteMapper:'call', ...(__siteObject(site) || {site,operation,params})}),
+  undo:(site,operation,params={})=>__call({siteMapper:'undo', ...(__siteObject(site) || {site,operation,params})}),
+  write:(site,operation,params={})=>__call({siteMapper:'write', ...(__siteObject(site) || {site,operation,params})}),
+  batch:(site,operation,items,options={})=>{
+    var one = __siteObject(site);
+    return one ? __writeBatch(one.site, one.operation, one.items, one.options || one) : __writeBatch(site,operation,items,options);
+  },
+  watch:(site,operation,params={},options={})=>__call({siteMapper:'watch', ...(__siteObject(site) || {site,operation,params,...options})}),
+  action:(site,name,inputs={})=>__call({siteMapper:'action', ...(__siteObject(site) || {site,name,params:inputs})}),
+  channel:(site,id,options={})=>__call({siteMapper:'channel', ...(__siteObject(site) || {site,name:id,params:options})}),
 });
 // The here: line at the top of bu.state(): what already exists for this page and site (its
 // embedded data, the API the site learned, its boosts), printed only when it changes, so the

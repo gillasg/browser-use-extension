@@ -21,6 +21,8 @@ export interface RuntimeResponse {
   json?: unknown;
   text?: string;
   url?: string;
+  /** How the call differed from what was asked, e.g. a direct retry after the page failed. */
+  notes?: string[];
 }
 
 export type Params = Record<string, unknown>;
