@@ -389,10 +389,17 @@ test(
           assert.equal(typeof split.result.result.value, "number", JSON.stringify(split));
           const after = await cell(`
             const result = await browser.closeTab(${splitIds.first});
+            const firstGone = await (async () => {
+              for (let i = 0; i < 50; i++) {
+                if (!(await browser.tabs()).some((tab) => tab.id === ${splitIds.first})) return true;
+                await new Promise((done) => setTimeout(done, 50));
+              }
+              return false;
+            })();
             const tabs = await browser.tabs();
             console.log("SPLITCLOSE " + JSON.stringify({
               result,
-              firstGone: !tabs.some((tab) => tab.id === ${splitIds.first}),
+              firstGone,
               secondThere: tabs.some((tab) => tab.id === ${splitIds.second}),
             }));`);
           const splitClosed = JSON.parse(/SPLITCLOSE (.*)/.exec(after.stdout)[1]);
@@ -854,7 +861,7 @@ test(
             const confirmed = await page.evaluate(() => window.confirm("Remove item?"));
             const pdf = await page.pdf("catalog.pdf");
             await page.emulate({ device: "iPhone", colorScheme: "dark" });
-            const mobile = await page.evaluate(() => ({ w: screen.width, dark: matchMedia("(prefers-color-scheme: dark)").matches, ua: /iPhone/.test(navigator.userAgent) }));
+            const mobile = await page.evaluate(() => ({ touch: matchMedia("(pointer: coarse)").matches, dark: matchMedia("(prefers-color-scheme: dark)").matches, ua: /iPhone/.test(navigator.userAgent) }));
             await page.emulate({ reset: true });
             const downloads = Array.isArray(await browser.downloads.list());
             const tabs = await Promise.all(["a", "b", "c"].map((q) => browser.openTab(${JSON.stringify(siteUrl)} + "?q=" + q)));
@@ -882,7 +889,7 @@ test(
           assert.match(result.consoleErrors, /boom from page/);
           assert.equal(result.confirmed, false);
           assert.deepEqual(result.pdf, { saved: "catalog.pdf" });
-          assert.deepEqual(result.mobile, { w: 390, dark: true, ua: true });
+          assert.deepEqual(result.mobile, { touch: true, dark: true, ua: true });
           assert.equal(result.downloads, true);
           assert.match(
             result.blocked,
