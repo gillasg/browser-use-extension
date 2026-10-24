@@ -3,6 +3,7 @@ import { ApiFetcher } from "./api.js";
 import { BrowserFetcher } from "./browser.js";
 import { StaticFetcher } from "./static.js";
 import type { Fetched, Fetcher, Validators } from "./types.js";
+import { botCheck, isDnsFailure, isNetworkRefusal } from "../challenge.js";
 
 // Mixed fetching: a mapped API when there is one, plain HTTP next, and the browser only when the
 // page needs it (rendered by JavaScript, behind a login, a bot wall, or browser-only options).
@@ -24,12 +25,8 @@ export function needsBrowser(fetched: Fetched): string | undefined {
   if ([401, 403, 407, 503].includes(fetched.status)) return `HTTP ${fetched.status}`;
   if (!/html/i.test(fetched.contentType)) return undefined;
   const html = fetched.body.toString("utf8");
-  if (
-    /cf-challenge|challenge-platform|captcha-delivery|px-captcha|_Incapsula_Resource|checking your browser|enable javascript and cookies/i.test(
-      html,
-    )
-  )
-    return "bot check";
+  const vendor = botCheck(fetched.headers, html);
+  if (vendor) return "bot check";
   const text = html
     .replace(/<(script|style|noscript|template)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<[^>]+>/g, " ")
@@ -90,7 +87,17 @@ export class AutoFetcher {
     const fromApi = await this.fromApi(url, options);
     if (fromApi) return fromApi;
     if (this.browserFirst(url, options)) return this.browser.fetch(url, options);
-    const fetched = await this.static.fetch(url, options, validators);
+    let fetched: Fetched;
+    try {
+      fetched = await this.static.fetch(url, options, validators);
+    } catch (error) {
+      // Refused below HTTP (reset, TLS, timeout): some sites drop connections that do not come
+      // from a real browser. Chrome gets in where plain HTTP cannot, so that host uses it from now.
+      if (options.render === "static" || isDnsFailure(error) || !isNetworkRefusal(error))
+        throw error;
+      this.browserHosts.add(new URL(url).host);
+      return this.browser.fetch(url, options);
+    }
     if (options.render === "static" || fetched.notModified) return fetched;
     const reason = needsBrowser(fetched);
     if (!reason) return fetched;

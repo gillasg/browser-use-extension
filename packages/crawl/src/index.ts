@@ -10,6 +10,16 @@ export { startServer, type CrawlServer, type ServerOptions } from "./server.js";
 export { runMcpServer } from "./mcp.js";
 export { writeOutput, writeDataset, toCsv, toJsonl } from "./output.js";
 export { AutoFetcher, needsBrowser, type AutoOptions } from "./fetch/auto.js";
+export { botCheck, isNetworkRefusal, isDnsFailure } from "./challenge.js";
+export {
+  checkSites,
+  judge,
+  siteUrl,
+  type SiteCheck,
+  type SiteVerdict,
+  type CheckOptions,
+  type CheckReport,
+} from "./check.js";
 export { StaticFetcher } from "./fetch/static.js";
 export { BrowserFetcher, pageCode } from "./fetch/browser.js";
 export { ApiFetcher } from "./fetch/api.js";
