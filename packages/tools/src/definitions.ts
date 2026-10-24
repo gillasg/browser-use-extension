@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { checkSites, crawl, findList, mapSite, scrape, search, type Format } from "browser-crawl";
 import {
   checkCaptures,
+  code as readSiteCode,
   explore,
   importCaptures,
   isSiteToolAction,
@@ -209,6 +210,7 @@ export const crawlTool: AgentToolDefinition<CrawlToolInput> = {
 
 export const SITE_MAPPER_TOOL_ACTIONS = [
   "sites",
+  "code",
   "operations",
   "call",
   "watch",
@@ -247,6 +249,9 @@ export type SiteMapperToolInput = {
   transport?: "auto" | "page" | "direct";
   files?: string[];
   key?: string;
+  grep?: string | string[];
+  maxFiles?: number;
+  maxBytes?: number;
 };
 
 export const HOW_TO_CALL =
@@ -295,6 +300,12 @@ const siteMapperParameters: JsonObjectSchema = {
       description: "For learn/import: capture files in the workspace.",
     },
     key: { type: "string", maxLength: 100, description: "For watch: the item identifier." },
+    grep: {
+      oneOf: [{ type: "string" }, { type: "array", items: { type: "string" }, maxItems: 20 }],
+      description: "For code: a string or regex to match in chunks and manifests.",
+    },
+    maxFiles: { type: "integer", minimum: 1, maximum: 200 },
+    maxBytes: { type: "integer", minimum: 10000, maximum: 8000000 },
   },
   required: ["action"],
   additionalProperties: false,
@@ -303,9 +314,10 @@ const siteMapperParameters: JsonObjectSchema = {
 export const siteMapperTool: AgentToolDefinition<SiteMapperToolInput> = {
   name: "site_mapper",
   description:
-    "Call the API a site learned while you used it (actions: sites, operations, call, watch, action, channel), see its published docs, keep it working (heal, coverage, edit, name, describe, signing, session, export), or map sites you haven't used: by name (explore) or from capture files (import). Calls use the user's logins.",
+    "Call the API a site learned while you used it (actions: code, sites, operations, call, watch, action, channel), see its published docs, keep it working (heal, coverage, edit, name, describe, signing, session, export), or map sites you haven't used: by name (explore) or from capture files (import). code reads routes, chunks, source maps, robots and sitemap before guessing URLs. Calls use the user's logins.",
   actions: [
     { name: "sites", params: [] },
+    { name: "code", params: ["url", "grep", "maxFiles", "maxBytes"] },
     { name: "operations", params: ["site"] },
     { name: "call", params: ["site", "operation", "params", "transport"] },
     { name: "watch", params: ["site", "operation", "params", "transport", "key"] },
@@ -328,6 +340,12 @@ export const siteMapperTool: AgentToolDefinition<SiteMapperToolInput> = {
   parameters: siteMapperParameters,
   async run(input, context) {
     if (input.action === "sites") return { sites: await listSites() };
+    if (input.action === "code")
+      return readSiteCode(input.url ?? input.site ?? "", {
+        ...(input.grep ? { grep: input.grep } : {}),
+        ...(input.maxFiles ? { maxFiles: input.maxFiles } : {}),
+        ...(input.maxBytes ? { maxBytes: input.maxBytes } : {}),
+      });
     if (input.action === "explore") {
       const sites = input.sites?.length ? input.sites : input.site ? [input.site] : [];
       if (!sites.length) throw new Error("Give sites: the names or URLs of the sites to map");

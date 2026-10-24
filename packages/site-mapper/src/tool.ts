@@ -61,6 +61,7 @@ export interface SiteToolInput {
 
 /** Plain-language guidance for each extra action, for tool descriptions. */
 export const SITE_TOOL_HELP = [
+  "how a site works (routes, endpoints): code(url) before guessing URLs.",
   "docs: the site's published API documents (OpenAPI/Swagger) and GraphQL schemas, read with the user's session: operations nobody clicked yet. Saved in the site's folder.",
   "actions: list saved multi-step actions, or save one with name, steps (operation ids in order) and description. action runs one by name with params as inputs; each step's result feeds the next.",
   "channel: the site's live WebSocket/event streams (operations lists them); with name, listens on one from the site's page (params: send [messages], seconds, match) and returns what arrived.",

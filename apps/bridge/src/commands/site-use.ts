@@ -1,4 +1,5 @@
 import {
+  code as readSiteCode,
   federate,
   inputParams,
   listSites,
@@ -8,12 +9,26 @@ import {
   watch as watchOperation,
   type FederateTarget,
 } from "@browserkit/tools/site-to-api";
-import { callParams, flag, has, type Args } from "../args.js";
+import { callParams, flag, has, list, type Args } from "../args.js";
 import { out, printJson, printRows } from "../output.js";
 import type { Command } from "../usage.js";
 import { mappedModel } from "./site-map.js";
 
 // Using a mapped site: list it, list what it can do, call one, watch one, ask several at once.
+
+async function readCode(args: Args): Promise<number> {
+  const url = args.positional[0];
+  if (!url) throw new Error("Usage: browserkit code <url> [--grep text] [--max-files n]");
+  const grep = list(args, "grep");
+  printJson(
+    await readSiteCode(url, {
+      ...(grep.length ? { grep } : {}),
+      ...(flag(args, "max-files") ? { maxFiles: Number(flag(args, "max-files")) } : {}),
+      ...(flag(args, "max-bytes") ? { maxBytes: Number(flag(args, "max-bytes")) } : {}),
+    }),
+  );
+  return 0;
+}
 
 async function sites(args: Args): Promise<number> {
   const sites = await listSites();
@@ -230,7 +245,19 @@ site's routes answer.`,
   run: rest,
 };
 
+export const codeCommand: Command = {
+  name: "code",
+  group: "Use a site",
+  summary: "read a site's routes, JS chunks, source maps, robots and sitemap",
+  help: `Usage: browserkit code <url> [--grep text] [--max-files n] [--max-bytes n]
+
+Fetches the page and every same-origin JS chunk, route manifests, source maps, robots.txt and
+sitemap.xml. --grep returns matching lines with file, line and context.`,
+  run: readCode,
+};
+
 export const useGroup = [
+  codeCommand,
   sitesCommand,
   opsCommand,
   callCommand,

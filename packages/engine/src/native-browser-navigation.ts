@@ -18,6 +18,8 @@ export interface PageSettle {
   why: "quiet" | "cap" | "error";
   ms: number;
   pending: number;
+  /** A network request finished after this settle window started. */
+  network?: boolean;
   probe?: PageProbe;
 }
 const activity = new Map<number, Activity>();
@@ -65,11 +67,12 @@ export function primeBrowserSettle(
 ): Promise<PageProbe | undefined> {
   return probe(debuggee).catch(() => undefined);
 }
-function networkState(tabId: number) {
+function networkState(tabId: number, since = 0) {
   const net = activity.get(tabId);
   return {
     pending: [...(net?.pending.values() ?? [])].filter((at) => Date.now() - at < 1500).length,
     quiet: Date.now() - (net?.last ?? 0) >= 80,
+    active: (net?.last ?? 0) >= since,
   };
 }
 export async function settleBrowserPage(
@@ -86,17 +89,29 @@ export async function settleBrowserPage(
     try {
       state = await probe(debuggee);
       if (state?.ready === "loading") limit = Math.max(capMs, 3000);
-      const net = networkState(debuggee.tabId ?? -1);
+      const net = networkState(debuggee.tabId ?? -1, since);
       pending = net.pending;
       if (isQuiet(state, net, since, minQuietMs))
-        return { why: "quiet", ms: Date.now() - start, pending, probe: state };
+        return {
+          why: "quiet",
+          ms: Date.now() - start,
+          pending,
+          network: net.active,
+          probe: state,
+        };
     } catch (error) {
       if (!/context|navigat|frame/i.test(String(error)))
         return { why: "error", ms: Date.now() - start, pending };
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  return { why: "cap", ms: Date.now() - start, pending, ...(state ? { probe: state } : {}) };
+  return {
+    why: "cap",
+    ms: Date.now() - start,
+    pending,
+    network: networkState(debuggee.tabId ?? -1, since).active,
+    ...(state ? { probe: state } : {}),
+  };
 }
 function isQuiet(
   state: PageProbe | undefined,
@@ -144,6 +159,7 @@ function domQuietProbe() {
       const now = performance.now();
       for (const record of records) {
         if (ownOverlay(record)) continue;
+        if (overlayNode(record)) continue;
         if (unchangedAttribute(record)) continue;
         if (record.attributeName === "style") {
           const previous = styles.get(record.target) ?? -Infinity;
@@ -178,6 +194,16 @@ function domQuietProbe() {
   };
   function ownOverlay(record: MutationRecord) {
     return !!(record.target as Element).closest?.("[data-aeon-overlay]");
+  }
+  function overlayNode(record: MutationRecord) {
+    for (const node of [...record.addedNodes, ...record.removedNodes]) {
+      if (
+        node instanceof Element &&
+        (node.matches("[data-aeon-overlay]") || node.closest("[data-aeon-overlay]"))
+      )
+        return true;
+    }
+    return false;
   }
   function unchangedAttribute(record: MutationRecord) {
     return (

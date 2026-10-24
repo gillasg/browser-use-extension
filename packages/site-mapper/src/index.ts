@@ -54,6 +54,7 @@ export { performFlow, editApi, nameOperations, type ModelLike } from "./agent.js
 export { explore, EXPLORE_BRIEF, type ExploreOptions, type ExploreResult } from "./explore.js";
 export { watch, type WatchOptions, type WatchResult } from "./watch.js";
 export { readDocs } from "./docs.js";
+export { code, type SiteCodeOptions, type SiteCodeResult, type SiteCodeMatch } from "./code.js";
 export {
   checkCaptures,
   exportSite,

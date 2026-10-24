@@ -1,3 +1,4 @@
+import { code } from "./code.js";
 import { listSites, loadModel, siteName } from "./registry.js";
 import type { Params } from "./runtime/request.js";
 import { siteMapper } from "./runtime/site-mapper.js";
@@ -18,8 +19,11 @@ export interface SiteMapperRequest {
     | "channel"
     | "learn-live"
     | "write"
-    | "undo";
+    | "undo"
+    | "code";
   site?: string;
+  url?: string;
+  options?: Record<string, unknown>;
   operation?: string;
   params?: Params;
   key?: string;
@@ -60,7 +64,7 @@ async function operations(site: string): Promise<unknown> {
 
 type Handler = (site: string, request: SiteMapperRequest) => Promise<unknown>;
 
-const HANDLERS: Record<Exclude<SiteMapperRequest["siteMapper"], "sites">, Handler> = {
+const HANDLERS: Record<Exclude<SiteMapperRequest["siteMapper"], "sites" | "code">, Handler> = {
   operations,
   action: async (site, request) =>
     (await siteMapper(site)).action(required(request.name, "action name"), request.params ?? {}),
@@ -84,6 +88,8 @@ const HANDLERS: Record<Exclude<SiteMapperRequest["siteMapper"], "sites">, Handle
 
 export async function handleSiteMapperRequest(request: SiteMapperRequest): Promise<unknown> {
   if (request.siteMapper === "sites") return listSites();
+  if (request.siteMapper === "code")
+    return code(required(request.url, "url"), request.options as Parameters<typeof code>[1]);
   const handler = HANDLERS[request.siteMapper] as Handler | undefined;
   if (!handler) throw new Error(`siteMapper: unknown request ${String(request.siteMapper)}`);
   return handler(siteName(required(request.site, "site")), request);

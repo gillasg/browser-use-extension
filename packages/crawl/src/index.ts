@@ -13,6 +13,8 @@ export { AutoFetcher, needsBrowser, type AutoOptions } from "./fetch/auto.js";
 export { botCheck, isNetworkRefusal, isDnsFailure } from "./challenge.js";
 export {
   checkSites,
+  applyRedirect,
+  originGated,
   judge,
   siteUrl,
   type SiteCheck,

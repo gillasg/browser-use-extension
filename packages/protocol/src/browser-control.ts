@@ -212,6 +212,8 @@ export const BrowserExecutorResultSchema = z.discriminatedUnion("kind", [
       observation: SemanticObservationSchema.optional(),
       scroll: BrowserScrollStateSchema.optional(),
       outcome: z.enum(["navigated", "changed", "unchanged", "unknown"]).optional(),
+      /** A click that visibly did nothing: what was clicked and what to try instead. */
+      note: z.string().max(1000).optional(),
     })
     .strict(),
 ]);

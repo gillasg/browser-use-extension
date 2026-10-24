@@ -58,6 +58,16 @@ var skills = Object.freeze({
 // siteMapper.call({site: 'a.com', operation: 'op', params: {q}}) are the same call.
 var __siteObject = value => value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
 var siteMapper=Object.freeze({
+  code:async (url,options={})=>{
+    var value=await __call({siteMapper:'code',url:String(url),options});
+    var encoded=JSON.stringify(value);
+    if (encoded.length > 60000) {
+      var host='site'; try { host=new URL(String(url)).hostname.replace(/^www\\./,''); } catch {}
+      var saved=await artifact('site-code/'+host+'.json', encoded).catch(() => undefined);
+      if (saved) return {summary:value.summary || 'Site code output saved', artifact:saved.path, routes:value.routes?.length || 0, files:value.files?.length || 0, matches:value.matches?.length || 0};
+    }
+    return value;
+  },
   sites:()=>__call({siteMapper:'sites'}),
   operations:site=>__call({siteMapper:'operations', ...(__siteObject(site) || {site})}),
   call:(site,operation,params={})=>__call({siteMapper:'call', ...(__siteObject(site) || {site,operation,params})}),

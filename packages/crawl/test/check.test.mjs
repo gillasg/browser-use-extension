@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { botCheck, checkSites, judge, needsBrowser, AutoFetcher } from "../dist/index.js";
+import {
+  AutoFetcher,
+  applyRedirect,
+  botCheck,
+  checkSites,
+  judge,
+  needsBrowser,
+  originGated,
+} from "../dist/index.js";
 
 const page = (body, title = "Shop") => `<!doctype html><title>${title}</title><body>${body}</body>`;
 const article = "<p>" + "Plenty of real reading text on this page. ".repeat(60) + "</p>";
@@ -54,6 +62,47 @@ test("verdicts carry their evidence", () => {
     judge({ status: 200, finalUrl: "", headers: {}, html: page("This domain is for sale") })
       .verdict,
     "parked",
+  );
+});
+
+test("redirected hosts are their own verdict; www and apex are the same site", () => {
+  const base = {
+    url: "https://shop.example/",
+    host: "shop.example",
+    via: "http",
+    status: 200,
+    finalUrl: "https://shop.example/",
+    verdict: "ok",
+  };
+  assert.equal(applyRedirect(base).verdict, "ok");
+  assert.equal(applyRedirect({ ...base, finalUrl: "https://www.shop.example/" }).verdict, "ok");
+  const moved = applyRedirect({ ...base, finalUrl: "https://elsewhere.example/" });
+  assert.equal(moved.verdict, "redirected");
+  assert.match(moved.reason, /elsewhere\.example/);
+});
+
+test("origin-gated needs a plain 401/403 and a successful gated Chrome answer", () => {
+  const blocked = {
+    url: "https://shop.example/",
+    host: "shop.example",
+    via: "http",
+    status: 403,
+    verdict: "blocked",
+  };
+  assert.equal(
+    originGated(blocked, { status: 200, finalUrl: blocked.url, headers: {}, html: "" }).verdict,
+    "origin-gated",
+  );
+  assert.equal(
+    originGated(blocked, { status: 403, finalUrl: blocked.url, headers: {}, html: "" }),
+    undefined,
+  );
+  assert.equal(
+    originGated(
+      { ...blocked, status: 200 },
+      { status: 200, finalUrl: blocked.url, headers: {}, html: "" },
+    ),
+    undefined,
   );
 });
 

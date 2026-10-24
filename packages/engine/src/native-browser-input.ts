@@ -533,14 +533,18 @@ export async function performAction(
 ): Promise<BrowserExecutorResult> {
   const tabId = request.step.target.tabId;
   let outcome: "navigated" | "changed" | "unchanged" | "unknown" = "unknown";
+  let note: string | undefined;
   const scroll = await withDebugger(tabId, async (debuggee) => {
     await revalidateTarget(request, tabId);
     if (request.step.op === "scroll")
       return scrollWithFeedback(debuggee, { ...request, step: request.step });
     const before = await primeBrowserSettle(debuggee);
+    const since = Date.now();
     await dispatchAction(debuggee, request, revalidateTarget);
-    const settled = await settleBrowserPage(debuggee);
+    const settled = await settleBrowserPage(debuggee, 800, since, 80);
     outcome = pageOutcome(before, settled.probe);
+    if (request.step.op === "click" && outcome === "unchanged" && !settled.network)
+      note = silentClickNote(request.step.element);
     return undefined;
   });
   if (scroll) await revalidateTarget(request, tabId);
@@ -562,9 +566,25 @@ export async function performAction(
     documentEpoch: current.documentEpoch,
     url: liveTab.url,
     outcome,
+    ...(note ? { note } : {}),
     ...(observation ? { observation } : {}),
     ...(scroll ? { scroll } : {}),
   });
+}
+
+/** A real click that produced no navigation, DOM change or request is usually a miss. */
+function silentClickNote(element: BrowserElementTarget): string {
+  const what =
+    element.kind === "locator"
+      ? `${element.role} "${element.name}"${element.scope ? ` in ${element.scope}` : ""}`
+      : element.kind === "query"
+        ? `${element.by} selector ${JSON.stringify(element.value)}`
+        : element.kind === "ref"
+          ? `element ${element.ref}`
+          : element.kind === "point"
+            ? "the clicked point"
+            : `backend node ${element.backendNodeId}`;
+  return `clicked ${what}: nothing happened (no navigation, DOM change or network request). The card's link may be on a child element; try clicking the child, or a listener may need a pointer event: try page.clickAt(x, y).`;
 }
 
 async function dispatchAction(

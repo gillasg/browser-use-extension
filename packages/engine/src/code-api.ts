@@ -102,7 +102,9 @@ var browser = Object.freeze({
   closeTab: async (tab) => {
     var id = typeof tab === 'number' ? tab : tab?.tabId ?? tab?.target?.tabId;
     if (!Number.isSafeInteger(id)) throw Error('INVALID_TARGET: browser.closeTab needs a tab id or a tab from browser.tabs()');
+    var known = [...__tabs.values()].find((item) => item.target?.tabId === id);
     var result = await __call({tabs:'close', tabId:id});
+    __closedTabs.set(id, { url: known?.url || '', at: Date.now() });
     __forgetTab(id);
     return result;
   },
@@ -143,11 +145,11 @@ var browser = Object.freeze({
         const live = (await browser.tabs()).find(tab => __key(tab.target) === __key(known));
         if (live) {
           const same = String(live.url) === url;
-          const reused = await bu.use(known);
+          await bu.use(known);
           if (options.quiet === true) await __call({quiet:{target:known, enabled:true}});
-          if (!same) await reused.navigate(url);
+          if (!same) await browser.page(known).navigate(url);
           console.log('[ok] openTab reused tab ' + known.tabId + ' for ' + (origin || url) + (same ? '' : ' (navigated)') + '; pass {newTab: true} for a separate tab');
-          return reused;
+          return __openResult(live, true);
         }
         throw Error('TARGET_LOST: tab ' + known.tabId + ' for ' + (origin || url) + ' was closed; pass {newTab: true} only if you mean to open it again');
       } finally { __busy.delete(__key(known)); }
@@ -158,7 +160,8 @@ var browser = Object.freeze({
       ...(options.present === false ? {present:false} : {}),
       ...(options.window ? {window: {width: Math.round(options.window.width ?? 1920), height: Math.round(options.window.height ?? 1080)}} : {})});
     if (!options.window) __opened.set(origin || url, result.tab.target);
-    return bu.use(result.tab.target);
+    await bu.use(result.tab.target);
+    return __openResult(result.tab, false);
   },
   // Fetch without a tab: from the extension, with the user's cookies (credentials: 'omit' to skip).
   fetch: (url, init = {}) => __call({fetch: {...init, url: String(url)}}),
@@ -404,7 +407,7 @@ var browser = Object.freeze({
 });
 `;
 export const browserFastApi = `
-var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __busy = new Set(), __keptTabs = new Set(), __focusedWindowId, __attachedTarget, __lastTarget;
+var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __busy = new Set(), __keptTabs = new Set(), __closedTabs = new Map(), __focusedWindowId, __attachedTarget, __lastTarget;
 var __key = target => JSON.stringify(target);
 // A bare tab id from browser.tabs() or a step line stands for that tab's full target.
 // Printed tabs show what an agent reads (id, title, url, active); the rest stays usable but
@@ -415,6 +418,19 @@ function __compactTab(tab) {
   for (var [key, value] of Object.entries({...tab, tabId: tab.target.tabId}))
     if (!(key in entry)) Object.defineProperty(entry, key, {value, enumerable: false});
   return entry;
+}
+// openTab returns a page (so page.title() and page.url() keep working) with the tab it used
+// exposed as id, tab and reused.
+function __openResult(tab, reused) {
+  var page = browser.page(tab.target);
+  var id = tab.target.tabId;
+  return new Proxy(page, {
+    get: (object, key) => {
+      if (key === 'id') return id;
+      if (key === 'reused') return reused === true;
+      return object[key];
+    },
+  });
 }
 function __listedTab(entry) {
   var page;
@@ -435,6 +451,10 @@ async function __tabTarget(target) {
   // A tab id, a tab from browser.tabs(), a page, or a target itself.
   if (target && typeof target === 'object' && target.target) return target.target;
   if (typeof target !== 'number') return target;
+  if (__closedTabs.has(target)) {
+    var closed = __closedTabs.get(target);
+    throw Error('CLOSED_BY_YOU: tab ' + target + (closed.url ? ' (' + closed.url + ')' : '') + ' was closed by you');
+  }
   var find = () => [...__tabs.values()].find(tab => tab.target.tabId === target);
   var tab = find() || (await browser.tabs(), find());
   if (!tab) throw Error('TARGET_LOST: tab ' + target + ' is not open (closed, or never opened); browser.tabs() lists live tabs');
@@ -469,6 +489,12 @@ function __waitCondition(target, expression, timeout) {
 }
 function __beginCell() { __dirty.clear(); __hasDelivered=false; __deliveryValue=undefined; }
 async function __step(step, readOnly = false) {
+  if (step.target && __closedTabs.has(step.target.tabId)) {
+    var closed = __closedTabs.get(step.target.tabId);
+    var note = 'closed by you (tab ' + step.target.tabId + (closed.url ? ', ' + closed.url : '') + ')';
+    console.log('[closed] ' + note + '; no ' + step.op + ' ran');
+    return {kind:'closed', target:step.target, url:closed.url, note};
+  }
   if (step.target) __lastTarget = step.target;
   var action = ['click','fill','press','scroll','navigate','evaluate','cdp','upload','pointer','keys','reconnect'].includes(step.op);
   if(step.op==='frames' && ['click','fill','cdp'].includes(step.action))action=true;
@@ -494,7 +520,7 @@ async function __step(step, readOnly = false) {
   if (action) {
     var moved = before && result.url && before.split('#')[0] !== result.url.split('#')[0] && ['click','fill','press'].includes(step.op);
     console.log('[ok] ' + step.op + (result.outcome ? ' ' + result.outcome : '') + (result.url ? ' -> ' + result.url : '') + (moved ? ' (page changed from ' + before + ')' : '') +
-      (result.data && result.data.settle ? ' (' + result.data.settle.why + ')' : ''));
+      (result.data && result.data.settle ? ' (' + result.data.settle.why + ')' : '') + (result.note ? ' - ' + result.note : ''));
   }
   return result;
 }

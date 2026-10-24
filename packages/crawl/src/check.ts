@@ -19,6 +19,8 @@ export type SiteVerdict =
   | "parked"
   | "dead"
   | "refused"
+  | "redirected"
+  | "origin-gated"
   | "unchecked";
 
 export interface SiteCheck {
@@ -75,6 +77,8 @@ const SETTLED: ReadonlySet<SiteVerdict> = new Set([
   "parked",
   "dead",
   "server-error",
+  "redirected",
+  "origin-gated",
 ]);
 
 export async function checkSites(
@@ -128,7 +132,7 @@ async function checkOverHttp(url: string, timeoutMs: number): Promise<SiteCheck>
       headers: Object.fromEntries(response.headers),
       html,
     };
-    return { url, host, via: "http", ...judge(answer) };
+    return applyRedirect({ url, host, via: "http", ...judge(answer) });
   } catch (error) {
     if (isDnsFailure(error))
       return { url, host, via: "http", verdict: "dead", reason: "the name does not resolve" };
@@ -210,6 +214,18 @@ async function settleInChrome(
     const answer = answers.get(result.url);
     if (answer) Object.assign(result, chromeVerdict(result, answer));
   }
+  const gated = open.filter((result) => result.status === 401 || result.status === 403);
+  if (gated.length) {
+    const gatedAnswers = await askChrome(
+      gated.map((result) => result.url),
+      true,
+    );
+    for (const result of gated) {
+      const answer = gatedAnswers.get(result.url);
+      const verdict = answer ? originGated(result, answer) : undefined;
+      if (verdict) Object.assign(result, verdict);
+    }
+  }
   for (const result of sample) {
     const answer = answers.get(result.url);
     if (!answer) continue;
@@ -218,7 +234,7 @@ async function settleInChrome(
     if (again.verdict !== "ok" && again.verdict !== "js-shell")
       spotCheck.disagreed.push(`${result.host}: http ok, chrome ${again.verdict}`);
   }
-  return urls.length;
+  return urls.length + gated.length;
 }
 
 type ChromeAnswer = Answer | { error: string };
@@ -233,19 +249,66 @@ function chromeVerdict(result: SiteCheck, answer: ChromeAnswer): Partial<SiteChe
       reason: `Chrome could not load it either (${answer.error})`,
     };
   }
-  return { ...judge(answer), via: "chrome", url: result.url, host: result.host };
+  return applyRedirect({
+    ...judge(answer),
+    via: "chrome",
+    url: result.url,
+    host: result.host,
+  });
+}
+
+/** A different host after redirects is evidence, unless it is only a www/apex variant. */
+export function applyRedirect(result: SiteCheck): SiteCheck {
+  if (!result.finalUrl) return result;
+  const requested = normalizeHost(result.host);
+  let finalHost: string;
+  try {
+    finalHost = new URL(result.finalUrl).hostname;
+  } catch {
+    return result;
+  }
+  const final = normalizeHost(finalHost);
+  if (!requested || !final || requested === final) return result;
+  return {
+    ...result,
+    verdict: "redirected",
+    reason: `redirected to ${result.finalUrl}`,
+  };
+}
+
+/** Plain HTTP 401/403, but Chrome with the site's own Referer/Origin succeeds. */
+export function originGated(
+  result: SiteCheck,
+  answer: ChromeAnswer,
+): Partial<SiteCheck> | undefined {
+  if (result.status !== 401 && result.status !== 403) return undefined;
+  if ("error" in answer || answer.status >= 400) return undefined;
+  return {
+    verdict: "origin-gated",
+    via: "chrome",
+    status: answer.status,
+    finalUrl: answer.finalUrl,
+    reason: `plain HTTP ${result.status}; a request with the site's Referer/Origin succeeds`,
+  };
+}
+
+function normalizeHost(host: string): string {
+  return host.toLowerCase().replace(/^www\./, "");
 }
 
 const BATCH = 4;
 
-async function askChrome(urls: readonly string[]): Promise<Map<string, ChromeAnswer>> {
+async function askChrome(
+  urls: readonly string[],
+  origin = false,
+): Promise<Map<string, ChromeAnswer>> {
   const answers = new Map<string, ChromeAnswer>();
   if (!urls.length) return answers;
   const bridge = await sharedBridge();
   for (let index = 0; index < urls.length; index += BATCH) {
     const batch = urls.slice(index, index + BATCH);
     const values = (await bridge
-      .run(chromeCode(batch), { session: "browser-crawl-check", timeoutMs: 45_000 })
+      .run(chromeCode(batch, origin), { session: "browser-crawl-check", timeoutMs: 45_000 })
       .catch((error: unknown) => batch.map(() => ({ error: String(error) })))) as ChromeAnswer[];
     batch.forEach((url, at) => answers.set(url, values[at] ?? { error: "no answer" }));
   }
@@ -253,9 +316,9 @@ async function askChrome(urls: readonly string[]): Promise<Map<string, ChromeAns
 }
 
 /** One cell fetching a batch at once through the extension, i.e. Chrome's own network stack. */
-function chromeCode(urls: readonly string[]): string {
+function chromeCode(urls: readonly string[], origin = false): string {
   return `const urls = ${JSON.stringify(urls)};
-await Promise.all(urls.map((url) => browser.fetch(url, { as: "text", timeoutMs: 15000 })
+await Promise.all(urls.map((url) => browser.fetch(url, { as: "text", timeoutMs: 15000, ${origin ? "headers: { referer: url, origin: new URL(url).origin }" : ""} })
   .then((r) => ({ status: r.status, finalUrl: r.url || url, headers: r.headers || {}, html: String(r.text || "").slice(0, ${BODY_LIMIT}) }))
   .catch((error) => ({ error: String(error && error.message || error) }))));`;
 }

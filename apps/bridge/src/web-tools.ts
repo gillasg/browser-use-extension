@@ -21,6 +21,7 @@ const MAX_TEXT = 60_000;
 const CRAWL_ACTIONS = ["scrape", "crawl", "map", "search", "find"] as const;
 const SITE_ACTIONS = [
   "sites",
+  "code",
   "operations",
   "call",
   "watch",
