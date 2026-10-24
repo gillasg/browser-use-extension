@@ -29,7 +29,7 @@ test(
         assert.match(page.markdown, /Rendered app/);
         assert.ok(
           page.pageData.requests.some(
-            (request) => request.url.endsWith("/api/items") && request.json.items.length === 3,
+            (request) => request.url.endsWith("/api/items") && request.json?.items?.length === 3,
           ),
         );
       },
