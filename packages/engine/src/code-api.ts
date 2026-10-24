@@ -91,13 +91,17 @@ var browser = Object.freeze({
   waitFor: (event, options = {}) => __event(options.target || __lastTarget,event,options),
   // Listed tabs work as pages too (agents call tab.locator(...) or use tab.id); acting on one
   // the session did not open still needs browser.attachTab(tab) first.
-  tabs: Object.assign(async (query) => (await __step({op:'listTabs', ...(query ? {query} : {})})).tabs
-      .map(tab => __listedTab(__compactTab(tab))),
+  tabs: Object.assign(async (query) => {
+      var result = await __step({op:'listTabs', ...(query ? {query} : {})});
+      __focusedWindowId = result.focusedWindowId;
+      return result.tabs.map(tab => __listedTab(__compactTab(tab)));
+    },
     {list: async (query) => browser.tabs(query)}),
-  // The tab the user is looking at: the active tab of the focused window, as a page. Asking for
-  // it is the agent choosing it, so it comes back attached and ready to use (and becomes page).
+  // The tab the user is looking at: the active tab of the window they last focused, as a page.
   activeTab: async () => {
-    var tab = (await browser.tabs()).find(listed => listed.active);
+    var tabs = await browser.tabs();
+    var tab = tabs.find(listed => listed.active && (__focusedWindowId === undefined || listed.windowId === __focusedWindowId))
+      || tabs.find(listed => listed.active);
     if (!tab) throw Error('TARGET_LOST: the active tab is not a web page (a new tab or browser page)');
     await browser.attachTab(tab.target);
     return tab;
@@ -131,14 +135,18 @@ var browser = Object.freeze({
         if (live) {
           const same = String(live.url) === url;
           const reused = await bu.use(known);
+          if (options.quiet === true) await __call({quiet:{target:known, enabled:true}});
           if (!same) await reused.navigate(url);
           console.log('[ok] openTab reused tab ' + known.tabId + ' for ' + (origin || url) + (same ? '' : ' (navigated)') + '; pass {newTab: true} for a separate tab');
           return reused;
         }
+        throw Error('TARGET_LOST: tab ' + known.tabId + ' for ' + (origin || url) + ' was closed; pass {newTab: true} only if you mean to open it again');
       } finally { __busy.delete(__key(known)); }
     }
     const result = await __step({op:'openTab', clientInstanceId, url,
       foreground: options.foreground === true,
+      ...(options.quiet === true ? {quiet:true} : {}),
+      ...(options.present === false ? {present:false} : {}),
       ...(options.window ? {window: {width: Math.round(options.window.width ?? 1920), height: Math.round(options.window.height ?? 1080)}} : {})});
     if (!options.window) __opened.set(origin || url, result.tab.target);
     return bu.use(result.tab.target);
@@ -146,6 +154,10 @@ var browser = Object.freeze({
   // Fetch without a tab: from the extension, with the user's cookies (credentials: 'omit' to skip).
   fetch: (url, init = {}) => __call({fetch: {...init, url: String(url)}}),
   pool: (items, worker, options = {}) => __pool(items, worker, options),
+  // Close every tab this chat/session opened (page.keep tabs stay), returning {closed, remaining}.
+  reset: () => __call({tabs:'reset'}),
+  // Many pages past the cell deadline: start a job, then check it in a later cell.
+  job: __job,
   downloads: Object.freeze({
     list: (text = "", options = {}) => __call({downloads:"list", text, ...options}),
   }),
@@ -228,7 +240,8 @@ var browser = Object.freeze({
       ...(Array.isArray(options.attributes) ? {attributes: options.attributes.filter(a => /^[\\w-]{1,80}$/.test(a)).slice(0, 10)} : {})}),
     // A number waits that many milliseconds; a selector waits for it (timeouts above the engine cap keep polling).
     wait: (selector, options = {}) => typeof selector === 'number' ? __sleep(selector) : __waitSelector(target, selector, options),
-    navigate: (url) => __step({op:"navigate", target, url: __absoluteUrl(url, target)}),
+    navigate: (url, options = {}) => __step({op:"navigate", target, url: __absoluteUrl(url, target),
+      ...(options.present === false ? {present:false} : {})}),
     diagnostics: (clear = false) => __step({op:"diagnostics", target, clear}),
     console: async (options = {}) => {
       var entries = (await __step({op:"diagnostics", target, clear: !!options.clear})).data.console || [];
@@ -347,7 +360,7 @@ var browser = Object.freeze({
       return result.data ?? result.text;
     },
     // Hands this tab to the user: it stays open after the run instead of being tidied away.
-    keep: () => __call({tabs:'keep', tabIds:[target.tabId]}),
+    keep: () => { __keptTabs.add(target.tabId); return __call({tabs:'keep', tabIds:[target.tabId]}); },
     close: async () => { await __step({op:'cdp',target,method:'Page.close',params:{}}).catch(() => {}); __states.delete(__key(target)); __tabs.delete(__key(target)); },
     waitFor: (fn, options = {}) => __waitCondition(target, typeof fn === 'function' ? '('+fn.toString()+')()' : String(fn), typeof options === 'number' ? options : (options.timeoutMs ?? options.timeout ?? 5000)),
     // Also takes {direction, amount} or a wheel-style {deltaY}.
@@ -380,73 +393,9 @@ var browser = Object.freeze({
     },
   }))),
 });
-function __isMediaUrl(value) {
-  var text = String(value);
-  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:') || text.startsWith('blob:');
-}
-// What an element shows: its source, link, canvas pixels or background image (blob: and data: as data).
-async function __mediaSources(args) {
-  var roots = [document], found = [];
-  while (roots.length) { var root = roots.pop(); found.push(...root.querySelectorAll(args.selector)); for (var el of root.querySelectorAll('*')) if (el.shadowRoot) roots.push(el.shadowRoot); }
-  var picked = args.all ? found : found.slice(0, 1), out = [];
-  var asData = async (url) => { var blob = await (await fetch(url)).blob(); return await new Promise((done) => { var reader = new FileReader(); reader.onload = () => done(reader.result); reader.readAsDataURL(blob); }); };
-  for (var item of picked) {
-    var url = '';
-    if (item instanceof HTMLCanvasElement) url = item.toDataURL('image/png');
-    else url = item.currentSrc || item.src || item.poster || item.href || '';
-    if (!url) {
-      var bg = getComputedStyle(item).backgroundImage || '', start = bg.indexOf('url(');
-      if (start >= 0) url = bg.slice(start + 4, bg.indexOf(')', start)).split('"').join('').split("'").join('');
-    }
-    if (!url) continue;
-    url = new URL(url, location.href).href;
-    out.push(url.startsWith('blob:') ? {url, data: await asData(url)} : {url});
-  }
-  return out;
-}
-function __mediaName(url, mime, index, options) {
-  var base = 'file';
-  try { base = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || 'file'); } catch {}
-  base = base.split('?')[0].replace(/[^A-Za-z0-9._-]+/g, '-').slice(-80) || 'file';
-  var ext = (String(mime || '').split('/')[1] || '').split(';')[0].split('+')[0];
-  if (ext === 'jpeg') ext = 'jpg';
-  if (ext && !base.toLowerCase().endsWith('.' + ext) && base.indexOf('.') < 0) base += '.' + ext;
-  if (options.name) {
-    var dot = options.name.lastIndexOf('.');
-    base = !index ? options.name : dot > 0 ? options.name.slice(0, dot) + '-' + index + options.name.slice(dot) : options.name + '-' + index;
-  }
-  return (options.folder || 'media') + '/' + base;
-}
-async function __saveMedia(target, what, options = {}) {
-  var page = browser.page(target);
-  var sources = __isMediaUrl(what) ? [{url: String(what)}] : await page.evaluate(__mediaSources, {selector: String(what), all: !!options.all});
-  if (!sources.length) throw Error('NOT_FOUND: nothing to save for ' + what);
-  var saved = [];
-  for (var [index, source] of sources.entries()) {
-    var data = source.data || (source.url.startsWith('data:') ? source.url : '');
-    var mime, base64, bytes;
-    if (data) {
-      var comma = data.indexOf(',');
-      mime = data.slice(5, comma).split(';')[0];
-      base64 = data.slice(5, comma).includes(';base64') ? data.slice(comma + 1) : btoa(decodeURIComponent(data.slice(comma + 1)));
-      bytes = Math.floor(base64.length * 3 / 4);
-    } else {
-      var response = await browser.fetch(source.url, {as: 'base64'});
-      if (!response.ok) throw Error('DOWNLOAD_FAILED: ' + response.status + ' ' + source.url);
-      if (response.truncated) throw Error('TOO_LARGE: ' + response.bytes + ' bytes at ' + source.url);
-      mime = response.headers['content-type'];
-      base64 = response.base64;
-      bytes = response.bytes;
-    }
-    var name = __mediaName(source.url, mime, index, options);
-    await __call({workspace:'artifact', name, value: base64, base64: true});
-    saved.push({saved: name, url: source.url.startsWith('data:') ? 'data:' : source.url, mime, bytes});
-  }
-  return saved;
-}
 `;
 export const browserFastApi = `
-var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __busy = new Set(), __lastTarget;
+var __states = new Map(), __tabs = new Map(), __seen = new Map(), __dirty = new Map(), __opened = new Map(), __busy = new Set(), __keptTabs = new Set(), __focusedWindowId, __attachedTarget, __lastTarget;
 var __key = target => JSON.stringify(target);
 // A bare tab id from browser.tabs() or a step line stands for that tab's full target.
 // Printed tabs show what an agent reads (id, title, url, active); the rest stays usable but
@@ -478,7 +427,7 @@ async function __tabTarget(target) {
   if (typeof target !== 'number') return target;
   var find = () => [...__tabs.values()].find(tab => tab.target.tabId === target);
   var tab = find() || (await browser.tabs(), find());
-  if (!tab) throw Error('TARGET_LOST: no open tab ' + target);
+  if (!tab) throw Error('TARGET_LOST: tab ' + target + ' is not open (closed, or never opened); browser.tabs() lists live tabs');
   return tab.target;
 }
 function __clamp(value, min, max) { return Math.min(max, Math.max(min, Math.round(Number(value)) || min)); }
@@ -634,6 +583,11 @@ var bu = Object.freeze({
   },
   use: target => {
     if (typeof target === 'number') return __tabTarget(target).then(bu.use);
+    if (!target || typeof target !== 'object') throw Error('TARGET_LOST: bu.use needs a tab from browser.tabs(), a tab id, or a target');
+    var entry = __tabs.get(__key(target));
+    if (!entry && __attachedTarget && __key(target) === __key(__attachedTarget))
+      entry = {target, url:'', title:''};
+    if (!entry) throw Error('TARGET_LOST: tab ' + (target.tabId ?? target.target?.tabId ?? '?') + ' is not open; browser.tabs() lists live tabs, browser.attachTab(tab) attaches one');
     __lastTarget = target; globalThis.page = browser.page(target); return globalThis.page;
   },
   state: async (options = {}) => {

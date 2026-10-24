@@ -1,5 +1,6 @@
 import { boostsCall, isBoostsRequest } from "./native-browser-boosts.js";
 import { forgetAgentTab } from "./native-browser-tab-cleanup.js";
+import { disableQuietTab } from "./native-browser-quiet.js";
 
 // The user's history and bookmarks, for questions like "that article I read last week" and for
 // organizing bookmarks. Results are compact records; the code runtime gets them as plain data.
@@ -37,6 +38,7 @@ async function keepTabs(value: Request): Promise<unknown> {
     : [];
   if (!ids.length) throw new Error("INVALID_TARGET: pass one or more tab ids");
   for (const id of ids as number[]) forgetAgentTab(id);
+  for (const id of ids as number[]) await disableQuietTab(id);
   await chrome.tabs.ungroup(ids as [number, ...number[]]).catch(() => undefined);
   return { kept: ids };
 }

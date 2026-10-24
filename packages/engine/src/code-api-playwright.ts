@@ -312,7 +312,7 @@ function __extendPage(target, base) {
     ariaSnapshot: (options = {}) => bu.state({...options, target}),
     // A common guess for the same view.
     domSnapshot: (options = {}) => bu.state({...options, target}),
-    goto: (url) => base.navigate(url),
+    goto: (url, options) => base.navigate(url, options),
     hover: (a, b) => typeof a === 'string' ? css(a).first().hover() : coordHover(a, b),
     reload: () => base.cdp('Page.reload', {}),
     goBack: () => base.evaluate(() => history.back()),

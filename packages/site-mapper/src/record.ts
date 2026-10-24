@@ -19,6 +19,8 @@ export interface RecordOptions {
   bridge?: () => Promise<Bridge>;
   /** Bring the tab to the front so the user can use it. Default true. */
   foreground?: boolean;
+  /** No popunders, autoplay or ad hosts while recording (explore defaults to this). */
+  quiet?: boolean;
   session?: string;
   /** Block requests that would change something (they are recorded, not sent): map actions safely. */
   dryRun?: boolean;
@@ -88,7 +90,7 @@ await globalThis.__recTabs[0].network.start({ types: 'all'${options.dryRun ? ", 
     await bridge.run(
       // Tabs open on web pages only, so the first load happens before recording starts and
       // the page is loaded again once it has.
-      `globalThis.__recTabs = [await browser.openTab(${JSON.stringify(options.url)}, { foreground: ${foreground}, new: true })];
+      `globalThis.__recTabs = [await browser.openTab(${JSON.stringify(options.url)}, { foreground: ${foreground}, new: true${options.quiet ? ", quiet: true" : ""}, present: false })];
 await globalThis.__recTabs[0].network.start({ types: 'all'${options.dryRun ? ", dryRun: true" : ""} });
 await globalThis.__recTabs[0].navigate(${JSON.stringify(options.url)});
 'recording'`,
@@ -103,6 +105,15 @@ await globalThis.__recTabs[0].navigate(${JSON.stringify(options.url)});
       session: this.session,
       timeoutMs,
     });
+  }
+
+  /** Tabs this recording still has, so a failure can say which ones it left behind. */
+  async tabIds(): Promise<number[]> {
+    return (await this.bridge
+      .run(`(globalThis.__recTabs || []).map((tab) => tab.target.tabId)`, {
+        session: this.session,
+      })
+      .catch(() => [])) as number[];
   }
 
   async stop(options: { close?: boolean } = {}): Promise<Recording> {

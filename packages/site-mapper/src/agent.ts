@@ -81,6 +81,8 @@ export interface FlowOptions {
   session?: string;
   /** Bring the recorded tab to the front. Default true. */
   foreground?: boolean;
+  /** Block popunders, autoplay and ad hosts (explore defaults to this). */
+  quiet?: boolean;
   /** Requests that would change something are blocked and only recorded (see RecordOptions). */
   dryRun?: boolean;
 }
@@ -155,13 +157,7 @@ export async function performFlow(
 ): Promise<FlowResult> {
   const name = siteName(site);
   const model = requireModel(options.model);
-  const session = await RecordingSession.start({
-    url: options.startUrl ?? `https://${name}/`,
-    ...(options.bridge ? { bridge: options.bridge } : {}),
-    ...(options.session ? { session: options.session } : {}),
-    ...(options.foreground === false ? { foreground: false } : {}),
-    ...(options.dryRun ? { dryRun: true } : {}),
-  });
+  const session = await startFlow(name, options);
   const agent = new FlowAgent(session, options.onStep);
   const messages: Message[] = [
     {
@@ -170,18 +166,50 @@ export async function performFlow(
       timestamp: Date.now(),
     },
   ];
-  let recording: Awaited<ReturnType<RecordingSession["stop"]>>;
+  let failure: unknown;
   try {
     await drive(model, agent, messages, options.maxSteps ?? 30);
-  } finally {
-    recording = await session.stop();
+  } catch (error) {
+    failure = error;
   }
+  const tabs = await session.tabIds();
+  const recording = await stopFlow(session, tabs);
+  if (failure) throw withTabs(failure, tabs);
   const flowPath = await saveRecording(name, recording, { description, steps: agent.steps });
   return {
     summary: agent.summary || "Stopped after the step limit.",
     steps: agent.steps,
     flowPath,
   };
+}
+
+function startFlow(name: string, options: FlowOptions): Promise<RecordingSession> {
+  return RecordingSession.start({
+    url: options.startUrl ?? `https://${name}/`,
+    ...(options.bridge ? { bridge: options.bridge } : {}),
+    ...(options.session ? { session: options.session } : {}),
+    ...(options.foreground === false ? { foreground: false } : {}),
+    ...(options.quiet ? { quiet: true } : {}),
+    ...(options.dryRun ? { dryRun: true } : {}),
+  });
+}
+
+async function stopFlow(
+  session: RecordingSession,
+  tabs: number[],
+): Promise<Awaited<ReturnType<RecordingSession["stop"]>>> {
+  try {
+    return await session.stop();
+  } catch (error) {
+    throw withTabs(error, tabs, true);
+  }
+}
+
+function withTabs(error: unknown, tabs: number[], leftOpen = false): Error {
+  return Object.assign(error instanceof Error ? error : new Error(String(error)), {
+    browserTabs: tabs,
+    ...(leftOpen ? { browserTabsLeftOpen: tabs } : {}),
+  });
 }
 
 function modelSummary(model: SiteModel): string {

@@ -32,6 +32,9 @@ import {
 import { executeDownload } from "./native-browser-downloads.js";
 import { groupAgentTab } from "./native-browser-groups.js";
 import { markAgentTabGrouped, trackAgentTab } from "./native-browser-tab-cleanup.js";
+import { currentFocusedWindowId } from "./native-inventory-client.js";
+import { ownerTitle } from "./native-browser-owner.js";
+import { enableQuietTab } from "./native-browser-quiet.js";
 import { showAgentCaption } from "./native-browser-cursor.js";
 
 function hostOf(url: string): string {
@@ -424,7 +427,11 @@ function listTabs(query: string | undefined): BrowserExecutorResult {
   const filtered = query
     ? tabs.filter((tab) => `${tab.title} ${tab.url}`.toLowerCase().includes(query.toLowerCase()))
     : tabs;
-  return BrowserExecutorResultSchema.parse({ kind: "tabs", tabs: filtered.slice(0, 256) });
+  return BrowserExecutorResultSchema.parse({
+    kind: "tabs",
+    tabs: filtered.slice(0, 256),
+    focusedWindowId: currentFocusedWindowId(),
+  });
 }
 
 // A tab the user already has open, picked from browser.tabs(): the runtime host checked the
@@ -442,10 +449,16 @@ async function openTab(
   const step = validOpenTab(request, identity);
   const created = await createTab(step);
   if (created.id === undefined) throw new Error("TARGET_LOST");
-  trackAgentTab(created.id, request.chatId);
+  trackAgentTab(created.id, request.chatId, { url: step.url });
   bindBrowserSession(created.id, request.chatId);
-  await groupAgentTab(created.id, created.windowId, request.chatId);
   markAgentTabGrouped(created.id);
+  await groupAgentTab(
+    created.id,
+    created.windowId,
+    request.chatId,
+    step.ownerTitle ?? ownerTitle(request.chatId),
+  );
+  if (step.quiet) await enableQuietTab(created.id);
   await withBrowserDebugger(created.id, () => navigateReady(created.id as number, step.url));
   assertRequestActive(request);
   const tab = await refreshInventoryTab(created.id);

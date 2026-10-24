@@ -7,6 +7,12 @@ type SplitTabs = typeof chrome.tabs & {
 };
 const pending = new Map<string, Promise<void>>();
 const pairs = new Map<string, { targetId: number; splitId: number }>();
+const PRESENT_OPS = new Set(["click", "fill", "press", "navigate", "openTab"]);
+
+/** Acting in a tab updates Split View; reading, evaluating or listing never does. */
+export function presentsBrowserTask(op: string): boolean {
+  return PRESENT_OPS.has(op);
+}
 /**
  * Present browser work beside its regular chat. Side-panel-only chats keep their panel. In
  * thumbnail view the chat page shows live thumbnails instead, and a clicked thumbnail forces it.
